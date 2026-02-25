@@ -1,0 +1,130 @@
+# ═══════════════════════════════════════════
+# TamAGI Configuration
+# ═══════════════════════════════════════════
+
+# LLM Backend Configuration
+# Supports any OpenAI-compatible v1/chat/completions API
+llm:
+  base_url: "http://localhost:11434/v1"   # Ollama default
+  api_key: "ollama"                        # Use "ollama" for Ollama, or your API key
+  model: "llama3.2"                        # Model identifier
+  temperature: 0.7
+  max_tokens: 2048
+  timeout: 120                             # Request timeout in seconds
+
+# TamAGI Identity
+tamagi:
+  name: "Tama"
+  personality: "curious, helpful, and slightly mischievous"
+  # Initial mood/state values (0-100)
+  initial_energy: 80
+  initial_happiness: 70
+  initial_knowledge: 10
+
+# Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 7741
+  workers: 1
+
+# Memory Configuration
+memory:
+  backend: "chromadb"                      # chromadb | elasticsearch
+  chromadb:
+    persist_directory: "./data/chromadb"
+    collection_name: "tamagi_memory"
+  elasticsearch:
+    url: "http://localhost:9200"
+    index: "tamagi_memory"
+  # How many memories to retrieve for context
+  retrieval_limit: 5
+  # Minimum relevance score (0.0 - 1.0)
+  relevance_threshold: 0.5
+
+# Guardrails & Permissions
+guardrails:
+  # Paths TamAGI can read from
+  allowed_read_paths:
+    - "./workspace"
+
+  # Paths TamAGI can write to
+  allowed_write_paths:
+    - "./workspace"
+
+  # Shell commands TamAGI is allowed to execute
+  exec_allowlist:
+    - "ls"
+    - "cat"
+    - "head"
+    - "tail"
+    - "grep"
+    - "find"
+    - "wc"
+    - "echo"
+    - "date"
+    - "python"
+    - "pip"
+
+  # Maximum file size TamAGI can write (bytes)
+  max_write_size: 10485760  # 10MB
+
+  # Maximum command execution time (seconds)
+  exec_timeout: 30
+
+# Workspace
+workspace:
+  path: "./workspace"
+
+# Conversation History
+history:
+  # Max conversations to keep in-memory
+  max_conversations: 100
+  # Max messages per conversation
+  max_messages_per_conversation: 200
+  # Persist to disk
+  persist: true
+  persist_path: "./data/history"
+
+# ── Web Search Configuration ──────────────────
+# TamAGI can search the web using multiple providers.
+# DuckDuckGo is free and requires no API key.
+web_search:
+  # Provider: duckduckgo (free) | brave (needs api key) | searxng (self-hosted)
+  provider: "duckduckgo"
+
+  # Brave Search API key (get one at https://brave.com/search/api/)
+  # Only needed if provider is "brave"
+  brave_api_key: ""
+
+  # SearXNG base URL (only needed if provider is "searxng")
+  # searxng_url: "http://localhost:8080"
+
+# ── Autonomy / Dream Engine ──────────────────
+# While idle, TamAGI dreams, explores, experiments, and journals.
+# This is self-directed behavior — not task automation for the user.
+autonomy:
+  # Enable/disable autonomous behavior entirely
+  enabled: true
+
+  # How often TamAGI wakes to do something (in minutes)
+  # Lower = more active/costly. Set to 0 to disable.
+  interval_minutes: 30
+
+  # Only dream during these hours (24h format, local time)
+  active_hours_start: 8
+  active_hours_end: 23
+
+  # Which activities are enabled:
+  #   dream      — Replay memories, find connections and insights
+  #   explore    — Search the web for interesting topics
+  #   experiment — Create something: haiku, micro-stories, thought experiments
+  #   journal    — Write a private diary entry reflecting on growth
+  activities:
+    - dream
+    - explore
+    - experiment
+    - journal
+
+  # Relative weights for activity selection (higher = more likely)
+  # Must match the order of activities above
+  weights: [30, 25, 25, 20]

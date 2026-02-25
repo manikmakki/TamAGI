@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  tamagi:
+    build: .
+    container_name: tamagi
+    ports:
+      - "7741:7741"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+      - ./workspace:/workspace
+      - ./backend/skills/custom:/app/backend/skills/custom
+    environment:
+      - TAMAGI_CONFIG=/app/config.yaml
+    restart: unless-stopped
+    # Uncomment to connect to host network (for Ollama on localhost)
+    # network_mode: host
+
+# volumes:
+#   tamagi-data:
+#     driver: local
+#   tamagi-workspace:
+#     driver: local
