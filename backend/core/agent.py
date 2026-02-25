@@ -282,7 +282,7 @@ class TamAGIAgent:
 
         # 7. Store conversation summary in memory (every 3 messages for better recall)
         if len(conv.messages) % 3 == 0 and len(conv.messages) > 0:
-            summary = f"Conversation about: {conv.title}. Latest exchange: User asked '{user_message[:100]}', TamAGI responded about {final_text[:100]}"
+            summary = f"Conversation about: {conv.title}. Latest exchange: User asked '{user_message}', TamAGI responded about {final_text}" # TODO: Add variable for max content length to store in memory
             await self.memory.store(MemoryEntry(
                 content=summary,
                 memory_type=MemoryType.CONVERSATION,

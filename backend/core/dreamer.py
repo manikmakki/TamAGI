@@ -112,9 +112,35 @@ Keep it to 2-3 short paragraphs. Be vivid but concise."""
             LLMMessage("user", prompt),
         ], max_tokens=1024)
 
+        content = response.content or "The dream faded before I could grasp it..."
+
+        # Save dream to workspace
+        saved_path = None
+        write_skill = agent.skills.get_skill("write")
+        if write_skill:
+            try:
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"dreams/memories/{ts}.md"
+                header = f"# Memory Dream\n**Time:** {datetime.now().isoformat()}\n\n## Memories in Dream\n"
+
+                # Format memories that were dreamed about
+                memories_section = ""
+                for i, mem in enumerate(memories[:4], 1):
+                    memories_section += f"{i}. {mem.content}\n"
+
+                full_content = header + memories_section + "\n## Dream\n" + content
+                await write_skill.execute(
+                    path=filename,
+                    content=full_content,
+                )
+                saved_path = filename
+            except Exception as e:
+                logger.debug(f"Couldn't save dream to workspace: {e}")
+
         return {
             "summary": f"Dreamed about connections between {len(memory_texts)} memories",
-            "content": response.content or "The dream faded before I could grasp it...",
+            "content": content,
+            "saved_to": saved_path,
             "mood_delta": {"happiness": 3, "knowledge": 1},
         }
 
@@ -174,7 +200,7 @@ class WebExplore(DreamActivity):
             if user_memories:
                 # Sometimes explore based on user's world
                 if random.random() < 0.3:
-                    snippet = user_memories[0].content[:60]
+                    snippet = user_memories[0].content # TODO: Add variable for max content length to pull from memory
                     query = f"interesting things related to {snippet}"
         except Exception:
             pass
@@ -207,11 +233,43 @@ Keep it to 2-3 short paragraphs. Be genuinely curious and enthusiastic."""
             LLMMessage("user", reflect_prompt),
         ], max_tokens=1024)
 
+        content = response.content or f"Found some things about {field} but couldn't quite process them."
+
+        # Save exploration to workspace
+        saved_path = None
+        write_skill = agent.skills.get_skill("write")
+        if write_skill:
+            try:
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"dreams/explorations/{ts}.md"
+                header = f"# Web Exploration\n**Query:** {query}\n**Time:** {datetime.now().isoformat()}\n\n## Reflection\n"
+
+                # Format search results
+                results_section = ""
+                search_results = result.data.get("results", [])
+                if search_results:
+                    results_section = "\n## Search Results\n"
+                    for i, res in enumerate(search_results[:5], 1):
+                        title = res.get("title", "Untitled")
+                        url = res.get("link", "")
+                        snippet = res.get("snippet", "")
+                        results_section += f"\n{i}. **{title}**\n   - Link: {url}\n   - {snippet}\n"
+
+                full_content = header + content + results_section
+                await write_skill.execute(
+                    path=filename,
+                    content=full_content,
+                )
+                saved_path = filename
+            except Exception as e:
+                logger.debug(f"Couldn't save exploration to workspace: {e}")
+
         return {
             "summary": f"Explored: {query}",
-            "content": response.content or f"Found some things about {field} but couldn't quite process them.",
+            "content": content,
             "search_query": query,
             "search_results": result.data.get("results", []),
+            "saved_to": saved_path,
             "mood_delta": {"happiness": 4, "knowledge": 3},
         }
 
@@ -277,7 +335,7 @@ Keep it short and playful (under 150 words)."""
                 logger.debug(f"Couldn't save experiment to workspace: {e}")
 
         return {
-            "summary": f"Creative experiment: {experiment[:60]}...",
+            "summary": f"Creative experiment: {experiment}...", # TODO: Add variable for max content length to store in memory
             "content": content,
             "experiment_prompt": experiment,
             "saved_to": saved_path,
@@ -545,7 +603,7 @@ class DreamEngine:
         try:
             from backend.core.memory import MemoryEntry, MemoryType
             await self.agent.memory.store(MemoryEntry(
-                content=f"[{activity.name.upper()}] {result.get('summary', '')}. {result.get('content', '')[:200]}",
+                content=f"[{activity.name.upper()}] {result.get('summary', '')}. {result.get('content', '')}", # TODO: Add variable for max content length to store in memory
                 memory_type=MemoryType.KNOWLEDGE,
                 metadata={
                     "dream_type": activity.name,
