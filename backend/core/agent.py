@@ -202,6 +202,10 @@ class TamAGIAgent:
         # Update personality
         self.personality.state.interact()
 
+        # Check if rapid interactions drained energy too much
+        if self.personality.state.check_low_energy(agent=self):
+            logger.info(f"Energy critical ({self.personality.state.energy}%), dream recovery triggered from interactions")
+
         # 1. Retrieve relevant memories
         memories = await self.memory.recall(user_message, limit=self.config.memory.retrieval_limit)
         memory_context = ""
@@ -249,6 +253,10 @@ class TamAGIAgent:
                 result = await self.skills.execute(tc.name, **tc.arguments)
                 self.personality.state.use_skill()
 
+                # Check if energy dropped critically low; trigger dream recovery if needed
+                if self.personality.state.check_low_energy(agent=self):
+                    logger.info(f"Energy critical ({self.personality.state.energy}%), dream recovery triggered")
+
                 # Add assistant message with tool call
                 llm_messages.append(LLMMessage(
                     "assistant",
@@ -272,8 +280,8 @@ class TamAGIAgent:
             metadata={"skills_used": skills_used},
         ))
 
-        # 7. Store conversation summary in memory (every 5 messages)
-        if len(conv.messages) % 5 == 0:
+        # 7. Store conversation summary in memory (every 3 messages for better recall)
+        if len(conv.messages) % 3 == 0 and len(conv.messages) > 0:
             summary = f"Conversation about: {conv.title}. Latest exchange: User asked '{user_message[:100]}', TamAGI responded about {final_text[:100]}"
             await self.memory.store(MemoryEntry(
                 content=summary,
@@ -311,6 +319,19 @@ class TamAGIAgent:
     async def recall_memories(self, query: str, limit: int = 5) -> list[dict]:
         memories = await self.memory.recall(query, limit=limit)
         return [m.to_dict() for m in memories]
+
+    async def get_memory_stats(self) -> dict:
+        """Get memory system statistics for debugging."""
+        stats = await self.memory.get_stats()
+        all_memories = await self.memory.get_all_memories(limit=None)
+        stats["total_memories_stored"] = len(all_memories)
+        stats["memory_types"] = {}
+        for mem in all_memories:
+            mem_type = mem.memory_type.value
+            stats["memory_types"][mem_type] = stats["memory_types"].get(mem_type, 0) + 1
+        stats["recent_memories"] = [m.to_dict() for m in all_memories[:5]]
+        logger.info(f"Memory stats: {stats}")
+        return stats
 
     # ── Persistence ───────────────────────────────────────────
 

@@ -324,21 +324,76 @@ class TamAGIState:
         self.gain_xp("message")
 
     def decay(self) -> None:
-        """Apply time-based decay. Call periodically."""
+        """Apply time-based decay and recovery. Call periodically."""
         elapsed = time.time() - self.last_interaction
         hours_idle = elapsed / 3600
 
-        # --- Decay (drain energy + happiness when idle) ---
-        if hours_idle > 1:
+        # --- Recovery phase: recharge energy (up to 100%) over ~4 hours ---
+        if hours_idle > 0.5 and self.energy < 100:
+            recovery_per_hour = 25  # Full recovery in 4 hours
+            energy_gain = int(hours_idle * recovery_per_hour)
+            self.energy = min(100, self.energy + energy_gain)
+
+        # --- Decay phase: only after recovery completes AND user is idle > 4 hours ---
+        if hours_idle > 4:
             decay_factor = min(hours_idle * 2, 30)
             self.happiness = max(0, int(self.happiness - decay_factor))
+            self.energy = max(0, int(self.energy - decay_factor))
 
-        if hours_idle > 4:
-            self.energy = max(0, int(self.energy - hours_idle))
+    def check_low_energy(self, agent: Any | None = None) -> bool:
+        """
+        Check if energy is critically low and trigger dream recovery if needed.
 
-        # --- Recovery (energy recharge) ---
-        if hours_idle > 0.5:  # Even *short* inactivity can recharge!
-            self.energy = min(100, int(self.energy + hours_idle * 15))  # +15 energy/hour
+        Args:
+            agent: Optional TamAGIAgent instance. If provided, will trigger dream_now().
+
+        Returns:
+            True if energy was critical and recovery triggered.
+        """
+        if self.energy < 10:
+            # If agent is provided, try to run dream_now() for real dream recovery
+            if agent:
+                from backend.api.dreams import get_dream_engine
+                dream_engine = get_dream_engine()
+                if dream_engine and hasattr(agent, '_dream_recovery_in_progress'):
+                    # Prevent recursive dream calls
+                    pass
+                elif dream_engine:
+                    # Mark that recovery is in progress
+                    agent._dream_recovery_in_progress = True
+                    try:
+                        # Schedule dream_now to run (will be awaited by caller)
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        loop.create_task(self._trigger_dream(dream_engine, agent))
+                    except Exception as e:
+                        logger.warning(f"Could not trigger dream recovery: {e}")
+                        # Fallback: just restore energy manually
+                        self.energy = min(100, self.energy + 20)
+                        self.happiness = min(100, self.happiness + 10)
+                    finally:
+                        agent._dream_recovery_in_progress = False
+            else:
+                # Fallback: just restore energy manually without dream engine
+                self.energy = min(100, self.energy + 20)
+                self.happiness = min(100, self.happiness + 10)
+            return True
+        return False
+
+    async def _trigger_dream(self, dream_engine: Any, agent: Any) -> None:
+        """Async helper to trigger dream recovery."""
+        try:
+            result = await dream_engine.dream_now()
+            if result:
+                logger.info(f"Dream recovery triggered: {result.get('type', 'unknown')}")
+                # Dream activity will have adjusted mood_delta
+                mood_delta = result.get("mood_delta", {})
+                if mood_delta.get("energy"):
+                    self.energy = min(100, self.energy + mood_delta["energy"])
+                if mood_delta.get("happiness"):
+                    self.happiness = min(100, self.happiness + mood_delta["happiness"])
+        except Exception as e:
+            logger.error(f"Error during dream recovery: {e}")
 
     def feed_knowledge(self) -> None:
         """Boost stats when fed knowledge/data."""

@@ -108,9 +108,10 @@ class MemoryStore:
             )
 
         except ImportError:
-            logger.warning(
-                "ChromaDB not installed. Memory will be in-memory only. "
-                "Install with: pip install chromadb"
+            logger.error(
+                "❌ ChromaDB not installed. Memory will be in-memory only (no persistence). "
+                "Install with: pip install chromadb. "
+                "This severely limits memory recall effectiveness."
             )
             self._init_fallback()
 
@@ -160,6 +161,7 @@ class MemoryStore:
             for mem in self._memories:
                 if query_lower in mem.content.lower():
                     results.append(mem)
+            logger.debug(f"Memory recall (fallback): query='{query}' found {len(results)} memories")
             return results[:limit]
 
         where_filter = None
@@ -177,6 +179,7 @@ class MemoryStore:
             return []
 
         entries = []
+        filtered_count = 0
         if results and results["documents"]:
             for i, doc in enumerate(results["documents"][0]):
                 meta = results["metadatas"][0][i] if results["metadatas"] else {}
@@ -184,6 +187,7 @@ class MemoryStore:
                 relevance = 1.0 - distance  # Convert distance to similarity
 
                 if relevance < self.config.relevance_threshold:
+                    filtered_count += 1
                     continue
 
                 entries.append(MemoryEntry(
@@ -197,6 +201,10 @@ class MemoryStore:
                 ))
 
         entries.sort(key=lambda e: e.relevance, reverse=True)
+        logger.debug(
+            f"Memory recall: query='{query}' found {len(entries)} results "
+            f"(filtered {filtered_count} below threshold {self.config.relevance_threshold})"
+        )
         return entries
 
     async def forget(self, memory_id: str) -> bool:

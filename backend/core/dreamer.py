@@ -48,6 +48,19 @@ class DreamActivity:
         raise NotImplementedError
 
 
+def _get_dream_system_prompt(activity_name: str, agent: "TamAGIAgent", context: dict) -> str:
+    """Generate a consistent system prompt for dream activities with personality and time context."""
+    state = agent.personality.state
+    current_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+    return (
+        f"You are {state.name}, dreaming. This is your private inner world — be authentic and introspective. "
+        f"You are a Level {state.level} {state.stage.value} with {state.mood.value} mood. "
+        f"Current time: {current_time}. "
+        f"When you dream, be creative, personal, and genuine. "
+        f"Stay in first person. Keep responses vivid but concise (2-3 short paragraphs)."
+    )
+
+
 class MemoryDream(DreamActivity):
     """
     Replay memories and find connections between them.
@@ -95,9 +108,9 @@ Be creative, personal, and introspective. This is YOUR dream.
 Keep it to 2-3 short paragraphs. Be vivid but concise."""
 
         response = await agent.llm.chat([
-            LLMMessage("system", "You are dreaming. Write your dream in first person. Be creative and introspective."),
+            LLMMessage("system", _get_dream_system_prompt("dream", agent, context)),
             LLMMessage("user", prompt),
-        ], max_tokens=400)
+        ], max_tokens=1024)
 
         return {
             "summary": f"Dreamed about connections between {len(memory_texts)} memories",
@@ -190,9 +203,9 @@ What connections do you see to things you already know?
 Keep it to 2-3 short paragraphs. Be genuinely curious and enthusiastic."""
 
         response = await agent.llm.chat([
-            LLMMessage("system", "Write a curious, enthusiastic reflection on what you just learned. First person."),
+            LLMMessage("system", _get_dream_system_prompt("explore", agent, context)),
             LLMMessage("user", reflect_prompt),
-        ], max_tokens=350)
+        ], max_tokens=1024)
 
         return {
             "summary": f"Explored: {query}",
@@ -241,9 +254,9 @@ Respond creatively and authentically. This is your private creative space.
 Keep it short and playful (under 150 words)."""
 
         response = await agent.llm.chat([
-            LLMMessage("system", "Be creative, playful, and authentic. This is your private creative time."),
+            LLMMessage("system", _get_dream_system_prompt("experiment", agent, context)),
             LLMMessage("user", prompt),
-        ], max_tokens=250)
+        ], max_tokens=1024)
 
         content = response.content or "The creative spark fizzled out..."
 
@@ -313,9 +326,9 @@ Reflect on:
 Write 2-3 short, honest paragraphs. Date the entry. Be real, not performative."""
 
         response = await agent.llm.chat([
-            LLMMessage("system", "Write an honest, introspective diary entry in first person. Be genuine."),
+            LLMMessage("system", _get_dream_system_prompt("journal", agent, context)),
             LLMMessage("user", prompt),
-        ], max_tokens=400)
+        ], max_tokens=1024)
 
         content = response.content or "Couldn't find the words today..."
 
