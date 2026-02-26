@@ -194,9 +194,15 @@ autonomy:
 - **Long-term**: Important facts, preferences, and knowledge stored as embeddings
 - **RAG**: Retrieves relevant memories to enrich conversations
 
+## Transparency statement from the author
+I feel the need to add this statement: 
+* Nobody asked for this, it is not sponsored, I am not being paid to develop this project.
+* This is purely a "for fun" project that I didn't see any existing solution for that works for _my_ needs. I liked it enough to publish.
+* The project was designed and intended to work within _my_ home lab environment, with _my_ hardware on hand. 
+
 ## License
 
-AGPL-3.0 — Keep it open, keep it free.
+[GNU Affero General Public License v3.0 (AGPL-3.0) ](LICENSE.md)
 
 ---
 
