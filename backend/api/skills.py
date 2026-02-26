@@ -30,7 +30,7 @@ async def list_skills():
 async def execute_skill(request: SkillExecRequest):
     """Manually execute a skill (for testing/direct use)."""
     agent = get_agent()
-    result = await agent.skills.execute(request.name, **request.arguments)
+    result = await agent.skills.execute(name=request.name, **request.arguments)
     agent.personality.state.use_skill()
     agent.personality.save_state()
     return {

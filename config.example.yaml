@@ -5,21 +5,18 @@
 # LLM Backend Configuration
 # Supports any OpenAI-compatible v1/chat/completions API
 llm:
-  base_url: "http://localhost:11434/v1"   # Ollama default
-  api_key: "ollama"                        # Use "ollama" for Ollama, or your API key
-  model: "llama3.2"                        # Model identifier
-  temperature: 0.7
-  max_tokens: 2048
-  timeout: 120                             # Request timeout in seconds
+  base_url: "http://localhost:11434/v1"     # Ollama default
+  api_key: "ollama"                         # Use "ollama" for Ollama, or your API key
+  model: "ministral-3:14b"                  # Model identifier
+  temperature: 0.15                         # Lower = more focused/responsive, Higher = more creative/verbose. Match Model's card on Hugging Face for best results.
+  max_tokens: 2048                          # Max tokens in LLM response. Adjust based on your model's context window and needs.             
+  timeout: 180                              # Request timeout in seconds
 
 # TamAGI Identity
 tamagi:
   name: "Tama"
   personality: "curious, helpful, and slightly mischievous"
-  # Initial mood/state values (0-100)
-  initial_energy: 80
-  initial_happiness: 70
-  initial_knowledge: 10
+
 
 # Server Configuration
 server:
@@ -45,11 +42,17 @@ memory:
 guardrails:
   # Paths TamAGI can read from
   allowed_read_paths:
-    - "./workspace"
+    - "/workspace"
+    - "/workspace/**"
+    - "/app/backend/skills/custom"
+    - "/app/backend/skills/custom/**"
 
   # Paths TamAGI can write to
   allowed_write_paths:
-    - "./workspace"
+    - "/workspace"
+    - "/workspace/**"
+    - "/app/backend/skills/custom"
+    - "/app/backend/skills/custom/**"
 
   # Shell commands TamAGI is allowed to execute
   exec_allowlist:
@@ -64,16 +67,17 @@ guardrails:
     - "date"
     - "python"
     - "pip"
+    - "sed"
 
   # Maximum file size TamAGI can write (bytes)
   max_write_size: 10485760  # 10MB
 
   # Maximum command execution time (seconds)
-  exec_timeout: 30
+  exec_timeout: 120
 
 # Workspace
 workspace:
-  path: "./workspace"
+  path: "/workspace"
 
 # Conversation History
 history:

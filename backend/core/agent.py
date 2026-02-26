@@ -250,7 +250,7 @@ class TamAGIAgent:
                 logger.info(f"Tool call: {tc.name}({tc.arguments})")
                 skills_used.append(tc.name)
 
-                result = await self.skills.execute(tc.name, **tc.arguments)
+                result = await self.skills.execute(name=tc.name, **tc.arguments)
                 self.personality.state.use_skill()
 
                 # Check if energy dropped critically low; trigger dream recovery if needed
