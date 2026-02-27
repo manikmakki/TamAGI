@@ -12,12 +12,6 @@ llm:
   max_tokens: 2048                          # Max tokens in LLM response. Adjust based on your model's context window and needs.             
   timeout: 180                              # Request timeout in seconds
 
-# TamAGI Identity
-tamagi:
-  name: "Tama"
-  personality: "curious, helpful, and slightly mischievous"
-
-
 # Server Configuration
 server:
   host: "0.0.0.0"

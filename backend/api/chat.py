@@ -6,10 +6,13 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
+
+from backend.config import get_config
 
 logger = logging.getLogger("tamagi.api.chat")
 
@@ -21,6 +24,8 @@ router = APIRouter(prefix="/api", tags=["chat"])
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=32000)
     conversation_id: str | None = None
+    image_data: str | None = None        # base64-encoded image
+    image_media_type: str = "image/jpeg"
 
 
 class ChatResponse(BaseModel):
@@ -66,8 +71,40 @@ async def chat(request: ChatRequest):
     result = await agent.chat(
         user_message=request.message,
         conversation_id=request.conversation_id,
+        image_data=request.image_data,
+        image_media_type=request.image_media_type,
     )
     return ChatResponse(**result)
+
+
+@router.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    subdirectory: str = Form(default="uploads"),
+):
+    """Upload a file to the workspace directory."""
+    config = get_config()
+    workspace = Path(config.workspace.path).resolve()
+    dest_dir = (workspace / subdirectory).resolve()
+
+    if not str(dest_dir).startswith(str(workspace)):
+        raise HTTPException(status_code=400, detail="Invalid subdirectory")
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    content = await file.read()
+
+    if len(content) > config.guardrails.max_write_size:
+        raise HTTPException(status_code=413, detail="File too large")
+
+    dest = dest_dir / file.filename
+    dest.write_bytes(content)
+
+    return {
+        "path": str(dest.relative_to(workspace)),
+        "filename": file.filename,
+        "size": len(content),
+        "media_type": file.content_type,
+    }
 
 
 @router.get("/conversations")

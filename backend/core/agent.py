@@ -174,6 +174,8 @@ class TamAGIAgent:
         self,
         user_message: str,
         conversation_id: str | None = None,
+        image_data: str | None = None,
+        image_media_type: str = "image/jpeg",
     ) -> dict[str, Any]:
         """
         Process a user message and return TamAGI's response.
@@ -195,8 +197,19 @@ class TamAGIAgent:
             # Auto-title from first message
             conv.title = user_message[:60] + ("..." if len(user_message) > 60 else "")
 
-        # Record user message
-        conv.messages.append(Message(role="user", content=user_message))
+        # Build user content — image block for LLM, plain text for history
+        if image_data:
+            user_llm_content = [
+                {"type": "text", "text": user_message},
+                {"type": "image_url", "image_url": {"url": f"data:{image_media_type};base64,{image_data}"}},
+            ]
+            history_content = f"[image: {image_media_type}] {user_message}"
+        else:
+            user_llm_content = user_message
+            history_content = user_message
+
+        # Record user message (text-only placeholder for persistence)
+        conv.messages.append(Message(role="user", content=history_content))
         conv.updated_at = time.time()
 
         # Capture current stage before interaction
@@ -228,10 +241,12 @@ class TamAGIAgent:
             system_prompt += memory_context
         llm_messages = [LLMMessage("system", system_prompt)]
 
-        # Add conversation history (last N messages)
-        history_window = conv.messages[-(self.config.history.max_messages_per_conversation):]
+        # Add conversation history (last N messages, excluding the current user turn)
+        history_window = conv.messages[-(self.config.history.max_messages_per_conversation):-1]
         for msg in history_window:
             llm_messages.append(LLMMessage(msg.role, msg.content))
+        # Append current user message with image block if provided
+        llm_messages.append(LLMMessage("user", user_llm_content))
 
         # 3. Get tool definitions
         tools = self.skills.get_openai_tools() if self.skills.skill_count > 0 else None

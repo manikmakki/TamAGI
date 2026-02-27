@@ -84,11 +84,8 @@ async def lifespan(app: FastAPI):
     memory = MemoryStore(config.memory)
     await memory.initialize()
 
-    # Initialize personality engine
-    personality = PersonalityEngine(
-        name=config.tamagi.name,
-        personality=config.tamagi.personality,
-    )
+    # Initialize personality engine (loads from tamagi_state.json or uses defaults)
+    personality = PersonalityEngine()
     personality.state.decay()  # Apply any time-based decay since last run
     logger.info(f"Personality: {personality.state.summary()}")
 
@@ -135,7 +132,7 @@ async def lifespan(app: FastAPI):
     set_dream_engine(dream_engine)
     dream_engine.start()
 
-    logger.info(f"═══ {config.tamagi.name} is awake! ═══")
+    logger.info(f"═══ TamAGI is awake! ═══")
     logger.info(f"    Open http://localhost:{config.server.port} in your browser")
 
     yield

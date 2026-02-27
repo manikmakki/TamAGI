@@ -495,6 +495,36 @@
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ═══ ATTACHMENT ═══ */
+    .attach-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-muted);
+      font-size: 15px;
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .attach-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
+    .attach-btn.has-file { border-color: var(--accent-tertiary); color: var(--accent-tertiary); }
+    .attachment-chip {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: var(--bg-elevated);
+      border-top: 1px solid var(--border);
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    .attachment-chip.on { display: flex; }
+    .chip-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent-tertiary); }
+    .chip-clear { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
+    .chip-clear:hover { color: var(--error); }
   </style>
 </head>
 <body>
@@ -551,7 +581,14 @@
       <div class="welcome-msg" id="welcome"><strong>Say hello to start a conversation!</strong><br>I'll remember what we talk about and grow from our interactions.</div>
     </div>
     <div class="typing" id="typing"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div>
+    <input type="file" id="file-input" style="display:none" onchange="handleFileSelect(this)">
+    <div class="attachment-chip" id="attach-chip">
+      <span id="chip-icon">📄</span>
+      <span class="chip-name" id="chip-name"></span>
+      <button class="chip-clear" onclick="clearAttachment()" title="Remove">×</button>
+    </div>
     <div class="input-bar">
+      <button class="attach-btn" id="attach-btn" onclick="document.getElementById('file-input').click()" title="Attach file">📎</button>
       <textarea id="input" placeholder="Talk to your TamAGI..." rows="1" autofocus></textarea>
       <button class="send-btn" id="send-btn" onclick="sendMessage()">SEND</button>
     </div>
@@ -568,7 +605,51 @@ function setBar(p,v){v=Math.max(0,Math.min(100,v||0));const f=document.getElemen
 function setText(id,t){const e=document.getElementById(id);if(e)e.textContent=t}
 function setConnected(c){const d=document.getElementById('conn-dot');d.classList.toggle('on',c);d.title=c?'Connected':'Disconnected'}
 
-async function sendMessage(){const el=document.getElementById('input');const msg=el.value.trim();if(!msg||loading)return;const w=document.getElementById('welcome');if(w)w.remove();addMsg('user',msg);el.value='';autoResize(el);loading=true;document.getElementById('send-btn').disabled=true;setTyping(true);try{const res=await api('/chat',{method:'POST',body:JSON.stringify({message:msg,conversation_id:convId})});setTyping(false);convId=res.conversation_id;updateState(res.state);addMsg('assistant',res.response,res.skills_used);loadConversations();setConnected(true)}catch(e){setTyping(false);addMsg('assistant',`\u26A0 Error: ${e.message}. Is the backend running?`);setConnected(false)}finally{loading=false;document.getElementById('send-btn').disabled=false}}
+let pendingFile=null;
+
+function handleFileSelect(input){
+  const file=input.files[0];if(!file)return;
+  pendingFile=file;
+  document.getElementById('chip-icon').textContent=file.type.startsWith('image/')?'🖼':'📄';
+  document.getElementById('chip-name').textContent=file.name;
+  document.getElementById('attach-chip').classList.add('on');
+  document.getElementById('attach-btn').classList.add('has-file');
+  input.value='';
+}
+function clearAttachment(){
+  pendingFile=null;
+  document.getElementById('attach-chip').classList.remove('on');
+  document.getElementById('attach-btn').classList.remove('has-file');
+}
+function toBase64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(file)})}
+
+async function sendMessage(){
+  const el=document.getElementById('input');const msg=el.value.trim();
+  if(!msg&&!pendingFile||loading)return;
+  const w=document.getElementById('welcome');if(w)w.remove();
+  const displayMsg=msg+(pendingFile?` [📎 ${pendingFile.name}]`:'');
+  addMsg('user',displayMsg||pendingFile.name);
+  el.value='';autoResize(el);loading=true;
+  document.getElementById('send-btn').disabled=true;setTyping(true);
+  const file=pendingFile;clearAttachment();
+  try{
+    const body={message:msg||`Attached: ${file?.name}`,conversation_id:convId};
+    if(file){
+      if(file.type.startsWith('image/')){
+        body.image_data=await toBase64(file);
+        body.image_media_type=file.type||'image/jpeg';
+      }else{
+        const fd=new FormData();fd.append('file',file);
+        const up=await fetch(`${API}/api/upload`,{method:'POST',body:fd}).then(r=>r.json());
+        body.message=`${body.message} [file uploaded to workspace: ${up.path}]`;
+      }
+    }
+    const res=await api('/chat',{method:'POST',body:JSON.stringify(body)});
+    setTyping(false);convId=res.conversation_id;updateState(res.state);
+    addMsg('assistant',res.response,res.skills_used);loadConversations();setConnected(true);
+  }catch(e){setTyping(false);addMsg('assistant',`\u26A0 Error: ${e.message}. Is the backend running?`);setConnected(false)}
+  finally{loading=false;document.getElementById('send-btn').disabled=false}
+}
 
 function addMsg(role,content,skills=[]){const area=document.getElementById('chat-messages');const d=document.createElement('div');d.className=`msg ${role}`;const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const sk=(skills||[]).map(s=>`<span class="skill-tag">\u2699 ${s}</span>`).join('');const rendered=role==='assistant'?renderMd(content):esc(content);d.innerHTML=`<div class="bubble">${rendered}</div><div class="time">${t}${sk}</div>`;area.appendChild(d);area.scrollTop=area.scrollHeight}
 function setTyping(v){document.getElementById('typing').classList.toggle('on',v)}

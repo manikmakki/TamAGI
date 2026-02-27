@@ -311,8 +311,9 @@ class PersonalityEngine:
 
     STATE_FILE = "data/tamagi_state.json"
 
-    def __init__(self, name: str = "Tama", personality: str = ""):
-        self.state = TamAGIState(name=name, personality_traits=personality or name)
+    def __init__(self):
+        """Load state from file, or create new with defaults."""
+        self.state = TamAGIState()  # Start with defaults
         self._load_state()
 
     def _load_state(self) -> None:

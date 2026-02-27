@@ -21,7 +21,7 @@ logger = logging.getLogger("tamagi.llm")
 class LLMMessage:
     """A single message in a conversation."""
 
-    def __init__(self, role: str, content: str, name: str | None = None):
+    def __init__(self, role: str, content: str | list[dict], name: str | None = None):
         self.role = role
         self.content = content
         self.name = name
