@@ -20,25 +20,25 @@ TamAGI is a self-hosted, fully local virtual assistant/agent that:
 
 ```
 ┌─────────────────────────────────────────────┐
-│                 PWA Frontend                 │
-│  ┌─────────┐  ┌──────────┐  ┌────────────┐ │
-│  │  Sprite  │  │   Chat   │  │ History/   │ │
-│  │ Display  │  │Interface │  │  Status    │ │
-│  └─────────┘  └──────────┘  └────────────┘ │
+│                 PWA Frontend                │
+│  ┌─────────┐  ┌──────────┐  ┌────────────┐  │
+│  │  Sprite │  │   Chat   │  │ History/   │  │
+│  │ Display │  │Interface │  │  Status    │  │
+│  └─────────┘  └──────────┘  └────────────┘  │
 └──────────────────┬──────────────────────────┘
                    │ WebSocket + REST
 ┌──────────────────┴──────────────────────────┐
-│              FastAPI Backend                  │
+│              FastAPI Backend                │
 │  ┌──────────────────────────────────────┐   │
-│  │            Agent Core                 │   │
-│  │  ┌──────────┐  ┌─────────────────┐  │   │
+│  │            Agent Core                │   │
+│  │  ┌───────────┐  ┌─────────────────┐  │   │
 │  │  │Personality│  │  LLM Client     │  │   │
 │  │  │  Engine   │  │ (v1/chat/compl) │  │   │
-│  │  └──────────┘  └─────────────────┘  │   │
-│  │  ┌──────────┐  ┌─────────────────┐  │   │
+│  │  └───────────┘  └─────────────────┘  │   │
+│  │  ┌───────────┐  ┌─────────────────┐  │   │
 │  │  │  Memory   │  │ Skill Registry  │  │   │
 │  │  │ (ChromaDB)│  │  & Executor     │  │   │
-│  │  └──────────┘  └─────────────────┘  │   │
+│  │  └───────────┘  └─────────────────┘  │   │
 │  └──────────────────────────────────────┘   │
 │  Built-in Skills: read | write | exec       │
 └─────────────────────────────────────────────┘
@@ -203,6 +203,18 @@ I feel the need to add this statement:
 ## License
 
 [GNU Affero General Public License v3.0 (AGPL-3.0) ](LICENSE.md)
+
+## Acknowledgements
+
+Thank you for the inspiration!
+
+https://github.com/openclaw/openclaw - Automation + Autonomy design and implimentation
+
+https://github.com/ykhli/AI-tamago - General vibe and spirit
+
+https://github.com/evilsocket/pwnagotchi - Ideas for self-training and evolution
+
+**TamAGI is a creative project inspired by Tamagotchi but not affiliated with or endorsed by Bandai Namco.**
 
 ---
 

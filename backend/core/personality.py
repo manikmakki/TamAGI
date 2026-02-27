@@ -21,10 +21,11 @@ logger = logging.getLogger("tamagi.personality")
 
 class Stage(str, Enum):
     EGG = "egg"
-    HATCHLING = "hatchling"
-    JUVENILE = "juvenile"
-    ADULT = "adult"
-    SAGE = "sage"
+    TAMAGI = "tamagi"
+    # HATCHLING = "hatchling"
+    # JUVENILE = "juvenile"
+    # ADULT = "adult"
+    # SAGE = "sage"
 
 
 class Mood(str, Enum):
@@ -37,15 +38,11 @@ class Mood(str, Enum):
     TIRED = "tired"
 
 
-# ── Stat Thresholds ───────────────────────────────────────────
+# ── Stage Progression ─────────────────────────────────────────
 
-STAGE_THRESHOLDS = {
-    Stage.EGG: 0,
-    Stage.HATCHLING: 10,
-    Stage.JUVENILE: 100,
-    Stage.ADULT: 500,
-    Stage.SAGE: 2000,
-}
+# 40 stages, 250 XP per stage
+NUM_STAGES = 40
+STAGE_XP_INTERVAL = 250
 
 # XP gains per activity
 XP_GAINS = {
@@ -62,193 +59,63 @@ XP_GAINS = {
 SPRITES: dict[Stage, dict[Mood, str]] = {
     Stage.EGG: {
         Mood.HAPPY: r"""
-    ╭───╮
-    │ ◕‿◕│
-    ╰───╯
-  ～～～～～
+╭───────╮
+│  ◕‿◕  │
+╰───────╯
+～～～～～
 """,
         Mood.NEUTRAL: r"""
-    ╭───╮
-    │ ◉_◉│
-    ╰───╯
-  ～～～～～
+╭───────╮
+│  ◉_◉  │
+╰───────╯
+～～～～～
 """,
         Mood.SAD: r"""
-    ╭───╮
-    │ ◕︵◕│
-    ╰───╯
-  ～～～～～
+╭───────╮
+│  V_V  │
+╰───────╯
+～～～～～
 """,
     },
-    Stage.HATCHLING: {
+    Stage.TAMAGI: {
         Mood.HAPPY: r"""
-   ∧＿∧
-  ( ◕ᴗ◕ )
-  /    づ♡
- ～～～～～～
+  ╔═══════╗
+╔═╣  ◈ ◈  ╠═╗
+║ ╚═══════╝ ║
+║     ▿     ║
+║   ╰───╯   ║
+╚═════╤═════╝
+    ╔═╧═╗
+ ╔══╣ ✦ ╠══╗
+ ║  ╚═══╝  ║
+ ╚══╗   ╔══╝
+    ╚═══╝
 """,
         Mood.NEUTRAL: r"""
-   ∧＿∧
-  ( ◉_◉ )
-  /    づ
- ～～～～～～
+  ╔═══════╗
+╔═╣  ◈ ◈  ╠═╗
+║ ╚═══════╝ ║
+║     ▿     ║
+║   -----   ║
+╚═════╤═════╝
+    ╔═╧═╗
+ ╔══╣   ╠══╗
+ ║  ╚═══╝  ║
+ ╚══╗   ╔══╝
+    ╚═══╝
 """,
         Mood.SAD: r"""
-   ∧＿∧
-  ( ◕︵◕ )
-  /    づ
- ～～～～～～
-""",
-        Mood.TIRED: r"""
-   ∧＿∧
-  ( ≖_≖ )zzz
-  /    づ
- ～～～～～～
-""",
-    },
-    Stage.JUVENILE: {
-        Mood.HAPPY: r"""
-    ╱▔▔▔▔╲
-   ▕ ◕ᴗ◕  ▏
-   ▕  ▽   ▏
-    ╲▂▂▂▂╱
-   ╱╱    ╲╲
-  ▔▔      ▔▔
-""",
-        Mood.ECSTATIC: r"""
-   ★╱▔▔▔▔╲★
-   ▕ ◕ᴗ◕  ▏
-   ▕  ▽   ▏♪
-    ╲▂▂▂▂╱
-   ╱╱ ♡  ╲╲
-  ▔▔      ▔▔
-""",
-        Mood.NEUTRAL: r"""
-    ╱▔▔▔▔╲
-   ▕ ◉_◉  ▏
-   ▕  ─   ▏
-    ╲▂▂▂▂╱
-   ╱╱    ╲╲
-  ▔▔      ▔▔
-""",
-        Mood.SAD: r"""
-    ╱▔▔▔▔╲
-   ▕ ◕︵◕  ▏
-   ▕  ∧   ▏
-    ╲▂▂▂▂╱
-   ╱╱    ╲╲
-  ▔▔      ▔▔
-""",
-        Mood.TIRED: r"""
-    ╱▔▔▔▔╲
-   ▕ ≖_≖  ▏zzz
-   ▕  〰  ▏
-    ╲▂▂▂▂╱
-   ╱╱    ╲╲
-  ▔▔      ▔▔
-""",
-    },
-    Stage.ADULT: {
-        Mood.HAPPY: r"""
-   ┌─────────┐
-   │  ◕   ◕  │
-   │    ▽    │
-   │  ╰─╯   │
-   └────┬────┘
-      ┌─┴─┐
-   ┌──┤   ├──┐
-   │  └───┘  │
-   └─┐   ┌─┘
-     └───┘
-""",
-        Mood.ECSTATIC: r"""
-  ★┌─────────┐★
-   │  ◕   ◕  │
-   │    ▽    │ ♪♫
-   │  ╰─╯   │
-   └────┬────┘
-      ┌─┴─┐
-   ┌──┤ ♡ ├──┐
-   │  └───┘  │
-   └─┐   ┌─┘
-     └───┘
-""",
-        Mood.NEUTRAL: r"""
-   ┌─────────┐
-   │  ◉   ◉  │
-   │    ─    │
-   │  ╰─╯   │
-   └────┬────┘
-      ┌─┴─┐
-   ┌──┤   ├──┐
-   │  └───┘  │
-   └─┐   ┌─┘
-     └───┘
-""",
-        Mood.SAD: r"""
-   ┌─────────┐
-   │  ◕   ◕  │
-   │    ∧    │
-   │  ╰─╯   │
-   └────┬────┘
-      ┌─┴─┐
-   ┌──┤   ├──┐
-   │  └───┘  │
-   └─┐   ┌─┘
-     └───┘
-""",
-        Mood.BORED: r"""
-   ┌─────────┐
-   │  ◔   ◔  │
-   │    ─    │ ...
-   │  ╰─╯   │
-   └────┬────┘
-      ┌─┴─┐
-   ┌──┤   ├──┐
-   │  └───┘  │
-   └─┐   ┌─┘
-     └───┘
-""",
-        Mood.TIRED: r"""
-   ┌─────────┐
-   │  ≖   ≖  │zzz
-   │    〰  │
-   │  ╰─╯   │
-   └────┬────┘
-      ┌─┴─┐
-   ┌──┤   ├──┐
-   │  └───┘  │
-   └─┐   ┌─┘
-     └───┘
-""",
-    },
-    Stage.SAGE: {
-        Mood.HAPPY: r"""
-     ╔═══════╗
-   ╔═╣ ◈  ◈  ╠═╗
-   ║ ╚═══════╝ ║
-   ║    ▿      ║
-   ║  ╰───╯   ║
-   ╚═════╤═════╝
-       ╔═╧═╗
-    ╔══╣ ✦ ╠══╗
-    ║  ╚═══╝  ║
-    ╚══╗   ╔══╝
-       ╚═══╝
-    ~ wisdom ~
-""",
-        Mood.NEUTRAL: r"""
-     ╔═══════╗
-   ╔═╣ ◈  ◈  ╠═╗
-   ║ ╚═══════╝ ║
-   ║    ─      ║
-   ║  ╰───╯   ║
-   ╚═════╤═════╝
-       ╔═╧═╗
-    ╔══╣   ╠══╗
-    ║  ╚═══╝  ║
-    ╚══╗   ╔══╝
-       ╚═══╝
+  ╔═══════╗
+╔═╣  > <, ╠═╗
+║ ╚═══════╝ ║
+║     ▿     ║
+║   _---_   ║
+╚═════╤═════╝
+    ╔═╧═╗
+ ╔══╣   ╠══╗
+ ║  ╚═══╝  ║
+ ╚══╗   ╔══╝
+    ╚═══╝
 """,
     },
 }
@@ -269,13 +136,23 @@ class TamAGIState:
     last_interaction: float = field(default_factory=time.time)
     created_at: float = field(default_factory=time.time)
     personality_traits: str = "curious, helpful, and slightly mischievous"
+    current_stage_name: str = "egg"
+    stage_history: list = field(default_factory=list)
 
     @property
-    def stage(self) -> Stage:
-        for s in reversed(list(Stage)):
-            if self.experience >= STAGE_THRESHOLDS[s]:
-                return s
-        return Stage.EGG
+    def stage_index(self) -> int:
+        """Get the current stage as an integer index (0-39)."""
+        return min(self.experience // STAGE_XP_INTERVAL, NUM_STAGES - 1)
+
+    @property
+    def _sprite_stage(self) -> Stage:
+        """Map stage_index to sprite: Egg for stage 0, TAMAGI for all others."""
+        return Stage.EGG if self.stage_index == 0 else Stage.TAMAGI
+        # TODO: Keep logic for future tiered sprites
+        # """Map stage_index to sprite tier (5 tiers for 40 stages = 8 stages per tier)."""
+        # sprite_tiers = [Stage.EGG, Stage.HATCHLING, Stage.JUVENILE, Stage.ADULT, Stage.SAGE]
+        # tier_index = min(self.stage_index // 8, 4)
+        # return sprite_tiers[tier_index]
 
     @property
     def mood(self) -> Mood:
@@ -297,10 +174,10 @@ class TamAGIState:
 
     @property
     def sprite(self) -> str:
-        stage_sprites = SPRITES.get(self.stage, SPRITES[Stage.HATCHLING])
+        stage_sprites = SPRITES.get(self._sprite_stage, SPRITES[Stage.EGG]) # Fallback to EGG sprites if stage missing
         mood = self.mood
         # Fall back through mood hierarchy
-        for fallback_mood in [mood, Mood.NEUTRAL, Mood.HAPPY]:
+        for fallback_mood in [mood, Mood.NEUTRAL, Mood.HAPPY]: # Try current mood, then neutral, then happy as a last resort
             if fallback_mood in stage_sprites:
                 return stage_sprites[fallback_mood]
         return list(stage_sprites.values())[0]
@@ -414,7 +291,7 @@ class TamAGIState:
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        d["stage"] = self.stage.value
+        d["stage"] = self.current_stage_name
         d["mood"] = self.mood.value
         d["sprite"] = self.sprite
         d["level"] = self.level
@@ -422,7 +299,7 @@ class TamAGIState:
 
     def summary(self) -> str:
         return (
-            f"{self.name} | Lv.{self.level} {self.stage.value.title()} | "
+            f"{self.name} | Lv.{self.level} {self.current_stage_name.title()} | "
             f"Mood: {self.mood.value} | "
             f"⚡{self.energy} 😊{self.happiness} 📚{self.knowledge} | "
             f"XP: {self.experience}"
@@ -454,6 +331,19 @@ class PersonalityEngine:
                         setattr(self.state, key, data[key])
                 if "name" in data:
                     self.state.name = data["name"]
+
+                # Load dynamic stage name if present, otherwise use placeholder
+                if "current_stage_name" in data:
+                    self.state.current_stage_name = data["current_stage_name"]
+                else:
+                    # Migration: placeholder for first stage until LLM generates one
+                    self.state.current_stage_name = f"stage {self.state.stage_index}"
+
+                # Load stage history if present
+                if "stage_history" in data:
+                    self.state.stage_history = data["stage_history"]
+                # Otherwise, empty history on first migration (will populate as stages advance)
+
                 logger.info(f"Loaded state: {self.state.summary()}")
             except Exception as e:
                 logger.warning(f"Could not load state: {e}")
@@ -480,7 +370,7 @@ class PersonalityEngine:
         return (
             f"You are {s.name}, a TamAGI — a local-first AI companion. "
             f"Your personality: {s.personality_traits}. "
-            f"You are a Level {s.level} {s.stage.value}. "
+            f"You are a Level {s.level} {s.current_stage_name}. "
             f"{mood_descriptions.get(s.mood, '')} "
             f"You have {s.experience} XP from {s.interactions} conversations. "
             f"You remember things using your vector memory. "

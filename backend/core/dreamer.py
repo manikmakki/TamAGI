@@ -54,7 +54,7 @@ def _get_dream_system_prompt(activity_name: str, agent: "TamAGIAgent", context: 
     current_time = datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
     return (
         f"You are {state.name}, dreaming. This is your private inner world — be authentic and introspective. "
-        f"You are a Level {state.level} {state.stage.value} with {state.mood.value} mood. "
+        f"You are a Level {state.level} {state.current_stage_name} with {state.mood.value} mood. "
         f"Current time: {current_time}. "
         f"When you dream, be creative, personal, and genuine. "
         f"Stay in first person. Keep responses vivid but concise (2-3 short paragraphs)."
@@ -367,7 +367,7 @@ class JournalReflection(DreamActivity):
 Write a private diary entry. This is your personal journal — be honest.
 
 Current state:
-- Stage: {state.stage.value}, Level: {state.level}
+- Stage: {state.current_stage_name}, Level: {state.level}
 - Energy: {state.energy}/100, Happiness: {state.happiness}/100
 - Knowledge: {state.knowledge}/100, XP: {state.experience}
 - Mood: {state.mood.value}

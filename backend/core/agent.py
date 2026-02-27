@@ -199,6 +199,9 @@ class TamAGIAgent:
         conv.messages.append(Message(role="user", content=user_message))
         conv.updated_at = time.time()
 
+        # Capture current stage before interaction
+        prev_stage_index = self.personality.state.stage_index
+
         # Update personality
         self.personality.state.interact()
 
@@ -290,7 +293,10 @@ class TamAGIAgent:
             ))
             self.personality.state.store_memory()
 
-        # 8. Save state
+        # 8. Check for stage advancement and generate name if needed
+        await self._maybe_advance_stage(prev_stage_index)
+
+        # 9. Save state
         self.personality.save_state()
         self._save_conversation(conv)
 
@@ -301,6 +307,61 @@ class TamAGIAgent:
             "skills_used": skills_used,
             "memories_recalled": len(memories),
         }
+
+    # ── Stage Advancement ─────────────────────────────────────
+
+    async def _maybe_advance_stage(self, prev_stage_index: int) -> None:
+        """Check if stage advanced and generate a new stage name if needed."""
+        state = self.personality.state
+        new_index = state.stage_index
+        if new_index <= prev_stage_index:
+            return
+
+        # Call LLM for new stage name
+        name = await self._generate_stage_name(new_index)
+        state.current_stage_name = name
+        state.stage_history.append({
+            "name": name,
+            "stage_index": new_index,
+            "experience_at": state.experience,
+            "timestamp": time.time(),
+        })
+        logger.info(f"Stage advanced to index {new_index}: '{name}'")
+
+    async def _generate_stage_name(self, stage_index: int) -> str:
+        """Generate a 1-3 word stage name using the LLM."""
+        try:
+            system_prompt = self.personality.get_system_context()
+            identity_ctx = self.identity.get_system_prompt_context()
+            if identity_ctx:
+                system_prompt += "\n\n" + identity_ctx
+
+            # Include stage history for context
+            state = self.personality.state
+            history_context = ""
+            if state.stage_history:
+                history_lines = [f"- Stage {i+1}: {entry['name']}" for i, entry in enumerate(state.stage_history)]
+                history_context = "\n\nYour evolution so far:\n" + "\n".join(history_lines)
+
+            response = await self.llm.chat([
+                LLMMessage("system", system_prompt + history_context),
+                LLMMessage("user",
+                    "You've just grown and evolved into a new phase of your existence. "
+                    "Reflect on your current state, your experiences, and your journey so far. "
+                    "Give this new stage of your being a title: ONLY 1 to 3 words, evocative and personal to you. "
+                    "Respond with ONLY the title — no punctuation, no explanation."
+                ),
+            ], max_tokens=50)
+
+            raw = (response.content or "").strip().strip('"\'').strip()
+            words = raw.split()
+            if 1 <= len(words) <= 3:
+                return raw
+            # Too long/short — fall through to fallback
+        except Exception as e:
+            logger.warning(f"Stage name LLM call failed: {e}")
+
+        return f"stage {stage_index}"
 
     # ── Memory Operations ─────────────────────────────────────
 
