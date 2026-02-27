@@ -38,15 +38,11 @@ guardrails:
   allowed_read_paths:
     - "/workspace"
     - "/workspace/**"
-    - "/app/backend/skills/custom"
-    - "/app/backend/skills/custom/**"
 
   # Paths TamAGI can write to
   allowed_write_paths:
     - "/workspace"
     - "/workspace/**"
-    - "/app/backend/skills/custom"
-    - "/app/backend/skills/custom/**"
 
   # Shell commands TamAGI is allowed to execute
   exec_allowlist:

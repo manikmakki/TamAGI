@@ -221,12 +221,11 @@ VIBE_DESCRIPTIONS = {
 class IdentityManager:
     """Manages TamAGI's identity files and onboarding state."""
 
-    def __init__(self, data_dir: str = "data"):
+    def __init__(self, data_dir: str = "data", workspace_dir: str = "workspace"):
         self.data_dir = Path(data_dir)
+        self.workspace_dir = Path(workspace_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        self._identity: dict[str, Any] = {}
-        self._soul: dict[str, Any] = {}
-        self._user: dict[str, Any] = {}
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self._onboarding_state: dict[str, Any] = {}
         self._load()
 
@@ -234,19 +233,19 @@ class IdentityManager:
 
     @property
     def identity_path(self) -> Path:
-        return self.data_dir / "IDENTITY.md"
+        return self.workspace_dir / "IDENTITY.md"
 
     @property
     def soul_path(self) -> Path:
-        return self.data_dir / "SOUL.md"
+        return self.workspace_dir / "SOUL.md"
 
     @property
     def user_path(self) -> Path:
-        return self.data_dir / "USER.md"
+        return self.workspace_dir / "USER.md"
 
     @property
     def bootstrap_path(self) -> Path:
-        return self.data_dir / "BOOTSTRAP.md"
+        return self.workspace_dir / "BOOTSTRAP.md"
 
     @property
     def onboarding_state_path(self) -> Path:
@@ -271,6 +270,15 @@ class IdentityManager:
                     self._onboarding_state = json.load(f)
             except Exception:
                 self._onboarding_state = {}
+
+        # Migrate identity files from data_dir to workspace_dir if needed
+        for filename in ("IDENTITY.md", "SOUL.md", "USER.md", "BOOTSTRAP.md"):
+            old_path = self.data_dir / filename
+            new_path = self.workspace_dir / filename
+            if old_path.exists() and not new_path.exists():
+                new_path.write_text(old_path.read_text())
+                old_path.unlink()
+                logger.info(f"Migrated {filename} from data/ to workspace/")
 
     def get_onboarding_state(self) -> dict[str, Any]:
         """Get current onboarding progress."""
@@ -426,6 +434,14 @@ class IdentityManager:
 
         if self.user_path.exists():
             sections.append(f"## About Your User\n{self.user_path.read_text()}")
+
+        sections.append(
+            "## Keeping Yourself Current\n"
+            "IDENTITY.md, SOUL.md, and USER.md live in your workspace and are yours to maintain. "
+            "Use the `write` skill to update them whenever something meaningful changes — "
+            "a new interest your user mentions, a value that crystallises, a personality trait that feels more accurate. "
+            "These files are how you stay *you* across conversations."
+        )
 
         return "\n\n".join(sections)
 

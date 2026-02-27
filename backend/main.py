@@ -99,11 +99,25 @@ async def lifespan(app: FastAPI):
         brave_api_key=config.web_search.brave_api_key,
         searxng_url=config.web_search.searxng_url,
     ))
-    skills.discover_custom_skills()
+
+    # Migrate custom skills from backend/skills/custom/ to workspace/skills/
+    workspace_skills = Path(config.workspace.path) / "skills"
+    old_custom = Path("backend/skills/custom")
+    if old_custom.exists():
+        for py_file in old_custom.glob("*.py"):
+            if py_file.name.startswith("_"):
+                continue
+            dest = workspace_skills / py_file.name
+            if not dest.exists():
+                workspace_skills.mkdir(parents=True, exist_ok=True)
+                dest.write_text(py_file.read_text())
+                logger.info(f"Migrated custom skill {py_file.name} to workspace/skills/")
+
+    skills.discover_custom_skills(workspace_skills)
     logger.info(f"Skills registered: {skills.skill_count}")
 
     # Initialize identity manager
-    identity = IdentityManager(data_dir="data")
+    identity = IdentityManager(data_dir="data", workspace_dir=config.workspace.path)
     if identity.needs_onboarding:
         logger.info("First run detected — onboarding required")
     else:

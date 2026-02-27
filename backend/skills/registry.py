@@ -3,7 +3,7 @@ Skill Registry — Discovery, registration, and management of skills.
 
 Auto-discovers skills from:
   1. Built-in skills (read, write, exec)
-  2. Custom skills in backend/skills/custom/
+  2. Custom skills in workspace/skills/
   3. Dynamically registered skills
 """
 
@@ -25,6 +25,7 @@ class SkillRegistry:
 
     def __init__(self):
         self._skills: dict[str, Skill] = {}
+        self._custom_dir: Path | None = None
 
     def register(self, skill: Skill) -> None:
         """Register a skill instance."""
@@ -80,12 +81,15 @@ class SkillRegistry:
             logger.error(f"Skill execution error ({name}): {e}", exc_info=True)
             return SkillResult(success=False, error=str(e))
 
-    def discover_custom_skills(self, custom_dir: str | Path = "backend/skills/custom") -> int:
+    def discover_custom_skills(self, custom_dir: str | Path | None = None) -> int:
         """
         Auto-discover and register custom skills from a directory.
+        If custom_dir is provided, it is stored for subsequent reload calls.
         Returns the number of skills discovered.
         """
-        custom_path = Path(custom_dir)
+        if custom_dir is not None:
+            self._custom_dir = Path(custom_dir)
+        custom_path = self._custom_dir or Path("workspace/skills")
         if not custom_path.exists():
             custom_path.mkdir(parents=True, exist_ok=True)
             return 0
