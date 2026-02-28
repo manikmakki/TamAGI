@@ -17,6 +17,11 @@ class LLMConfig(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 2048
     timeout: int = 120
+    # Ollama-specific: sets the KV-cache / context window size (num_ctx).
+    # Without this, Ollama uses the model's compiled default which can vary
+    # and may silently truncate context. Set to match your model's capability.
+    # None = leave Ollama to use its default.
+    num_ctx: int | None = None
 
 
 class TamagiIdentity(BaseModel):
@@ -73,6 +78,12 @@ class HistoryConfig(BaseModel):
     max_messages_per_conversation: int = 200
     persist: bool = True
     persist_path: str = "./data/history"
+    # When the total character count of history messages exceeds this threshold,
+    # the oldest messages are archived into ChromaDB and removed from the active
+    # context. They remain searchable via RAG recall.
+    # Set to 0 to disable compression entirely.
+    # Rough guide: 32000 chars ≈ 8k tokens at ~4 chars/token.
+    context_compress_threshold: int = 32000
 
 
 class WebSearchConfig(BaseModel):
@@ -98,6 +109,12 @@ class AutonomyConfig(BaseModel):
     )
 
 
+class AgentConfig(BaseModel):
+    max_tool_rounds: int = 5      # Max tool-call loops per user message
+    llm_retry_attempts: int = 1   # Retries on RemoteProtocolError / ConnectError
+    llm_retry_delay: float = 2.0  # Seconds between retries
+
+
 class TamAGIConfig(BaseModel):
     """Root configuration model."""
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -109,6 +126,7 @@ class TamAGIConfig(BaseModel):
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
     autonomy: AutonomyConfig = Field(default_factory=AutonomyConfig)
+    agent: AgentConfig = Field(default_factory=AgentConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> TamAGIConfig:

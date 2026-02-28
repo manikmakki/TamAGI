@@ -7,6 +7,7 @@ llama.cpp server, and any OpenAI-compatible endpoint.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, AsyncIterator
@@ -109,6 +110,13 @@ class LLMClient:
             payload["tools"] = tools
             payload["tool_choice"] = kwargs.get("tool_choice", "auto")
 
+        # Pass num_ctx to Ollama if configured. This tells Ollama exactly how
+        # large a KV-cache to allocate. Without it, Ollama uses the model's
+        # built-in default (often 2048 or 4096), which may silently truncate
+        # long conversations. Harmless/ignored by non-Ollama backends.
+        if self.config.num_ctx is not None:
+            payload["num_ctx"] = self.config.num_ctx
+
         return payload
 
     async def chat(
@@ -135,6 +143,26 @@ class LLMClient:
             raise
 
         return self._parse_response(data)
+
+    async def chat_with_retry(
+        self,
+        messages: list[LLMMessage],
+        tools: list[dict[str, Any]] | None = None,
+        attempts: int = 1,
+        delay: float = 2.0,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """chat() with automatic retry on server disconnect errors."""
+        last_exc: Exception | None = None
+        for i in range(attempts + 1):
+            try:
+                return await self.chat(messages, tools=tools, **kwargs)
+            except (httpx.RemoteProtocolError, httpx.ConnectError) as e:
+                last_exc = e
+                if i < attempts:
+                    logger.warning(f"LLM disconnected, retrying ({i + 1}/{attempts}): {e}")
+                    await asyncio.sleep(delay)
+        raise last_exc  # type: ignore[misc]
 
     async def chat_stream(
         self,

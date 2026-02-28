@@ -18,7 +18,9 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Coroutine
+
+import httpx
 
 from backend.config import TamAGIConfig
 from backend.core.llm import LLMClient, LLMMessage, LLMResponse
@@ -28,8 +30,6 @@ from backend.core.identity import IdentityManager
 from backend.skills.registry import SkillRegistry
 
 logger = logging.getLogger("tamagi.agent")
-
-MAX_TOOL_ROUNDS = 5  # Max tool-call loops per user message
 
 
 def parse_text_tool_calls(content: str) -> list:
@@ -176,6 +176,7 @@ class TamAGIAgent:
         conversation_id: str | None = None,
         image_data: str | None = None,
         image_media_type: str = "image/jpeg",
+        event_callback: Callable[[dict], Coroutine] | None = None,
     ) -> dict[str, Any]:
         """
         Process a user message and return TamAGI's response.
@@ -241,9 +242,70 @@ class TamAGIAgent:
             system_prompt += memory_context
         llm_messages = [LLMMessage("system", system_prompt)]
 
-        # Add conversation history (last N messages, excluding the current user turn)
-        history_window = conv.messages[-(self.config.history.max_messages_per_conversation):-1]
-        for msg in history_window:
+        # ── Build conversation history ─────────────────────────────────────────
+        # Start from the last N messages, excluding the current (just-appended) turn.
+        history_messages = list(
+            conv.messages[-(self.config.history.max_messages_per_conversation):-1]
+        )
+
+        # Context compression: if the total character count of the history exceeds
+        # the configured threshold, archive the oldest messages into ChromaDB and
+        # remove them from the active context window.
+        #
+        # Archived messages are NOT lost — they're embedded and stored in the
+        # vector DB, so memory.recall() can still surface relevant content from
+        # them when the user asks about something from earlier in the conversation.
+        #
+        # Set context_compress_threshold: 0 in config to disable this entirely.
+        archived_count = 0
+        threshold = self.config.history.context_compress_threshold
+        if threshold > 0:
+            total_chars = sum(len(str(m.content)) for m in history_messages)
+            if total_chars > threshold:
+                to_archive: list[Message] = []
+                chars_removed = 0
+                excess = total_chars - threshold
+
+                # Pop oldest messages until we've freed enough character budget.
+                while history_messages and chars_removed < excess:
+                    m = history_messages.pop(0)
+                    to_archive.append(m)
+                    chars_removed += len(str(m.content))
+
+                if to_archive:
+                    # Concatenate the archived messages into a single transcript
+                    # and store it in ChromaDB. The embedding allows semantic
+                    # retrieval later — if the user references something from
+                    # this segment, recall() will pull it back into context.
+                    transcript = "\n".join(
+                        f"{m.role}: {m.content}" for m in to_archive
+                    )
+                    await self.memory.store(MemoryEntry(
+                        content=transcript,
+                        memory_type=MemoryType.CONVERSATION,
+                        metadata={
+                            "conversation_id": conv.id,
+                            "archived_count": len(to_archive),
+                            "chars_archived": chars_removed,
+                        },
+                    ))
+                    archived_count = len(to_archive)
+                    logger.info(
+                        f"Context compressed: archived {archived_count} messages "
+                        f"({chars_removed} chars) to memory store"
+                    )
+
+        # If compression ran, prepend a brief system note so the model knows the
+        # context window was trimmed and earlier content is still in memory.
+        if archived_count:
+            llm_messages.append(LLMMessage(
+                "system",
+                f"[Note: {archived_count} earlier messages from this conversation "
+                f"were archived to long-term memory to fit the context window. "
+                f"They remain searchable via memory recall.]",
+            ))
+
+        for msg in history_messages:
             llm_messages.append(LLMMessage(msg.role, msg.content))
         # Append current user message with image block if provided
         llm_messages.append(LLMMessage("user", user_llm_content))
@@ -253,8 +315,21 @@ class TamAGIAgent:
 
         # 4. LLM loop with tool calling
         skills_used = []
-        for round_num in range(MAX_TOOL_ROUNDS):
-            response = await self.llm.chat(llm_messages, tools=tools)
+        llm_error: str | None = None
+        for round_num in range(self.config.agent.max_tool_rounds):
+            try:
+                response = await self.llm.chat_with_retry(
+                    llm_messages,
+                    tools=tools,
+                    attempts=self.config.agent.llm_retry_attempts,
+                    delay=self.config.agent.llm_retry_delay,
+                )
+            except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.TimeoutException) as e:
+                logger.error(f"LLM call failed after retries on round {round_num + 1}: {e}")
+                if event_callback:
+                    await event_callback({"type": "error", "message": "LLM connection lost"})
+                llm_error = "I ran into a connection issue while working on your request. Please try again."
+                break
 
             # Try to parse text tool calls if structured ones are missing
             if not response.has_tool_calls and response.content:
@@ -268,8 +343,18 @@ class TamAGIAgent:
                 logger.info(f"Tool call: {tc.name}({tc.arguments})")
                 skills_used.append(tc.name)
 
+                if event_callback:
+                    await event_callback({"type": "tool_start", "name": tc.name, "round": round_num + 1})
+
                 result = await self.skills.execute(name=tc.name, **tc.arguments)
                 self.personality.state.use_skill()
+
+                if event_callback:
+                    await event_callback({
+                        "type": "tool_result",
+                        "name": tc.name,
+                        "output": str(result.output)[:500] if hasattr(result, "output") else str(result.to_dict())[:500],
+                    })
 
                 # Check if energy dropped critically low; trigger dream recovery if needed
                 if self.personality.state.check_low_energy(agent=self):
@@ -289,7 +374,7 @@ class TamAGIAgent:
                 ))
 
         # 5. Extract final response
-        final_text = response.content or "..."
+        final_text = llm_error or response.content or "..."
 
         # 6. Record assistant message
         conv.messages.append(Message(

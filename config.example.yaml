@@ -11,6 +11,11 @@ llm:
   temperature: 0.15                         # Lower = more focused/responsive, Higher = more creative/verbose. Match Model's card on Hugging Face for best results.
   max_tokens: 2048                          # Max tokens in LLM response. Adjust based on your model's context window and needs.             
   timeout: 180                              # Request timeout in seconds
+  # Ollama context window size (num_ctx). Without this, Ollama uses the model's
+  # compiled default which varies and may silently truncate long conversations.
+  # Check your model page for the supported context length. Ministral-3:14b
+  # supports up to 128k, but a smaller value reduces VRAM pressure.
+  num_ctx: 32768
 
 # Server Configuration
 server:
@@ -78,6 +83,11 @@ history:
   # Persist to disk
   persist: true
   persist_path: "./data/history"
+  # When the total chars of history messages exceeds this, oldest messages are
+  # archived to ChromaDB and removed from the active context. They remain
+  # semantically searchable via memory recall. Set to 0 to disable.
+  # ~96k chars ≈ 24k tokens at 4 chars/token — well under the 32768 num_ctx above.
+  context_compress_threshold: 96000
 
 # ── Web Search Configuration ──────────────────
 # TamAGI can search the web using multiple providers.
@@ -92,6 +102,15 @@ web_search:
 
   # SearXNG base URL (only needed if provider is "searxng")
   # searxng_url: "http://localhost:8080"
+
+# ── Agent / Tool-Call Behavior ───────────────
+agent:
+  # Max tool-call loops per user message (fewer = less context growth = fewer timeouts)
+  max_tool_rounds: 3
+  # Retries on server disconnect (RemoteProtocolError / ConnectError)
+  llm_retry_attempts: 1
+  # Seconds to wait between retries
+  llm_retry_delay: 2.0
 
 # ── Autonomy / Dream Engine ──────────────────
 # While idle, TamAGI dreams, explores, experiments, and journals.

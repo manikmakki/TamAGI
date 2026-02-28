@@ -191,9 +191,13 @@ async def websocket_chat(websocket: WebSocket):
                 # Send typing indicator
                 await websocket.send_json({"type": "typing", "status": True})
 
+                async def send_event(event: dict) -> None:
+                    await websocket.send_json(event)
+
                 result = await agent.chat(
                     user_message=user_message,
                     conversation_id=conv_id,
+                    event_callback=send_event,
                 )
 
                 await websocket.send_json({

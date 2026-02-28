@@ -302,6 +302,9 @@
     .msg .time { font-size: 9px; color: var(--text-muted); margin-top: 3px; padding: 0 4px; }
     .msg.user .time { text-align: right; }
     .skill-tag { display: inline-block; padding: 1px 5px; background: var(--bg-elevated); border-radius: 3px; font-size: 8px; color: var(--accent-tertiary); margin-left: 3px; }
+    .skill-tag.running { color: var(--text-muted); animation: tag-pulse 1s ease-in-out infinite; }
+    .skill-tag[title] { cursor: help; border-bottom: 1px dotted var(--accent-tertiary); }
+    @keyframes tag-pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
 
     .typing {
       align-self: flex-start;
@@ -580,7 +583,7 @@
     <div class="chat-messages" id="chat-messages">
       <div class="welcome-msg" id="welcome"><strong>Say hello to start a conversation!</strong><br>I'll remember what we talk about and grow from our interactions.</div>
     </div>
-    <div class="typing" id="typing"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div>
+    <div class="typing" id="typing"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div><div id="live-tags" style="display:inline-flex;gap:2px;margin-left:4px;flex-wrap:wrap;align-items:center;"></div></div>
     <input type="file" id="file-input" style="display:none" onchange="handleFileSelect(this)">
     <div class="attachment-chip" id="attach-chip">
       <span id="chip-icon">📄</span>
@@ -596,7 +599,48 @@
 </div>
 
 <script>
-const API=window.location.origin;let convId=null,loading=false;
+const API=window.location.origin;
+const WS_URL=API.replace(/^http/,'ws')+'/api/ws';
+let convId=null,loading=false;
+let ws=null,wsReady=false;
+let liveToolOutputs={};
+
+function connectWS(){
+  ws=new WebSocket(WS_URL);
+  ws.onopen=()=>{wsReady=true;setConnected(true)};
+  ws.onclose=()=>{wsReady=false;setConnected(false);setTimeout(connectWS,3000)};
+  ws.onerror=()=>{wsReady=false};
+  ws.onmessage=(e)=>handleWsEvent(JSON.parse(e.data));
+}
+function handleWsEvent(ev){
+  if(ev.type==='tool_start'){
+    const lt=document.getElementById('live-tags');
+    const span=document.createElement('span');
+    span.className='skill-tag running';
+    span.dataset.skill=ev.name;
+    span.textContent='⚙ '+ev.name;
+    lt.appendChild(span);
+    document.getElementById('chat-messages').scrollTop=99999;
+  }else if(ev.type==='tool_result'){
+    if(!liveToolOutputs[ev.name])liveToolOutputs[ev.name]=[];
+    liveToolOutputs[ev.name].push(ev.output||'');
+    const lt=document.getElementById('live-tags');
+    const span=[...lt.querySelectorAll('.skill-tag.running[data-skill="'+ev.name+'"]')].pop();
+    if(span){span.classList.remove('running');span.title=ev.output||'';}
+  }else if(ev.type==='message'){
+    setTyping(false);clearLiveTags();
+    convId=ev.conversation_id;updateState(ev.state);
+    const skills=(ev.skills_used||[]).map(name=>({name,output:(liveToolOutputs[name]||[]).join('\n')}));
+    liveToolOutputs={};
+    addMsg('assistant',ev.response,skills);
+    loadConversations();loading=false;document.getElementById('send-btn').disabled=false;
+  }else if(ev.type==='error'){
+    setTyping(false);clearLiveTags();
+    addMsg('assistant','\u26A0 '+(ev.message||'Unknown error'));
+    loading=false;document.getElementById('send-btn').disabled=false;
+  }
+}
+function clearLiveTags(){document.getElementById('live-tags').innerHTML=''}
 
 async function api(p,o={}){const r=await fetch(`${API}/api${p}`,{headers:{'Content-Type':'application/json'},...o});if(!r.ok)throw new Error(`${r.status}: ${await r.text()}`);return r.json()}
 
@@ -644,14 +688,26 @@ async function sendMessage(){
         body.message=`${body.message} [file uploaded to workspace: ${up.path}]`;
       }
     }
-    const res=await api('/chat',{method:'POST',body:JSON.stringify(body)});
-    setTyping(false);convId=res.conversation_id;updateState(res.state);
-    addMsg('assistant',res.response,res.skills_used);loadConversations();setConnected(true);
-  }catch(e){setTyping(false);addMsg('assistant',`\u26A0 Error: ${e.message}. Is the backend running?`);setConnected(false)}
-  finally{loading=false;document.getElementById('send-btn').disabled=false}
+    if(!wsReady){setTyping(false);addMsg('assistant','\u26A0 Not connected. Retrying...');loading=false;document.getElementById('send-btn').disabled=false;return;}
+    liveToolOutputs={};
+    ws.send(JSON.stringify(body));
+    // Response handled by handleWsEvent
+  }catch(e){setTyping(false);addMsg('assistant',`\u26A0 Error: ${e.message}. Is the backend running?`);loading=false;document.getElementById('send-btn').disabled=false;}
 }
 
-function addMsg(role,content,skills=[]){const area=document.getElementById('chat-messages');const d=document.createElement('div');d.className=`msg ${role}`;const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const sk=(skills||[]).map(s=>`<span class="skill-tag">\u2699 ${s}</span>`).join('');const rendered=role==='assistant'?renderMd(content):esc(content);d.innerHTML=`<div class="bubble">${rendered}</div><div class="time">${t}${sk}</div>`;area.appendChild(d);area.scrollTop=area.scrollHeight}
+function addMsg(role,content,skills=[]){
+  const area=document.getElementById('chat-messages');
+  const d=document.createElement('div');d.className=`msg ${role}`;
+  const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const sk=(skills||[]).map(s=>{
+    const name=typeof s==='string'?s:s.name;
+    const tip=typeof s==='string'?'':(s.output||'');
+    return`<span class="skill-tag"${tip?` title="${esc(tip)}"`:''}>&#x2699; ${esc(name)}</span>`;
+  }).join('');
+  const rendered=role==='assistant'?renderMd(content):esc(content);
+  d.innerHTML=`<div class="bubble">${rendered}</div><div class="time">${t}${sk}</div>`;
+  area.appendChild(d);area.scrollTop=area.scrollHeight
+}
 function setTyping(v){document.getElementById('typing').classList.toggle('on',v)}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 function renderMd(s){if(typeof marked!=='undefined'){try{marked.setOptions({breaks:true,gfm:true});return marked.parse(s||'')}catch(e){return esc(s)}}return esc(s).replace(/\n/g,'<br>')}
@@ -725,7 +781,7 @@ async function obSkipAll(){obSteps.forEach(s=>{if(s.field&&s.default!==undefined
 async function obFinalize(){try{for(const s of obSteps){if(s.field&&obR[s.field]!==undefined)await api('/onboarding/step',{method:'POST',body:JSON.stringify({step_id:s.id,field:s.field,value:obR[s.field]})})}await api('/onboarding/complete',{method:'POST'})}catch(e){console.error(e)}document.getElementById('onboarding').classList.add('hidden');loadState();loadConversations();document.getElementById('input').focus()}
 
 // ═══ INIT ═══
-document.addEventListener('DOMContentLoaded',async()=>{const inp=document.getElementById('input');inp.addEventListener('input',()=>autoResize(inp));inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});await loadState();loadConversations();await checkOnboarding();setInterval(loadState,30000)});
+document.addEventListener('DOMContentLoaded',async()=>{const inp=document.getElementById('input');inp.addEventListener('input',()=>autoResize(inp));inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});connectWS();await loadState();loadConversations();await checkOnboarding();setInterval(loadState,30000)});
 async function loadState(){try{const d=await api('/state');updateState(d.state);setConnected(true);try{const dr=await api('/dreams/state');document.getElementById('dream-ind').classList.toggle('on',dr.dreaming===true)}catch{}}catch{setConnected(false)}}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
