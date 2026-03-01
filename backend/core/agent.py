@@ -330,6 +330,15 @@ class TamAGIAgent:
                     await event_callback({"type": "error", "message": "LLM connection lost"})
                 llm_error = "I ran into a connection issue while working on your request. Please try again."
                 break
+            except httpx.HTTPStatusError as e:
+                # The LLM backend returned a 4xx/5xx — often caused by a malformed
+                # context (e.g. oversized payload, bad tool-result structure).
+                # Log it and surface a graceful message rather than crashing.
+                logger.error(f"LLM returned HTTP {e.response.status_code} on round {round_num + 1}: {e.response.text[:300]}")
+                if event_callback:
+                    await event_callback({"type": "error", "message": f"LLM error {e.response.status_code}"})
+                llm_error = "I hit an error processing that request. The context may be too complex — please try rephrasing or starting a new conversation."
+                break
 
             # Try to parse text tool calls if structured ones are missing
             if not response.has_tool_calls and response.content:
@@ -338,7 +347,13 @@ class TamAGIAgent:
             if not response.tool_calls:
                 break
 
-            # Execute each tool call
+            # The assistant message for this round is appended ONCE before the
+            # tool-result loop. Appending it inside the loop would duplicate it
+            # for every tool call in the same round, which corrupts the context
+            # and causes Ollama to return 500 on the next request.
+            llm_messages.append(LLMMessage("assistant", response.content or ""))
+
+            # Execute each tool call and append its result
             for tc in response.tool_calls:
                 logger.info(f"Tool call: {tc.name}({tc.arguments})")
                 skills_used.append(tc.name)
@@ -360,13 +375,7 @@ class TamAGIAgent:
                 if self.personality.state.check_low_energy(agent=self):
                     logger.info(f"Energy critical ({self.personality.state.energy}%), dream recovery triggered")
 
-                # Add assistant message with tool call
-                llm_messages.append(LLMMessage(
-                    "assistant",
-                    response.content or "",
-                ))
-
-                # Add tool result
+                # Append the tool result so the LLM sees what the skill returned
                 llm_messages.append(LLMMessage(
                     "tool",
                     json.dumps(result.to_dict()),

@@ -173,6 +173,30 @@
     .stat-fill.happiness { background: var(--accent-secondary); }
     .stat-fill.knowledge { background: var(--accent-tertiary); }
 
+    /* Floating delta indicators (+N / -N) that appear when a stat changes */
+    .stat-delta {
+      position: absolute;
+      right: 2px;
+      top: -2px;
+      font-size: 9px;
+      font-weight: 700;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 10;
+      animation: stat-float-up 2.8s ease-out forwards;
+    }
+    .stat-delta.down { animation-name: stat-float-down; }
+    @keyframes stat-float-up {
+      0%   { opacity: 1; transform: translateY(0); }
+      60%  { opacity: 1; transform: translateY(-10px); }
+      100% { opacity: 0; transform: translateY(-20px); }
+    }
+    @keyframes stat-float-down {
+      0%   { opacity: 1; transform: translateY(0); }
+      60%  { opacity: 1; transform: translateY(5px); }
+      100% { opacity: 0; transform: translateY(10px); }
+    }
+
     /* Top bar overlay */
     .top-bar {
       position: absolute;
@@ -661,7 +685,38 @@ async function logout(){
 }
 
 function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-mood',(s.mood||'').toUpperCase());setText('p-xp',s.experience||0);const mc={ecstatic:'#00ff9d',happy:'#00cc7d',content:'#6b8aff',neutral:'#8888aa',bored:'#ffaa00',sad:'#ff6b9d',tired:'#555570'};const md=document.getElementById('p-mood-dot');if(md)md.style.color=mc[s.mood]||'#8888aa';if(s.sprite)document.getElementById('sprite-box').textContent=s.sprite;setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-energy',s.energy);setBar('s-happy',s.happiness);setBar('s-know',s.knowledge)}
-function setBar(p,v){v=Math.max(0,Math.min(100,v||0));const f=document.getElementById(p+'-f'),n=document.getElementById(p+'-v');if(f)f.style.width=v+'%';if(n)n.textContent=v}
+// Previous stat values — null on first load so the initial updateState() call
+// establishes a baseline without spawning spurious indicators.
+const _prevStat={};
+
+function setBar(p,v){
+  v=Math.max(0,Math.min(100,v||0));
+  const f=document.getElementById(p+'-f'),n=document.getElementById(p+'-v');
+  if(f)f.style.width=v+'%';
+  if(n)n.textContent=v;
+
+  // Spawn a floating delta indicator when the value changes
+  const prev=_prevStat[p];
+  _prevStat[p]=v;
+  if(prev==null||v===prev)return; // skip on first call or no change
+
+  const delta=v-prev;
+  const statItem=f?.closest('.stat-item');
+  if(!statItem)return;
+
+  // Match the indicator colour to the stat bar colour
+  const colourMap={energy:'var(--warning)',happiness:'var(--accent-secondary)',knowledge:'var(--accent-tertiary)'};
+  const fillClass=[...(f.classList||[])].find(c=>colourMap[c]);
+
+  const el=document.createElement('span');
+  el.className='stat-delta'+(delta<0?' down':'');
+  el.textContent=(delta>0?'+':'')+delta;
+  el.style.color=colourMap[fillClass]||'var(--text-secondary)';
+  statItem.appendChild(el);
+
+  // Remove the element once its CSS animation ends to keep the DOM clean
+  el.addEventListener('animationend',()=>el.remove());
+}
 function setText(id,t){const e=document.getElementById(id);if(e)e.textContent=t}
 function setConnected(c){const d=document.getElementById('conn-dot');d.classList.toggle('on',c);d.title=c?'Connected':'Disconnected'}
 
@@ -711,10 +766,11 @@ async function sendMessage(){
   }catch(e){setTyping(false);addMsg('assistant',`\u26A0 Error: ${e.message}. Is the backend running?`);loading=false;document.getElementById('send-btn').disabled=false;}
 }
 
-function addMsg(role,content,skills=[]){
+function addMsg(role,content,skills=[],ts=null){
   const area=document.getElementById('chat-messages');
   const d=document.createElement('div');d.className=`msg ${role}`;
-  const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  // Use the stored unix timestamp when replaying history, current time for live messages
+  const t=new Date(ts?ts*1000:Date.now()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   const sk=(skills||[]).map(s=>{
     const name=typeof s==='string'?s:s.name;
     const tip=typeof s==='string'?'':(s.output||'');
@@ -732,7 +788,7 @@ document.addEventListener('click',e=>{if(!e.target.closest('.stat-item'))documen
 function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px'}
 
 async function loadConversations(){try{const d=await api('/conversations');const list=document.getElementById('conv-list');list.innerHTML='';(d.conversations||[]).forEach(c=>{const el=document.createElement('div');el.className=`conv-item${c.id===convId?' active':''}`;el.onclick=()=>openConversation(c.id);const dt=new Date(c.updated_at*1000).toLocaleDateString([],{month:'short',day:'numeric'});el.innerHTML=`<div class="ci-title">${esc(c.title)}</div><div class="ci-meta">${c.message_count} msgs \u00b7 ${dt}</div>`;list.appendChild(el)})}catch{}}
-async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>addMsg(m.role,m.content,m.metadata?.skills_used));loadConversations();closeDrawer()}catch(e){console.error(e)}}
+async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp));loadConversations();closeDrawer()}catch(e){console.error(e)}}
 function newConversation(){convId=null;document.getElementById('chat-messages').innerHTML=`<div class="welcome-msg" id="welcome"><strong>New conversation!</strong><br>What shall we explore?</div>`;loadConversations();closeDrawer();document.getElementById('input').focus()}
 
 function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('drawer-overlay').classList.add('open');loadDreamLog()}
