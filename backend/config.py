@@ -115,6 +115,16 @@ class AgentConfig(BaseModel):
     llm_retry_delay: float = 2.0  # Seconds between retries
 
 
+class AuthConfig(BaseModel):
+    # Set enabled: true in config.yaml to enforce login.
+    # Zero impact when false — all routes remain open as before.
+    enabled: bool = False
+    # PBKDF2-HMAC-SHA256 hash produced by hash_password() in backend/auth.py,
+    # or written by POST /api/auth/setup on first boot.
+    # Empty string means no password is set yet (setup endpoint is open).
+    password_hash: str = ""
+
+
 class TamAGIConfig(BaseModel):
     """Root configuration model."""
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -127,6 +137,7 @@ class TamAGIConfig(BaseModel):
     web_search: WebSearchConfig = Field(default_factory=WebSearchConfig)
     autonomy: AutonomyConfig = Field(default_factory=AutonomyConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> TamAGIConfig:

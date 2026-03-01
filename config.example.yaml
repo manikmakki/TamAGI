@@ -22,35 +22,32 @@ server:
   host: "0.0.0.0"
   port: 7741
   workers: 1
+auth:
+  enabled: false                            # False for development/internal use
+  password_hash: ""                         # Written by /api/auth/setup — do not edit manually
 
 # Memory Configuration
 memory:
-  backend: "chromadb"                      # chromadb | elasticsearch
+  backend: "chromadb"                       # chromadb | elasticsearch (in the future)
   chromadb:
+    retrieval_limit: 5                      # How many memories to retrieve for context
+    relevance_threshold: 0.5                # Minimum relevance score (0.0 - 1.0)
     persist_directory: "./data/chromadb"
     collection_name: "tamagi_memory"
-  elasticsearch:
-    url: "http://localhost:9200"
-    index: "tamagi_memory"
-  # How many memories to retrieve for context
-  retrieval_limit: 5
-  # Minimum relevance score (0.0 - 1.0)
-  relevance_threshold: 0.5
+  # elasticsearch:
+  #   url: "http://localhost:9200"
+  #   index: "tamagi_memory"
+
 
 # Guardrails & Permissions
 guardrails:
-  # Paths TamAGI can read from
-  allowed_read_paths:
+  allowed_read_paths:                       # Paths TamAGI can read from
     - "/workspace"
     - "/workspace/**"
-
-  # Paths TamAGI can write to
-  allowed_write_paths:
+  allowed_write_paths:                      # Paths TamAGI can write to
     - "/workspace"
     - "/workspace/**"
-
-  # Shell commands TamAGI is allowed to execute
-  exec_allowlist:
+  exec_allowlist:                           # Shell commands TamAGI is allowed to execute
     - "ls"
     - "cat"
     - "head"

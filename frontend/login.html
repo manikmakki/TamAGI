@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#00ff9d">
+  <title>TamAGI — Login</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-deep: #06060c;
+      --bg-primary: #0a0a14;
+      --bg-surface: #10101f;
+      --bg-elevated: #16162a;
+      --border: #1e1e3a;
+      --border-bright: #2a2a50;
+      --text-primary: #e0e0f0;
+      --text-secondary: #8888aa;
+      --text-muted: #555570;
+      --accent: #00ff9d;
+      --accent-dim: #00cc7d;
+      --accent-glow: rgba(0, 255, 157, 0.15);
+      --error: #ff4466;
+      --font-mono: 'JetBrains Mono', 'Cascadia Code', monospace;
+      --font-display: 'Space Mono', monospace;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: var(--font-mono);
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Subtle scanline texture matching main UI */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.03) 2px,
+        rgba(0,0,0,0.03) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    .page {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 380px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 32px 28px 28px;
+    }
+
+    .logo {
+      font-family: var(--font-display);
+      font-size: 22px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      margin-bottom: 28px;
+    }
+
+    .mode-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    label {
+      display: block;
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    input[type="password"] {
+      width: 100%;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      padding: 10px 12px;
+      outline: none;
+      margin-bottom: 18px;
+      transition: border-color 0.15s;
+    }
+
+    input[type="password"]:focus {
+      border-color: var(--accent);
+    }
+
+    /* Confirm field — hidden in login mode, shown in setup mode */
+    #confirm-row { display: none; }
+    .setup-mode #confirm-row { display: block; }
+
+    button {
+      width: 100%;
+      background: var(--accent);
+      color: #000;
+      font-family: var(--font-display);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 11px;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    button:hover { background: var(--accent-dim); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error {
+      font-size: 11px;
+      color: var(--error);
+      margin-top: 12px;
+      min-height: 16px;
+      text-align: center;
+    }
+
+    .hint {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 16px;
+      text-align: center;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="card" id="card">
+      <div class="logo">TAMAGI</div>
+      <div class="subtitle">LOCAL-FIRST AI COMPANION</div>
+
+      <!-- Mode label swaps between "Sign in" and "Set password" -->
+      <div class="mode-label" id="mode-label">Sign in to continue</div>
+
+      <form id="login-form" onsubmit="return false;">
+        <label for="password">Password</label>
+        <input type="password" id="password" autocomplete="current-password" autofocus placeholder="••••••••">
+
+        <!-- Only shown during first-time setup -->
+        <div id="confirm-row">
+          <label for="confirm">Confirm password</label>
+          <input type="password" id="confirm" autocomplete="new-password" placeholder="••••••••">
+        </div>
+
+        <button id="submit-btn" type="submit">SIGN IN</button>
+        <div class="error" id="error-msg"></div>
+        <div class="hint" id="hint"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Determine login vs first-time setup mode from /api/auth/status
+    let setupMode = false;
+
+    async function init() {
+      try {
+        const res = await fetch('/api/auth/status');
+        const data = await res.json();
+
+        // Already authenticated (e.g. session still valid after page refresh)
+        if (data.authenticated) {
+          window.location.replace('/');
+          return;
+        }
+
+        if (!data.has_password) {
+          // No password set yet — switch UI to setup mode
+          setupMode = true;
+          document.getElementById('card').classList.add('setup-mode');
+          document.getElementById('mode-label').textContent = 'Set your password to continue';
+          document.getElementById('submit-btn').textContent = 'SET PASSWORD';
+          document.getElementById('hint').textContent =
+            'This is a one-time setup. Your password will be stored as a salted hash.';
+        }
+      } catch {
+        document.getElementById('error-msg').textContent = 'Cannot reach server.';
+      }
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async () => {
+      const password = document.getElementById('password').value;
+      const btn = document.getElementById('submit-btn');
+      const errEl = document.getElementById('error-msg');
+      errEl.textContent = '';
+
+      if (!password) {
+        errEl.textContent = 'Enter your password.';
+        return;
+      }
+
+      if (setupMode) {
+        const confirm = document.getElementById('confirm').value;
+        if (password !== confirm) {
+          errEl.textContent = 'Passwords do not match.';
+          return;
+        }
+        if (password.length < 8) {
+          errEl.textContent = 'Password must be at least 8 characters.';
+          return;
+        }
+      }
+
+      btn.disabled = true;
+      btn.textContent = setupMode ? 'SETTING UP...' : 'SIGNING IN...';
+
+      try {
+        const endpoint = setupMode ? '/api/auth/setup' : '/api/auth/login';
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+
+        if (res.ok) {
+          window.location.replace('/');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          errEl.textContent = data.detail || 'Authentication failed.';
+          btn.disabled = false;
+          btn.textContent = setupMode ? 'SET PASSWORD' : 'SIGN IN';
+        }
+      } catch {
+        errEl.textContent = 'Network error. Is the server running?';
+        btn.disabled = false;
+        btn.textContent = setupMode ? 'SET PASSWORD' : 'SIGN IN';
+      }
+    });
+
+    // Allow Enter key in either input to submit
+    document.querySelectorAll('input').forEach(el => {
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('login-form').dispatchEvent(new Event('submit'));
+      });
+    });
+
+    init();
+  </script>
+</body>
+</html>

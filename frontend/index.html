@@ -562,6 +562,7 @@
         <div class="pill mood"><span id="p-mood-dot">&#9679;</span> <span class="val" id="p-mood">...</span></div>
         <div class="pill xp"><span>XP</span> <span class="val" id="p-xp">0</span></div>
         <div class="dot" id="conn-dot" title="Disconnected"></div>
+        <button id="logout-btn" onclick="logout()" title="Sign out" style="display:none;background:none;border:none;color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:1px;cursor:pointer;padding:2px 5px;border-radius:3px;transition:color 0.15s;" onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='var(--text-muted)'">&#x23FB;</button>
       </div>
     </div>
     <div class="sprite-box" id="sprite-box">   &#x256D;&#x2500;&#x2500;&#x2500;&#x256E;
@@ -608,7 +609,12 @@ let liveToolOutputs={};
 function connectWS(){
   ws=new WebSocket(WS_URL);
   ws.onopen=()=>{wsReady=true;setConnected(true)};
-  ws.onclose=()=>{wsReady=false;setConnected(false);setTimeout(connectWS,3000)};
+  ws.onclose=(e)=>{
+    wsReady=false;setConnected(false);
+    // Code 1008 = Policy Violation — server rejected the WS (auth failure)
+    if(e.code===1008){window.location.replace('/login');return;}
+    setTimeout(connectWS,3000);
+  };
   ws.onerror=()=>{wsReady=false};
   ws.onmessage=(e)=>handleWsEvent(JSON.parse(e.data));
 }
@@ -642,7 +648,17 @@ function handleWsEvent(ev){
 }
 function clearLiveTags(){document.getElementById('live-tags').innerHTML=''}
 
-async function api(p,o={}){const r=await fetch(`${API}/api${p}`,{headers:{'Content-Type':'application/json'},...o});if(!r.ok)throw new Error(`${r.status}: ${await r.text()}`);return r.json()}
+async function api(p,o={}){
+  const r=await fetch(`${API}/api${p}`,{headers:{'Content-Type':'application/json'},...o});
+  // Redirect to login on 401 — auth middleware returned "Not authenticated"
+  if(r.status===401){window.location.replace('/login');return;}
+  if(!r.ok)throw new Error(`${r.status}: ${await r.text()}`);
+  return r.json();
+}
+async function logout(){
+  await fetch(`${API}/api/auth/logout`,{method:'POST'});
+  window.location.replace('/login');
+}
 
 function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-mood',(s.mood||'').toUpperCase());setText('p-xp',s.experience||0);const mc={ecstatic:'#00ff9d',happy:'#00cc7d',content:'#6b8aff',neutral:'#8888aa',bored:'#ffaa00',sad:'#ff6b9d',tired:'#555570'};const md=document.getElementById('p-mood-dot');if(md)md.style.color=mc[s.mood]||'#8888aa';if(s.sprite)document.getElementById('sprite-box').textContent=s.sprite;setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-energy',s.energy);setBar('s-happy',s.happiness);setBar('s-know',s.knowledge)}
 function setBar(p,v){v=Math.max(0,Math.min(100,v||0));const f=document.getElementById(p+'-f'),n=document.getElementById(p+'-v');if(f)f.style.width=v+'%';if(n)n.textContent=v}
@@ -782,7 +798,19 @@ async function obFinalize(){try{for(const s of obSteps){if(s.field&&obR[s.field]
 
 // ═══ INIT ═══
 document.addEventListener('DOMContentLoaded',async()=>{const inp=document.getElementById('input');inp.addEventListener('input',()=>autoResize(inp));inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});connectWS();await loadState();loadConversations();await checkOnboarding();setInterval(loadState,30000)});
-async function loadState(){try{const d=await api('/state');updateState(d.state);setConnected(true);try{const dr=await api('/dreams/state');document.getElementById('dream-ind').classList.toggle('on',dr.dreaming===true)}catch{}}catch{setConnected(false)}}
+async function loadState(){
+  try{
+    const d=await api('/state');
+    if(!d)return; // redirected to /login
+    updateState(d.state);setConnected(true);
+    // Show logout button when auth is enabled
+    try{
+      const a=await fetch(`${API}/api/auth/status`).then(r=>r.json());
+      document.getElementById('logout-btn').style.display=a.enabled?'inline':'none';
+    }catch{}
+    try{const dr=await api('/dreams/state');document.getElementById('dream-ind').classList.toggle('on',dr.dreaming===true)}catch{}
+  }catch{setConnected(false)}
+}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
 </body>

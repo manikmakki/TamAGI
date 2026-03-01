@@ -7,7 +7,7 @@ services:
     ports:
       - "7741:7741"
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
+      - ./config.yaml:/app/config.yaml
       - ./data:/app/data
       - ./workspace:/workspace
       - ./backend/skills/custom:/app/backend/skills/custom

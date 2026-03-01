@@ -12,12 +12,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
-from backend.config import load_config, set_config
+from backend.auth import load_session_secret
+from backend.config import get_config, load_config, set_config
 from backend.core.llm import LLMClient
 from backend.core.memory import MemoryStore
 from backend.core.personality import PersonalityEngine
@@ -33,6 +36,7 @@ from backend.api.chat import router as chat_router, set_agent
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
 from backend.api.dreams import router as dreams_router, set_dream_engine
+from backend.api.auth import router as auth_router
 
 # ── Logging ───────────────────────────────────────────────────
 
@@ -167,7 +171,63 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — permissive for local/PWA use
+# ── Auth middleware class ─────────────────────────────────────────────────────
+# Using BaseHTTPMiddleware so it can be added via add_middleware() and therefore
+# participates in the correct middleware stack order.
+#
+# Starlette stacks middleware so the LAST add_middleware() call is outermost
+# (first to see the request). We need:
+#   Request → CORS → Session (decodes cookie) → Auth (reads session) → app
+# so we add: Auth first, Session second, CORS last (see below).
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        config = get_config()
+
+        # Auth is opt-in — zero overhead when disabled
+        if not config.auth.enabled:
+            return await call_next(request)
+
+        path = request.url.path
+
+        # Always allow: auth endpoints and the login page itself
+        public_prefixes = ("/api/auth",)
+        public_exact = {"/login", "/manifest.json", "/sw.js"}
+        if path.startswith(public_prefixes) or path in public_exact:
+            return await call_next(request)
+
+        # Allow authenticated sessions through
+        if request.session.get("authenticated"):
+            return await call_next(request)
+
+        # API / WebSocket paths → 401 JSON (consumed by frontend JS)
+        if path.startswith("/api") or path.startswith("/ws"):
+            return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+
+        # All other browser navigations → redirect to login page
+        return RedirectResponse("/login")
+
+
+# ── Middleware stack (added in reverse order of execution) ────────────────────
+# add_middleware() wraps: last-added is outermost. Execution order:
+#   CORS (outermost) → Session (decodes cookie) → Auth (checks session) → app
+
+_config = get_config()
+_data_dir = str(Path(_config.history.persist_path).parent)
+
+# 1. Auth — added first so it runs innermost (after session decodes the cookie)
+app.add_middleware(AuthMiddleware)
+
+# 2. Session — decodes the signed session cookie before Auth can read it
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=load_session_secret(_data_dir),
+    session_cookie="tamagi_session",
+    https_only=False,   # allow HTTP for local/LAN use
+    same_site="strict",
+)
+
+# 3. CORS — outermost, handles preflight before anything else
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -176,7 +236,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # API routes
+app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(skills_router)
 app.include_router(onboarding_router)
@@ -195,6 +257,11 @@ if frontend_path.exists():
     @app.get("/sw.js")
     async def service_worker():
         return FileResponse(frontend_path / "sw.js", media_type="application/javascript")
+
+    @app.get("/login")
+    async def login_page():
+        # Serve the standalone login page (exempt from auth middleware above)
+        return FileResponse(frontend_path / "login.html")
 
     @app.get("/{path:path}")
     async def serve_frontend(path: str):
