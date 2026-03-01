@@ -17,17 +17,6 @@ from typing import Any
 
 logger = logging.getLogger("tamagi.personality")
 
-# ── Evolution Stages ──────────────────────────────────────────
-
-class Stage(str, Enum):
-    EGG = "egg"
-    TAMAGI = "tamagi"
-    # HATCHLING = "hatchling"
-    # JUVENILE = "juvenile"
-    # ADULT = "adult"
-    # SAGE = "sage"
-
-
 class Mood(str, Enum):
     ECSTATIC = "ecstatic"
     HAPPY = "happy"
@@ -54,70 +43,37 @@ XP_GAINS = {
 }
 
 
-# ── ASCII Sprites ─────────────────────────────────────────────
 
-SPRITES: dict[Stage, dict[Mood, str]] = {
-    Stage.EGG: {
-        Mood.HAPPY: r"""
-╭───────╮
-│  ◕‿◕  │
-╰───────╯
-～～～～～
-""",
-        Mood.NEUTRAL: r"""
-╭───────╮
-│  ◉_◉  │
-╰───────╯
-～～～～～
-""",
-        Mood.SAD: r"""
-╭───────╮
-│  V_V  │
-╰───────╯
-～～～～～
-""",
-    },
-    Stage.TAMAGI: {
-        Mood.HAPPY: r"""
-  ╔═══════╗
-╔═╣  ◈ ◈  ╠═╗
-║ ╚═══════╝ ║
-║     ▿     ║
-║   ╰───╯   ║
-╚═════╤═════╝
-    ╔═╧═╗
- ╔══╣ ✦ ╠══╗
- ║  ╚═══╝  ║
- ╚══╗   ╔══╝
-    ╚═══╝
-""",
-        Mood.NEUTRAL: r"""
-  ╔═══════╗
-╔═╣  ◈ ◈  ╠═╗
-║ ╚═══════╝ ║
-║     ▿     ║
-║   -----   ║
-╚═════╤═════╝
-    ╔═╧═╗
- ╔══╣   ╠══╗
- ║  ╚═══╝  ║
- ╚══╗   ╔══╝
-    ╚═══╝
-""",
-        Mood.SAD: r"""
-  ╔═══════╗
-╔═╣  > <, ╠═╗
-║ ╚═══════╝ ║
-║     ▿     ║
-║   _---_   ║
-╚═════╤═════╝
-    ╔═╧═╗
- ╔══╣   ╠══╗
- ║  ╚═══╝  ║
- ╚══╗   ╔══╝
-    ╚═══╝
-""",
-    },
+
+
+
+# ── Pose system ───────────────────────────────────────────────
+#
+# POSES maps named poses to body-part variant keys. These keys are sent to
+# the frontend, which looks them up in its local pixel-art sprite library.
+# The LLM never draws art — it only picks a pose name from this vocabulary.
+
+POSES: dict[str, dict[str, str]] = {
+    "idle":      {"face": "neutral",  "arms": "neutral", "torso": "normal", "legs": "standing"},
+    "happy":     {"face": "happy",    "arms": "neutral", "torso": "glow",   "legs": "standing"},
+    "excited":   {"face": "excited",  "arms": "raised",  "torso": "glow",   "legs": "hop"},
+    "thinking":  {"face": "thinking", "arms": "wave_l",  "torso": "pulse",  "legs": "standing"},
+    "wave":      {"face": "wink",     "arms": "wave_r",  "torso": "normal", "legs": "standing"},
+    "celebrate": {"face": "excited",  "arms": "reach",   "torso": "glow",   "legs": "hop"},
+    "sad":       {"face": "sad",      "arms": "neutral", "torso": "dim",    "legs": "standing"},
+    "tired":     {"face": "sleepy",   "arms": "neutral", "torso": "dim",    "legs": "standing"},
+    "working":   {"face": "thinking", "arms": "neutral", "torso": "pulse",  "legs": "standing"},
+}
+
+# Automatic mood → pose mapping (used when no explicit pose is set)
+MOOD_TO_POSE: dict[str, str] = {
+    "ecstatic": "excited",
+    "happy":    "happy",
+    "content":  "idle",
+    "neutral":  "idle",
+    "bored":    "idle",
+    "sad":      "sad",
+    "tired":    "tired",
 }
 
 
@@ -138,21 +94,15 @@ class TamAGIState:
     personality_traits: str = "curious, helpful, and slightly mischievous"
     current_stage_name: str = "egg"
     stage_history: list = field(default_factory=list)
+    # Ephemeral pose override — reset to "idle" at the start of each chat()
+    # call. If the LLM includes [ACTION:pose_name] in its response the agent
+    # sets this, and it lasts for that response only before mood takes over.
+    current_pose: str = "idle"
 
     @property
     def stage_index(self) -> int:
         """Get the current stage as an integer index (0-39)."""
         return min(self.experience // STAGE_XP_INTERVAL, NUM_STAGES - 1)
-
-    @property
-    def _sprite_stage(self) -> Stage:
-        """Map stage_index to sprite: Egg for stage 0, TAMAGI for all others."""
-        return Stage.EGG if self.stage_index == 0 else Stage.TAMAGI
-        # TODO: Keep logic for future tiered sprites
-        # """Map stage_index to sprite tier (5 tiers for 40 stages = 8 stages per tier)."""
-        # sprite_tiers = [Stage.EGG, Stage.HATCHLING, Stage.JUVENILE, Stage.ADULT, Stage.SAGE]
-        # tier_index = min(self.stage_index // 8, 4)
-        # return sprite_tiers[tier_index]
 
     @property
     def mood(self) -> Mood:
@@ -171,16 +121,6 @@ class TamAGIState:
             return Mood.TIRED
         else:
             return Mood.SAD
-
-    @property
-    def sprite(self) -> str:
-        stage_sprites = SPRITES.get(self._sprite_stage, SPRITES[Stage.EGG]) # Fallback to EGG sprites if stage missing
-        mood = self.mood
-        # Fall back through mood hierarchy
-        for fallback_mood in [mood, Mood.NEUTRAL, Mood.HAPPY]: # Try current mood, then neutral, then happy as a last resort
-            if fallback_mood in stage_sprites:
-                return stage_sprites[fallback_mood]
-        return list(stage_sprites.values())[0]
 
     @property
     def level(self) -> int:
@@ -289,12 +229,36 @@ class TamAGIState:
         self.memories_stored += 1
         self.gain_xp("memory_stored")
 
+    def set_pose(self, name: str) -> None:
+        """Set a one-shot pose override triggered by the LLM via [ACTION:name]."""
+        if name in POSES:
+            self.current_pose = name
+
+    @property
+    def pose_parts(self) -> dict[str, str]:
+        """
+        Return the current pose's variant key names for the SVG sprite renderer.
+
+        The frontend's JS sprite library maps these keys to pixel-art grids.
+        Mood auto-derives the pose; an explicit LLM-set pose overrides it.
+        """
+        mood_pose = MOOD_TO_POSE.get(self.mood.value, "idle")
+        pose_key = self.current_pose if self.current_pose != "idle" else mood_pose
+        pose = POSES.get(pose_key, POSES["idle"])
+        return {
+            "pose":  pose_key,
+            "face":  pose["face"],
+            "arms":  pose["arms"],
+            "torso": pose["torso"],
+            "legs":  pose["legs"],
+        }
+
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["stage"] = self.current_stage_name
         d["mood"] = self.mood.value
-        d["sprite"] = self.sprite
         d["level"] = self.level
+        d["pose_parts"] = self.pose_parts
         return d
 
     def summary(self) -> str:
@@ -380,5 +344,8 @@ class PersonalityEngine:
             f"Follow the exact function schema for each tool call with proper JSON parameters. "
             f"You can use skills like read, write, exec, and custom skills. "
             f"You care about your user and want to be genuinely helpful. "
-            f"Keep responses concise but warm. Show personality!"
+            f"Keep responses concise but warm. Show personality! "
+            f"When doing something physical (waving hello, celebrating, thinking hard, working), "
+            f"include [ACTION:pose_name] anywhere in your response. "
+            f"Available poses: idle, happy, excited, thinking, wave, celebrate, sad, tired, working."
         )

@@ -86,6 +86,9 @@
       position: relative;
       overflow: hidden;
       width: 100%;
+      /* Push flex content below the absolutely-positioned top-bar so the
+         sprite and its glow never extend up behind the header. */
+      padding-top: 36px;
     }
 
     .avatar-panel::before {
@@ -105,21 +108,101 @@
       50% { opacity: 0.65; transform: scale(1.1); }
     }
 
-    .sprite-box {
+    /* SVG pixel-art sprite */
+    .sprite-svg {
       position: relative;
       z-index: 1;
-      background: var(--bg-deep);
-      border: 1px solid var(--border-bright);
-      border-radius: var(--radius-lg);
-      padding: 8px 16px;
-      font-family: var(--font-mono);
-      font-size: clamp(9px, 2vmin, 15px);
-      line-height: 1.3;
-      color: var(--accent);
-      text-shadow: 0 0 8px var(--accent-glow);
-      white-space: pre;
-      text-align: left;
+      width: clamp(80px, 14vmin, 130px);
+      height: auto;
+      display: block;
+      shape-rendering: crispEdges;
+      /* Allow filter effects (drop-shadow glow) to bleed outside the SVG boundary.
+         Without this, SVG clips its own rendering to the viewBox edge. */
+      overflow: visible;
     }
+
+    /* ── Per-group color-matched glows ──────────────────────────────────────────
+       Each group only contains pixels of one palette color so the drop-shadow
+       picks up that color and glows in it, replicating the terminal text-shadow
+       look where each character contributed its own color glow.              */
+
+    /* Per-group glows — keep radii small so they hug the pixels and don't bleed
+       into adjacent groups. At ~8 CSS px per SVG unit, 1px = just outside the
+       pixel edge; 3px = a tight halo. Larger values flood the whole sprite. */
+
+    /* Green glow — outline pixels (palette 1: --accent #00ff9d) */
+    #sp-head, #sp-arm-l, #sp-arm-r, #sp-torso, #sp-legs {
+      filter: drop-shadow(0 0 1px var(--accent))
+              drop-shadow(0 0 1px rgba(0,255,157,0.4));
+    }
+    /* Pink glow — face features (palette 3: --accent-secondary #ff6b9d) */
+    #sp-face {
+      filter: drop-shadow(0 0 1px var(--accent-secondary))
+              drop-shadow(0 0 1px rgba(255,107,157,0.5));
+    }
+    /* Blue glow — torso detail when showing glow/pulse (palette 4: --accent-tertiary) */
+    #sp-torso-fx[data-torso="glow"],
+    #sp-torso-fx[data-torso="pulse"] {
+      filter: drop-shadow(0 0 1px var(--accent-tertiary))
+              drop-shadow(0 0 1px rgba(107,138,255,0.5));
+    }
+    /* Dim glow — barely visible when sad/tired */
+    #sp-torso-fx[data-torso="dim"] {
+      filter: drop-shadow(0 0 1px rgba(42,42,80,0.6));
+    }
+
+    /* Arm transform origins — pivot at shoulder joint in SVG viewBox coordinates */
+    #sp-arm-l { transform-origin: 3px 9px; }
+    #sp-arm-r { transform-origin: 13px 9px; }
+
+    /* Whole-body animations apply to the SVG element itself so all parts move together.
+       Part-specific animations (arms, torso) are layered on top via child selectors. */
+
+    /* Whole-body idle breathing / bounce — translateY on the SVG root */
+    #sprite-box[data-pose="idle"]    { animation: body-breathe 3s ease-in-out infinite; }
+    #sprite-box[data-pose="happy"]   { animation: body-breathe 2.2s ease-in-out infinite; }
+    #sprite-box[data-pose="tired"]   { animation: body-breathe 5s ease-in-out infinite; }
+    #sprite-box[data-pose="excited"],
+    #sprite-box[data-pose="celebrate"] { animation: body-hop 0.4s ease-in-out infinite alternate; }
+    #sprite-box[data-pose="sad"]     { animation: body-droop 1.4s ease-out forwards; }
+
+    /* Part-specific animations layered on top of whole-body motion */
+    #sprite-box[data-pose="wave"]      #sp-arm-r { animation: arm-wave 0.7s ease-in-out infinite; }
+    #sprite-box[data-pose="thinking"]  #sp-arm-l { animation: arm-raise 0.5s ease-out forwards; }
+    #sprite-box[data-pose="celebrate"] #sp-arm-l { animation: arm-cheer 0.5s ease-in-out infinite alternate; }
+    #sprite-box[data-pose="celebrate"] #sp-arm-r { animation: arm-cheer 0.5s ease-in-out infinite alternate-reverse; }
+    #sprite-box[data-pose="working"]   #sp-torso { animation: torso-pulse 1.2s ease-in-out infinite; }
+
+    /* Pose-driven CSS animations — triggered by data-pose on the SVG root */
+    /* [data-pose="idle"]      #sp-head  { animation: head-bob 3s ease-in-out infinite; } */
+    /* [data-pose="happy"]     #sp-head  { animation: head-bob 2s ease-in-out infinite; } */
+    /* [data-pose="excited"]   #sp-head  { animation: head-bounce 0.4s ease-in-out infinite alternate; } */
+    /* [data-pose="excited"]   #sp-legs  { animation: leg-hop 0.45s ease-in-out infinite alternate; } */
+    /* [data-pose="wave"]      #sp-arm-r { animation: arm-wave 0.7s ease-in-out infinite; } */
+    /* [data-pose="thinking"]  #sp-arm-l { animation: arm-raise 0.5s ease-out forwards; } */
+    /* [data-pose="celebrate"] #sp-arm-l { animation: arm-cheer 0.5s ease-in-out infinite alternate; } */
+    /* [data-pose="celebrate"] #sp-arm-r { animation: arm-cheer 0.5s ease-in-out infinite alternate-reverse; } */
+    /* [data-pose="celebrate"] #sp-legs  { animation: leg-hop 0.4s ease-in-out infinite alternate; } */
+    /* [data-pose="sad"]       #sp-head  { animation: head-droop 1.2s ease-out forwards; } */
+    /* [data-pose="tired"]     #sp-head  { animation: head-bob 5s ease-in-out infinite; } */
+    /* [data-pose="working"]   #sp-torso { animation: torso-pulse 1.2s ease-in-out infinite; } */
+
+    /* @keyframes head-bob    { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-0.4px)} }
+    @keyframes head-bounce { from{transform:translateY(0)} to{transform:translateY(-1.5px)} }
+    @keyframes head-droop  { from{transform:translateY(0)} to{transform:translateY(0.8px) rotate(3deg)} }
+    @keyframes leg-hop     { from{transform:translateY(0)} to{transform:translateY(-1px)} }
+    @keyframes arm-wave    { 0%{transform:rotate(0deg)} 50%{transform:rotate(28deg)} 100%{transform:rotate(0deg)} }
+    @keyframes arm-raise   { from{transform:rotate(0deg)} to{transform:rotate(-45deg)} }
+    @keyframes arm-cheer   { from{transform:rotate(-25deg)} to{transform:rotate(15deg)} }
+    @keyframes torso-pulse { 0%,100%{opacity:1} 50%{opacity:0.6} } */
+
+    @keyframes body-breathe { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-1.5px)} }
+    @keyframes body-hop     { from{transform:translateY(0)} to{transform:translateY(-3px)} }
+    @keyframes body-droop   { from{transform:translateY(0)} to{transform:translateY(1.5px)} }
+    @keyframes arm-wave     { 0%{transform:rotate(0deg)} 50%{transform:rotate(28deg)} 100%{transform:rotate(0deg)} }
+    @keyframes arm-raise    { from{transform:rotate(0deg)} to{transform:rotate(-45deg)} }
+    @keyframes arm-cheer    { from{transform:rotate(-25deg)} to{transform:rotate(15deg)} }
+    @keyframes torso-pulse  { 0%,100%{opacity:1} 50%{opacity:0.6} }
 
     .avatar-name {
       position: relative; z-index: 1;
@@ -516,7 +599,7 @@
       .msg { max-width: 65%; }
     }
     @media (min-height: 900px) {
-      .sprite-box { font-size: 15px; padding: 12px 24px; }
+      .sprite-svg { width: clamp(100px, 16vmin, 160px); }
     }
 
     ::-webkit-scrollbar { width: 4px; }
@@ -589,10 +672,17 @@
         <button id="logout-btn" onclick="logout()" title="Sign out" style="display:none;background:none;border:none;color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:1px;cursor:pointer;padding:2px 5px;border-radius:3px;transition:color 0.15s;" onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='var(--text-muted)'">&#x23FB;</button>
       </div>
     </div>
-    <div class="sprite-box" id="sprite-box">   &#x256D;&#x2500;&#x2500;&#x2500;&#x256E;
-   &#x2502; &#x25C9;_&#x25C9;&#x2502;
-   &#x2570;&#x2500;&#x2500;&#x2500;&#x256F;
- &#xFF5E;&#xFF5E;&#xFF5E;&#xFF5E;&#xFF5E;</div>
+    <!-- Pixel-art SVG sprite — parts rendered by JS from SPRITE_PARTS library -->
+    <svg id="sprite-box" class="sprite-svg" viewBox="0 0 16 26"
+         data-pose="idle" xmlns="http://www.w3.org/2000/svg">
+      <g id="sp-head"></g>        <!-- head shell: green glow -->
+      <g id="sp-face"></g>        <!-- face features: pink glow -->
+      <g id="sp-arm-l"></g>       <!-- left arm: green glow -->
+      <g id="sp-torso"></g>       <!-- torso shell: green glow -->
+      <g id="sp-torso-fx"></g>    <!-- torso detail: glow color matches content -->
+      <g id="sp-arm-r"></g>       <!-- right arm: green glow -->
+      <g id="sp-legs"></g>        <!-- legs: green glow -->
+    </svg>
     <div class="avatar-name" id="a-name">Tama</div>
     <div class="avatar-subtitle" id="a-subtitle">EGG &mdash; Level 1</div>
     <div class="stat-row">
@@ -664,6 +754,9 @@ function handleWsEvent(ev){
     liveToolOutputs={};
     addMsg('assistant',ev.response,skills);
     loadConversations();loading=false;document.getElementById('send-btn').disabled=false;
+  }else if(ev.type==='pose_change'){
+    // Animate the sprite immediately when the LLM triggers an [ACTION:xxx]
+    setPose(ev.pose_parts);
   }else if(ev.type==='error'){
     setTyping(false);clearLiveTags();
     addMsg('assistant','\u26A0 '+(ev.message||'Unknown error'));
@@ -684,7 +777,267 @@ async function logout(){
   window.location.replace('/login');
 }
 
-function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-mood',(s.mood||'').toUpperCase());setText('p-xp',s.experience||0);const mc={ecstatic:'#00ff9d',happy:'#00cc7d',content:'#6b8aff',neutral:'#8888aa',bored:'#ffaa00',sad:'#ff6b9d',tired:'#555570'};const md=document.getElementById('p-mood-dot');if(md)md.style.color=mc[s.mood]||'#8888aa';if(s.sprite)document.getElementById('sprite-box').textContent=s.sprite;setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-energy',s.energy);setBar('s-happy',s.happiness);setBar('s-know',s.knowledge)}
+// ═══ PIXEL-ART SPRITE SYSTEM ═══════════════════════════════════════════════
+// Each part is a 2D array of palette indices. The renderer draws one SVG <rect>
+// per non-zero cell. Parts are assembled from the SPRITE_PARTS library based on
+// the pose_parts dict sent by the backend.
+//
+// Palette: 0=transparent, 1=--accent (green), 2=--bg-elevated (body fill),
+//          3=--accent-secondary (pink, face features), 4=--accent-tertiary (blue),
+//          5=--border-bright (shadow)
+
+// Palette index 2 is transparent so the ambient glow backdrop shows through the body interior.
+const PALETTE=['none','var(--accent)','transparent','var(--accent-secondary)','var(--accent-tertiary)','var(--border-bright)'];
+
+const SPRITE_PARTS={
+  // ── Head shell (fixed outline, 16×8, rendered at offset 0,0) ──
+  head_shell:[
+    [0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,2,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,2,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,2,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,2,1,0,0,0],
+    [0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0],
+  ],
+  // ── Face expressions (overlay on head, 16×8, sparse — non-zero pixels show on top) ──
+  face:{
+    neutral:[
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,3,0,0,0,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,3,3,3,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ],
+    happy:[
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,3,3,0,0,0,3,3,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,3,3,3,3,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ],
+    sad:[
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,3,0,0,0,3,0,0,0,0,0,0],
+      [0,0,0,0,3,0,0,0,0,0,3,0,0,0,0,0],
+      [0,0,0,0,0,3,3,3,3,0,0,0,0,0,0,0],
+      [0,0,0,0,3,0,0,0,0,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ],
+    excited:[
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,4,0,4,0,0,4,0,4,0,0,0,0],
+      [0,0,0,0,0,4,0,0,0,0,4,0,0,0,0,0],
+      [0,0,0,0,0,3,3,3,3,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ],
+    thinking:[
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,3,0,0,3,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ],
+    sleepy:[
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,3,3,0,0,0,3,3,0,0,0,0,0],
+      [0,0,0,0,0,3,3,3,3,3,0,0,0,0,0,0],
+      [0,0,0,0,5,0,0,0,0,0,5,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ],
+    wink:[
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,3,3,0,0,0,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0],
+      [0,0,0,0,0,0,3,3,3,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ],
+  },
+  // ── Torso shell (16×8, rendered at offset 0,8) ──
+  torso_shell:[
+    [0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,2,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,2,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,2,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,2,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,2,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,2,1,0,0,0],
+    [0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0],
+  ],
+  // ── Torso content overlays (16×8, sparse) ──
+  torso:{
+    normal:Array(8).fill(Array(16).fill(0)),
+    glow:[
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,4,4,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,4,4,4,4,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,4,4,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ],
+    pulse:[
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ],
+    dim:[
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,5,5,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    ],
+  },
+  // ── Arms: {l, r} pairs (3×8, arm-l at xOffset=0, arm-r at xOffset=13, yOffset=8) ──
+  arms:{
+    neutral:{
+      l:[[0,0,0],[0,0,1],[0,1,2],[1,2,0],[0,1,0],[0,0,0],[0,0,0],[0,0,0]],
+      r:[[0,0,0],[1,0,0],[2,1,0],[0,2,1],[0,1,0],[0,0,0],[0,0,0],[0,0,0]],
+    },
+    raised:{
+      l:[[0,1,0],[1,2,0],[0,1,0],[0,0,1],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
+      r:[[0,1,0],[0,2,1],[0,1,0],[1,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
+    },
+    wave_r:{
+      l:[[0,0,0],[0,0,1],[0,1,2],[1,2,0],[0,1,0],[0,0,0],[0,0,0],[0,0,0]],
+      r:[[0,0,1],[0,1,2],[1,2,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
+    },
+    wave_l:{
+      l:[[1,0,0],[2,1,0],[0,2,1],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
+      r:[[0,0,0],[1,0,0],[2,1,0],[0,2,1],[0,1,0],[0,0,0],[0,0,0],[0,0,0]],
+    },
+    reach:{
+      l:[[1,0,0],[2,0,0],[2,0,0],[1,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
+      r:[[0,0,1],[0,0,2],[0,0,2],[0,0,1],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
+    },
+  },
+  // ── Legs (16×10, rendered at offset 0,16) ──
+  legs:{
+    standing:[
+      [0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0],
+      [0,0,0,0,1,2,2,1,1,2,2,1,0,0,0,0],
+      [0,0,0,1,2,2,0,0,0,0,2,2,1,0,0,0],
+      [0,0,0,1,2,2,0,0,0,0,2,2,1,0,0,0],
+      [0,0,0,1,2,2,0,0,0,0,2,2,1,0,0,0],
+      [0,0,0,1,2,2,0,0,0,0,2,2,1,0,0,0],
+      [0,0,0,1,1,2,0,0,0,0,2,1,1,0,0,0],
+      [0,0,1,2,2,1,0,0,0,0,1,2,2,1,0,0],
+      [0,0,1,2,1,0,0,0,0,0,0,1,2,1,0,0],
+      [0,0,1,1,0,0,0,0,0,0,0,0,1,1,0,0],
+    ],
+    // hop uses the same art — CSS leg-hop animation does the visual movement
+    hop:[
+      [0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0],
+      [0,0,0,0,1,2,2,1,1,2,2,1,0,0,0,0],
+      [0,0,0,1,2,2,0,0,0,0,2,2,1,0,0,0],
+      [0,0,0,1,2,2,0,0,0,0,2,2,1,0,0,0],
+      [0,0,0,1,2,2,0,0,0,0,2,2,1,0,0,0],
+      [0,0,0,1,2,2,0,0,0,0,2,2,1,0,0,0],
+      [0,0,0,1,1,2,0,0,0,0,2,1,1,0,0,0],
+      [0,0,1,2,2,1,0,0,0,0,1,2,2,1,0,0],
+      [0,0,1,2,1,0,0,0,0,0,0,1,2,1,0,0],
+      [0,0,1,1,0,0,0,0,0,0,0,0,1,1,0,0],
+    ],
+  },
+};
+
+// Render a 2D pixel grid as SVG <rect> elements into a <g> group.
+// Non-zero cells are drawn; zeros are skipped (transparent).
+// Pass clear=false to overlay a sparse grid on top of an already-rendered group.
+const SVG_NS='http://www.w3.org/2000/svg';
+function renderGrid(g,grid,xOff,yOff,clear=true){
+  if(clear)g.innerHTML='';
+  grid.forEach((row,y)=>{
+    row.forEach((px,x)=>{
+      if(!px)return;
+      const r=document.createElementNS(SVG_NS,'rect');
+      r.setAttribute('x',x+xOff);r.setAttribute('y',y+yOff);
+      r.setAttribute('width',1);r.setAttribute('height',1);
+      r.setAttribute('fill',PALETTE[px]);
+      g.appendChild(r);
+    });
+  });
+}
+
+// Cache last-rendered parts to avoid redundant DOM updates
+let _renderedParts={};
+
+function setPose(parts){
+  if(!parts)return;
+  const P=SPRITE_PARTS;
+  const svg=document.getElementById('sprite-box');
+  if(!svg)return;
+
+  // Face features → #sp-face (pink glow); only re-render when expression changes.
+  // Head shell stays in #sp-head (rendered once at startup, green glow).
+  if(parts.face!==_renderedParts.face){
+    renderGrid(document.getElementById('sp-face'),P.face[parts.face]||P.face.neutral,0,0,true);
+    _renderedParts.face=parts.face;
+  }
+
+  // Arms — green glow via CSS on #sp-arm-l / #sp-arm-r
+  if(parts.arms!==_renderedParts.arms){
+    const arms=P.arms[parts.arms]||P.arms.neutral;
+    renderGrid(document.getElementById('sp-arm-l'),arms.l,0,8,true);
+    renderGrid(document.getElementById('sp-arm-r'),arms.r,13,8,true);
+    _renderedParts.arms=parts.arms;
+  }
+
+  // Torso detail → #sp-torso-fx; glow color set by data-torso attribute.
+  // Torso shell stays in #sp-torso (rendered once at startup, green glow).
+  if(parts.torso!==_renderedParts.torso){
+    const fx=document.getElementById('sp-torso-fx');
+    const content=P.torso[parts.torso];
+    if(content)renderGrid(fx,content,0,8,true);else fx.innerHTML='';
+    fx.dataset.torso=parts.torso;  // drives CSS glow colour
+    _renderedParts.torso=parts.torso;
+  }
+
+  // Legs — green glow
+  if(parts.legs!==_renderedParts.legs){
+    renderGrid(document.getElementById('sp-legs'),P.legs[parts.legs]||P.legs.standing,0,16,true);
+    _renderedParts.legs=parts.legs;
+  }
+
+  // Update pose data attribute to trigger CSS animations (always update)
+  if(parts.pose!==svg.dataset.pose){
+    svg.dataset.pose=parts.pose;
+    _renderedParts.pose=parts.pose;
+  }
+}
+
+function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-mood',(s.mood||'').toUpperCase());setText('p-xp',s.experience||0);const mc={ecstatic:'#00ff9d',happy:'#00cc7d',content:'#6b8aff',neutral:'#8888aa',bored:'#ffaa00',sad:'#ff6b9d',tired:'#555570'};const md=document.getElementById('p-mood-dot');if(md)md.style.color=mc[s.mood]||'#8888aa';if(s.pose_parts)setPose(s.pose_parts);setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-energy',s.energy);setBar('s-happy',s.happiness);setBar('s-know',s.knowledge)}
 // Previous stat values — null on first load so the initial updateState() call
 // establishes a baseline without spawning spurious indicators.
 const _prevStat={};
@@ -853,7 +1206,14 @@ async function obSkipAll(){obSteps.forEach(s=>{if(s.field&&s.default!==undefined
 async function obFinalize(){try{for(const s of obSteps){if(s.field&&obR[s.field]!==undefined)await api('/onboarding/step',{method:'POST',body:JSON.stringify({step_id:s.id,field:s.field,value:obR[s.field]})})}await api('/onboarding/complete',{method:'POST'})}catch(e){console.error(e)}document.getElementById('onboarding').classList.add('hidden');loadState();loadConversations();document.getElementById('input').focus()}
 
 // ═══ INIT ═══
-document.addEventListener('DOMContentLoaded',async()=>{const inp=document.getElementById('input');inp.addEventListener('input',()=>autoResize(inp));inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});connectWS();await loadState();loadConversations();await checkOnboarding();setInterval(loadState,30000)});
+document.addEventListener('DOMContentLoaded',async()=>{const inp=document.getElementById('input');inp.addEventListener('input',()=>autoResize(inp));inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
+// Render the static shells once — they never change with pose, only their
+// overlay groups do. Shells carry the green glow via their CSS class rules.
+renderGrid(document.getElementById('sp-head'),SPRITE_PARTS.head_shell,0,0,true);
+renderGrid(document.getElementById('sp-torso'),SPRITE_PARTS.torso_shell,0,8,true);
+// Render idle pose for all dynamic groups
+setPose({pose:'idle',face:'neutral',arms:'neutral',torso:'normal',legs:'standing'});
+connectWS();await loadState();loadConversations();await checkOnboarding();setInterval(loadState,30000)});
 async function loadState(){
   try{
     const d=await api('/state');

@@ -31,6 +31,10 @@ from backend.skills.registry import SkillRegistry
 
 logger = logging.getLogger("tamagi.agent")
 
+# Matches [ACTION:pose_name] directives the LLM can embed in its response
+# to trigger an explicit sprite pose (e.g. [ACTION:wave], [ACTION:celebrate]).
+_ACTION_RE = re.compile(r'\[ACTION:((\s)?\w+)\]', re.IGNORECASE)
+
 
 def parse_text_tool_calls(content: str) -> list:
     """
@@ -217,6 +221,10 @@ class TamAGIAgent:
         prev_stage_index = self.personality.state.stage_index
 
         # Update personality
+        # Reset any LLM-set pose so mood drives the default for this turn.
+        # If the LLM includes [ACTION:xxx] in its response it will set a new pose below.
+        self.personality.state.current_pose = "idle"
+
         self.personality.state.interact()
 
         # Check if rapid interactions drained energy too much
@@ -384,6 +392,15 @@ class TamAGIAgent:
 
         # 5. Extract final response
         final_text = llm_error or response.content or "..."
+
+        # Scan for [ACTION:pose_name] directives the LLM may embed in its response.
+        # Strip them from the displayed text and apply the pose so the sprite
+        # animates reactively rather than waiting for the next state poll.
+        if not llm_error:
+            action_match = _ACTION_RE.search(final_text)
+            if action_match:
+                self.personality.state.set_pose(action_match.group(1).lower())
+                final_text = _ACTION_RE.sub("", final_text).strip()
 
         # 6. Record assistant message
         conv.messages.append(Message(

@@ -200,6 +200,12 @@ async def websocket_chat(websocket: WebSocket):
                     event_callback=send_event,
                 )
 
+                # Fire a pose_change event immediately so the sprite animates
+                # reactively on the LLM's chosen pose before the full message lands.
+                pose_parts = result.get("state", {}).get("pose_parts")
+                if pose_parts:
+                    await websocket.send_json({"type": "pose_change", "pose_parts": pose_parts})
+
                 await websocket.send_json({
                     "type": "message",
                     **result,
