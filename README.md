@@ -55,7 +55,7 @@ TamAGI is a self-hosted, fully local virtual assistant/agent that:
 
 ```bash
 # Clone and enter
-git clone https://github.com/yourname/tamagi.git
+git clone https://github.com/manikmakki/TamAGI.git
 cd tamagi
 
 # Install dependencies
