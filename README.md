@@ -259,7 +259,7 @@ I feel the need to add this statement:
 
 Thank you for the inspiration!
 
-https://github.com/openclaw/openclaw - Automation + Autonomy design and implimentation
+https://github.com/openclaw/openclaw - Automation + Autonomy design and implementation
 
 https://github.com/ykhli/AI-tamago - General vibe and spirit
 

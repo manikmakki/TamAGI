@@ -25,7 +25,7 @@ EXPOSE 7741
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD python -c "import httpx; r = httpx.get('http://localhost:7741/api/state'); r.raise_for_status()" || exit 1
+    CMD python -c "import httpx; r = httpx.get('http://localhost:7741/login'); r.raise_for_status()" || exit 1
 
 # Run
 CMD ["python", "-m", "backend.main"]
