@@ -40,7 +40,6 @@ TamAGI is a self-hosted, fully local virtual assistant/agent that:
 │  │  │ (ChromaDB)│  │  & Executor     │  │   │
 │  │  └───────────┘  └─────────────────┘  │   │
 │  └──────────────────────────────────────┘   │
-│  Built-in Skills: read | write | exec       │
 └─────────────────────────────────────────────┘
 ```
 
@@ -82,25 +81,75 @@ Edit `config.yaml`:
 
 ```yaml
 llm:
-  base_url: "http://localhost:11434/v1"  # Ollama default
-  api_key: "ollama"                       # or your API key
-  model: "llama3.2"                       # any model your server supports
-
-tamagi:
-  name: "Tama"
-  personality: "curious and helpful"
-
+  base_url: "http://localhost:11434/v1"     
+  api_key: "ollama"                         
+  model: "ministral-3:14b"                  
+  temperature: 0.15                         
+  max_tokens: 2048                          
+  timeout: 180                              
+  num_ctx: 32768
+server:
+  host: "0.0.0.0"
+  port: 7741
+  workers: 1
+auth:
+  enabled: false                            
+  password_hash: ""                         
+memory:
+  backend: "chromadb"                       
+  chromadb:
+    retrieval_limit: 5                      
+    relevance_threshold: 0.5                
+    persist_directory: "./data/chromadb"
+    collection_name: "tamagi_memory"
 guardrails:
-  allowed_paths:
-    - "./workspace"
-  exec_allowlist:
+  allowed_read_paths:                       
+    - "/workspace"
+    - "/workspace/**"
+  allowed_write_paths:                      
+    - "/workspace"
+    - "/workspace/**"
+  exec_allowlist:                           
     - "ls"
     - "cat"
+    - "head"
+    - "tail"
     - "grep"
     - "find"
+    - "wc"
     - "echo"
+    - "date"
     - "python"
     - "pip"
+    - "sed"
+  max_write_size: 10485760  
+  exec_timeout: 120
+workspace:
+  path: "/workspace"
+history:
+  max_conversations: 100
+  max_messages_per_conversation: 200
+  persist: true
+  persist_path: "./data/history"
+  context_compress_threshold: 96000
+web_search:
+  provider: "duckduckgo"
+  brave_api_key: ""
+agent:
+  max_tool_rounds: 3
+  llm_retry_attempts: 1
+  llm_retry_delay: 2.0
+autonomy:
+  enabled: true
+  interval_minutes: 30
+  active_hours_start: 8
+  active_hours_end: 23
+  activities:
+    - dream
+    - explore
+    - experiment
+    - journal
+  weights: [30, 25, 25, 20]
 ```
 
 ## Skills System
@@ -123,7 +172,7 @@ Web search works out of the box with DuckDuckGo (free, no API key). You can also
 
 ### Creating Custom Skills
 
-Drop a Python file in `backend/skills/custom/`:
+Drop a Python file in `/workspace/skills/`:
 
 ```python
 from backend.skills.base import Skill, SkillResult
@@ -148,7 +197,7 @@ TamAGI uses ChromaDB for persistent vector memory:
 
 - Automatic embedding and semantic search
 - Memory types: conversation, fact, knowledge, skill, preference
-- Conversation summarization every 5 messages
+- Conversation summarization/compaction in `config.yaml`
 - Fallback to in-memory keyword matching if ChromaDB is unavailable
 
 ## Dream Engine (Autonomy)
@@ -165,7 +214,7 @@ for the user, TamAGI uses idle time for self-directed activities that build its 
 | **Experiment** | Creates something: haiku, micro-stories, thought experiments, new words |
 | **Journal** | Writes a private diary entry reflecting on growth and recent interactions |
 
-Dream outputs are stored in memory and saved to `workspace/dreams/`. Each activity affects
+Dream outputs are stored in memory and saved to `/workspace/dreams/`. Each activity affects
 personality stats (happiness, energy, knowledge) and grants XP.
 
 ### Configuration
