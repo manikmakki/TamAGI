@@ -4,6 +4,8 @@
 
 > *Feed it data. Teach it skills. Watch it grow.*
 
+![TamAGU UI Screenshot](images/TamAGI-UI.png)
+
 ---
 
 ## What is TamAGI?
