@@ -1,5 +1,6 @@
 # Custom Skills Directory
 Drop .py files here that subclass `backend.skills.base.Skill`
+
 TamAGI will auto-discover and register them on startup.
 
 Example:
