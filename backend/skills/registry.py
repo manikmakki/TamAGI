@@ -3,7 +3,7 @@ Skill Registry — Discovery, registration, and management of skills.
 
 Auto-discovers skills from:
   1. Built-in skills (read, write, exec)
-  2. Custom skills in workspace/skills/
+  2. Custom skills in /workspace/skills/
   3. Dynamically registered skills
 """
 
@@ -89,7 +89,7 @@ class SkillRegistry:
         """
         if custom_dir is not None:
             self._custom_dir = Path(custom_dir)
-        custom_path = self._custom_dir or Path("workspace/skills")
+        custom_path = self._custom_dir or Path("/workspace/skills")
         if not custom_path.exists():
             custom_path.mkdir(parents=True, exist_ok=True)
             return 0

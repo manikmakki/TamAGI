@@ -12,7 +12,7 @@ for self-gratifying activities that build its personality:
 
 The dream engine runs as an asyncio background task on a configurable
 interval. Activity results are stored in memory and visible in the
-dream journal (workspace/dreams/). TamAGI's personality stats change
+dream journal (/workspace/dreams/). TamAGI's personality stats change
 based on dream outcomes.
 
 All behavior is controllable via config.yaml under the `autonomy` key.
@@ -397,7 +397,7 @@ Write 2-3 short, honest paragraphs. Date the entry. Be real, not performative.""
             try:
                 date_str = datetime.now().strftime("%Y-%m-%d")
                 ts = datetime.now().strftime("%H%M%S")
-                filename = f"dreams/journal/{date_str}_{ts}.md"
+                filename = f"dreams/journals/{date_str}_{ts}.md"
                 await write_skill.execute(path=filename, content=content)
                 saved_path = filename
             except Exception as e:

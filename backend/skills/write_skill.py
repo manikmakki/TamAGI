@@ -22,12 +22,12 @@ class WriteSkill(Skill):
     description = (
         "Write content to a file. Creates the file if it doesn't exist, "
         "overwrites if it does. Use 'append' mode to add to existing files. "
-        "Writes to allowed directories only (workspace by default)."
+        "Writes to allowed directories only (/workspace by default)."
     )
     parameters = {
         "path": {
             "type": "string",
-            "description": "Path to write to (relative to workspace, or absolute if in allowed paths)",
+            "description": "Path to write to (relative to /workspace, or absolute if in allowed paths)",
             "required": True,
         },
         "content": {

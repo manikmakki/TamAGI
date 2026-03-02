@@ -4,7 +4,7 @@ Exec Skill — Execute allowlisted shell commands.
 Guardrails:
   - ONLY executes commands from the explicit allowlist
   - Timeout enforcement
-  - Working directory set to workspace
+  - Working directory set to /workspace
   - Captures stdout, stderr, and return code
 """
 
@@ -25,7 +25,7 @@ class ExecSkill(Skill):
     name = "exec"
     description = (
         "Execute a shell command. Only allowlisted commands can be run. "
-        "Commands execute in the workspace directory. "
+        "Commands execute in the /workspace directory. "
         "Use this for running scripts, checking system info, processing data, etc."
     )
     parameters = {
@@ -36,8 +36,8 @@ class ExecSkill(Skill):
         },
         "working_dir": {
             "type": "string",
-            "description": "Working directory (defaults to workspace)",
-            "default": "",
+            "description": "Working directory (defaults to /workspace)",
+            "default": "/workspace",
         },
     }
 

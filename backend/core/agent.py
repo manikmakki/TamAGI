@@ -355,6 +355,15 @@ class TamAGIAgent:
             if not response.tool_calls:
                 break
 
+            # If the LLM included commentary alongside its tool calls (e.g.
+            # "Let me check that file first..." or "I see the issue, trying..."),
+            # surface it immediately so the user can follow the agent's reasoning.
+            if response.content and response.content.strip() and event_callback:
+                await event_callback({
+                    "type": "interim_text",
+                    "content": response.content.strip(),
+                })
+
             # The assistant message for this round is appended ONCE before the
             # tool-result loop. Appending it inside the loop would duplicate it
             # for every tool call in the same round, which corrupts the context

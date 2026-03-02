@@ -393,6 +393,14 @@
     .msg.assistant .bubble table { border-collapse: collapse; margin: 6px 0; width: 100%; font-size: 12px; }
     .msg.assistant .bubble th, .msg.assistant .bubble td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
     .msg.assistant .bubble th { background: var(--bg-elevated); color: var(--accent-tertiary); }
+    /* Interim "thinking out loud" messages shown between tool calls */
+    .msg.interim .bubble {
+      opacity: 0.6;
+      font-style: italic;
+      border: 1px dashed var(--border-bright);
+      background: transparent;
+      font-size: 11px;
+    }
     .msg.user .bubble { white-space: pre-wrap; }
     .msg.user .bubble {
       background: var(--accent-glow);
@@ -754,6 +762,13 @@ function handleWsEvent(ev){
     liveToolOutputs={};
     addMsg('assistant',ev.response,skills);
     loadConversations();loading=false;document.getElementById('send-btn').disabled=false;
+  }else if(ev.type==='interim_text'){
+    // LLM commentary between tool calls — show immediately as a muted bubble
+    const area=document.getElementById('chat-messages');
+    const d=document.createElement('div');
+    d.className='msg assistant interim';
+    d.innerHTML=`<div class="bubble">${renderMd(ev.content)}</div>`;
+    area.appendChild(d);area.scrollTop=area.scrollHeight;
   }else if(ev.type==='pose_change'){
     // Animate the sprite immediately when the LLM triggers an [ACTION:xxx]
     setPose(ev.pose_parts);

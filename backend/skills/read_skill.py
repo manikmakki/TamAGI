@@ -26,7 +26,7 @@ class ReadSkill(Skill):
     parameters = {
         "path": {
             "type": "string",
-            "description": "Path to the file to read (relative to workspace, or absolute if in allowed paths)",
+            "description": "Path to the file to read (relative to /workspace, or absolute if in allowed paths)",
             "required": True,
         },
         "encoding": {
