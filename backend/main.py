@@ -138,6 +138,15 @@ async def lifespan(app: FastAPI):
     )
     set_agent(agent)
 
+    # Initialize multi-agent orchestration
+    orchestrator = None
+    if config.orchestrator.enabled:
+        from backend.core.orchestrator import Orchestrator
+        from backend.skills.orchestration_skill import OrchestrationSkill
+        orchestrator = Orchestrator(llm=llm, skills=skills, config=config.orchestrator)
+        skills.register(OrchestrationSkill(orchestrator=orchestrator))
+        logger.info("Orchestration skill registered")
+
     # Initialize dream engine (autonomous idle behavior)
     dream_engine = DreamEngine(
         agent=agent,
@@ -159,6 +168,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"═══ {config.tamagi.name} is going to sleep... ═══")
     await dream_engine.stop()
     personality.save_state()
+    if orchestrator is not None:
+        await orchestrator.close()
     await llm.close()
 
 

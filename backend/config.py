@@ -115,6 +115,17 @@ class AgentConfig(BaseModel):
     llm_retry_delay: float = 2.0  # Seconds between retries
 
 
+class OrchestratorConfig(BaseModel):
+    enabled: bool = True
+    max_subagents: int = 4        # Maximum subtasks per workflow
+    subagent_max_rounds: int = 3  # Max tool-call rounds per subagent (less than agent.max_tool_rounds)
+    # Optional dedicated LLM for subagents. When set, subagents use this
+    # client instead of Tama's. Useful for pointing subagents at a faster/
+    # smaller model or a different endpoint entirely.
+    # When null/absent, subagents share Tama's LLM client.
+    subagent_llm: LLMConfig | None = None
+
+
 class AuthConfig(BaseModel):
     # Set enabled: true in config.yaml to enforce login.
     # Zero impact when false — all routes remain open as before.
@@ -138,6 +149,7 @@ class TamAGIConfig(BaseModel):
     autonomy: AutonomyConfig = Field(default_factory=AutonomyConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> TamAGIConfig:
