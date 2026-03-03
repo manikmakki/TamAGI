@@ -32,6 +32,7 @@ from backend.skills.read_skill import ReadSkill
 from backend.skills.write_skill import WriteSkill
 from backend.skills.exec_skill import ExecSkill
 from backend.skills.web_search_skill import WebSearchSkill
+from backend.skills.express_skill import ExpressSkill
 from backend.api.chat import router as chat_router, set_agent
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
@@ -103,6 +104,7 @@ async def lifespan(app: FastAPI):
         brave_api_key=config.web_search.brave_api_key,
         searxng_url=config.web_search.searxng_url,
     ))
+    skills.register(ExpressSkill(personality.state))
 
     # Migrate custom skills from backend/skills/custom/ to workspace/skills/
     workspace_skills = Path(config.workspace.path) / "skills"

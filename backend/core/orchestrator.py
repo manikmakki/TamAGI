@@ -22,8 +22,10 @@ from backend.skills.registry import SkillRegistry
 
 logger = logging.getLogger("tamagi.orchestrator")
 
-# Skill names that subagents are never allowed to call (prevents recursion).
-_FORBIDDEN_SUBAGENT_SKILLS = {"orchestrate_task"}
+# Skill names that subagents are never allowed to call.
+# orchestrate_task: prevents recursion
+# express: poses belong to Tama, not subagents
+_FORBIDDEN_SUBAGENT_SKILLS = {"orchestrate_task", "express"}
 
 
 class OrchestratorDepthError(RuntimeError):
