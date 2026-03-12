@@ -322,6 +322,7 @@ class TamAGIAgent:
         interim_messages: list[str] = []
         llm_error: str | None = None
         direct_response_text: str | None = None
+        last_tool_round_content: str | None = None  # fallback if final round is silent
         for round_num in range(self.config.agent.max_tool_rounds):
             try:
                 response = await self.llm.chat_with_retry(
@@ -353,15 +354,19 @@ class TamAGIAgent:
             if not response.tool_calls:
                 break
 
-            # If the LLM included commentary alongside its tool calls (e.g.
-            # "Let me check that file first..." or "I see the issue, trying..."),
-            # surface it immediately so the user can follow the agent's reasoning.
+            # If the LLM included content alongside its tool calls, capture it.
+            # This serves two purposes:
+            # 1. Surface it as reasoning so the user can follow along.
+            # 2. Save it as a fallback — the LLM sometimes generates its
+            #    complete "done" response here and then returns empty content
+            #    in the follow-up round once the tools have run.
             if response.content and response.content.strip():
-                interim_messages.append(response.content.strip())
+                last_tool_round_content = response.content.strip()
+                interim_messages.append(last_tool_round_content)
                 if event_callback:
                     await event_callback({
                         "type": "interim_text",
-                        "content": response.content.strip(),
+                        "content": last_tool_round_content,
                     })
 
             # The assistant message for this round is appended ONCE before the
@@ -417,7 +422,10 @@ class TamAGIAgent:
                 break  # break outer round loop
 
         # 5. Extract final response
-        final_text = direct_response_text or llm_error or response.content or "..."
+        # last_tool_round_content catches the case where the LLM wrote its
+        # complete answer alongside a tool call (common pattern) and then
+        # returned empty content in the follow-up round after tools finished.
+        final_text = direct_response_text or llm_error or response.content or last_tool_round_content or "..."
 
         # 6. Record assistant message
         meta: dict[str, Any] = {"skills_used": skills_used}
