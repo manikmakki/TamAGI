@@ -32,6 +32,7 @@ from backend.skills.read_skill import ReadSkill
 from backend.skills.write_skill import WriteSkill
 from backend.skills.exec_skill import ExecSkill
 from backend.skills.web_search_skill import WebSearchSkill
+from backend.skills.express_skill import ExpressSkill
 from backend.api.chat import router as chat_router, set_agent
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
@@ -103,6 +104,7 @@ async def lifespan(app: FastAPI):
         brave_api_key=config.web_search.brave_api_key,
         searxng_url=config.web_search.searxng_url,
     ))
+    skills.register(ExpressSkill(personality.state))
 
     # Migrate custom skills from backend/skills/custom/ to workspace/skills/
     workspace_skills = Path(config.workspace.path) / "skills"
@@ -138,12 +140,21 @@ async def lifespan(app: FastAPI):
     )
     set_agent(agent)
 
+    # Initialize multi-agent orchestration
+    orchestrator = None
+    if config.orchestrator.enabled:
+        from backend.core.orchestrator import Orchestrator
+        from backend.skills.orchestration_skill import OrchestrationSkill
+        orchestrator = Orchestrator(llm=llm, skills=skills, config=config.orchestrator)
+        skills.register(OrchestrationSkill(orchestrator=orchestrator))
+        logger.info("Orchestration skill registered")
+
     # Initialize dream engine (autonomous idle behavior)
     dream_engine = DreamEngine(
         agent=agent,
         enabled=config.autonomy.enabled and config.autonomy.interval_minutes > 0,
         interval_minutes=config.autonomy.interval_minutes,
-        active_hours=(config.autonomy.active_hours_start, config.autonomy.active_hours_end),
+        inactive_hours=(config.autonomy.inactive_hours_start, config.autonomy.inactive_hours_end),
         activities=config.autonomy.activities,
         weights=config.autonomy.weights,
     )
@@ -159,6 +170,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"═══ {config.tamagi.name} is going to sleep... ═══")
     await dream_engine.stop()
     personality.save_state()
+    if orchestrator is not None:
+        await orchestrator.close()
     await llm.close()
 
 

@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 import uuid
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Coroutine
@@ -30,10 +30,6 @@ from backend.core.identity import IdentityManager
 from backend.skills.registry import SkillRegistry
 
 logger = logging.getLogger("tamagi.agent")
-
-# Matches [ACTION:pose_name] directives the LLM can embed in its response
-# to trigger an explicit sprite pose (e.g. [ACTION:wave], [ACTION:celebrate]).
-_ACTION_RE = re.compile(r'\[ACTION:((\s)?\w+)\]', re.IGNORECASE)
 
 
 def parse_text_tool_calls(content: str) -> list:
@@ -323,7 +319,10 @@ class TamAGIAgent:
 
         # 4. LLM loop with tool calling
         skills_used = []
+        interim_messages: list[str] = []
         llm_error: str | None = None
+        direct_response_text: str | None = None
+        last_tool_round_content: str | None = None  # fallback if final round is silent
         for round_num in range(self.config.agent.max_tool_rounds):
             try:
                 response = await self.llm.chat_with_retry(
@@ -355,20 +354,31 @@ class TamAGIAgent:
             if not response.tool_calls:
                 break
 
-            # If the LLM included commentary alongside its tool calls (e.g.
-            # "Let me check that file first..." or "I see the issue, trying..."),
-            # surface it immediately so the user can follow the agent's reasoning.
-            if response.content and response.content.strip() and event_callback:
-                await event_callback({
-                    "type": "interim_text",
-                    "content": response.content.strip(),
-                })
+            # If the LLM included content alongside its tool calls, capture it.
+            # This serves two purposes:
+            # 1. Surface it as reasoning so the user can follow along.
+            # 2. Save it as a fallback — the LLM sometimes generates its
+            #    complete "done" response here and then returns empty content
+            #    in the follow-up round once the tools have run.
+            if response.content and response.content.strip():
+                last_tool_round_content = response.content.strip()
+                interim_messages.append(last_tool_round_content)
+                if event_callback:
+                    await event_callback({
+                        "type": "interim_text",
+                        "content": last_tool_round_content,
+                    })
 
             # The assistant message for this round is appended ONCE before the
             # tool-result loop. Appending it inside the loop would duplicate it
             # for every tool call in the same round, which corrupts the context
             # and causes Ollama to return 500 on the next request.
-            llm_messages.append(LLMMessage("assistant", response.content or ""))
+            #
+            # Intermediate content (the LLM's commentary alongside tool calls)
+            # is already captured in interim_messages for display — omitting it
+            # from the history prevents the model from re-reading and
+            # re-generating the same reasoning on the next round.
+            llm_messages.append(LLMMessage("assistant", ""))
 
             # Execute each tool call and append its result
             for tc in response.tool_calls:
@@ -378,7 +388,10 @@ class TamAGIAgent:
                 if event_callback:
                     await event_callback({"type": "tool_start", "name": tc.name, "round": round_num + 1})
 
-                result = await self.skills.execute(name=tc.name, **tc.arguments)
+                # Pass the WS event callback to orchestrate_task so it can emit
+                # live interim_text events for each workflow phase/subagent.
+                extra = {"_event_callback": event_callback} if tc.name == "orchestrate_task" else {}
+                result = await self.skills.execute(name=tc.name, **extra, **tc.arguments)
                 self.personality.state.use_skill()
 
                 if event_callback:
@@ -399,23 +412,31 @@ class TamAGIAgent:
                     name=tc.name,
                 ))
 
-        # 5. Extract final response
-        final_text = llm_error or response.content or "..."
+                # If the skill signals it provides the complete final response,
+                # skip the follow-up LLM call — the output IS the response.
+                if result.direct_response and result.success:
+                    direct_response_text = result.output
+                    break  # break inner tool-call loop
 
-        # Scan for [ACTION:pose_name] directives the LLM may embed in its response.
-        # Strip them from the displayed text and apply the pose so the sprite
-        # animates reactively rather than waiting for the next state poll.
-        if not llm_error:
-            action_match = _ACTION_RE.search(final_text)
-            if action_match:
-                self.personality.state.set_pose(action_match.group(1).lower())
-                final_text = _ACTION_RE.sub("", final_text).strip()
+            if direct_response_text is not None:
+                break  # break outer round loop
+
+        # 5. Extract final response
+        # last_tool_round_content catches the case where the LLM wrote its
+        # complete answer alongside a tool call (common pattern) and then
+        # returned empty content in the follow-up round after tools finished.
+        final_text = direct_response_text or llm_error or response.content or last_tool_round_content or "..."
 
         # 6. Record assistant message
+        meta: dict[str, Any] = {"skills_used": skills_used}
+        if interim_messages:
+            meta["interim_messages"] = interim_messages
+        if archived_count:
+            meta["context_compressed"] = archived_count
         conv.messages.append(Message(
             role="assistant",
             content=final_text,
-            metadata={"skills_used": skills_used},
+            metadata=meta,
         ))
 
         # 7. Store conversation summary in memory (every 3 messages for better recall)
@@ -441,6 +462,7 @@ class TamAGIAgent:
             "state": self.personality.state.to_dict(),
             "skills_used": skills_used,
             "memories_recalled": len(memories),
+            "context_compressed": archived_count,
         }
 
     # ── Stage Advancement ─────────────────────────────────────

@@ -10,7 +10,6 @@ services:
       - ./config.yaml:/app/config.yaml
       - ./data:/app/data
       - ./workspace:/workspace
-      - ./backend/skills/custom:/app/backend/skills/custom
     environment:
       - TAMAGI_CONFIG=/app/config.yaml
     restart: unless-stopped

@@ -97,8 +97,8 @@ class AutonomyConfig(BaseModel):
     """TamAGI's autonomous idle behavior (dream engine)."""
     enabled: bool = True
     interval_minutes: int = 30  # How often TamAGI dreams (0 = disabled)
-    active_hours_start: int = 8   # Don't dream before this hour
-    active_hours_end: int = 23    # Don't dream after this hour
+    inactive_hours_start: int = 23   # Don't dream before this hour
+    inactive_hours_end: int = 6    # Don't dream after this hour
     # Which activities are enabled: dream, explore, experiment, journal
     activities: list[str] = Field(
         default_factory=lambda: ["dream", "explore", "experiment", "journal"]
@@ -113,6 +113,17 @@ class AgentConfig(BaseModel):
     max_tool_rounds: int = 5      # Max tool-call loops per user message
     llm_retry_attempts: int = 1   # Retries on RemoteProtocolError / ConnectError
     llm_retry_delay: float = 2.0  # Seconds between retries
+
+
+class OrchestratorConfig(BaseModel):
+    enabled: bool = True
+    max_subagents: int = 4        # Maximum subtasks per workflow
+    subagent_max_rounds: int = 3  # Max tool-call rounds per subagent (less than agent.max_tool_rounds)
+    # Optional dedicated LLM for subagents. When set, subagents use this
+    # client instead of Tama's. Useful for pointing subagents at a faster/
+    # smaller model or a different endpoint entirely.
+    # When null/absent, subagents share Tama's LLM client.
+    subagent_llm: LLMConfig | None = None
 
 
 class AuthConfig(BaseModel):
@@ -138,6 +149,7 @@ class TamAGIConfig(BaseModel):
     autonomy: AutonomyConfig = Field(default_factory=AutonomyConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> TamAGIConfig:

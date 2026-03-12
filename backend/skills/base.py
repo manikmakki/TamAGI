@@ -22,6 +22,10 @@ class SkillResult:
     output: str = ""
     error: str | None = None
     data: dict[str, Any] = field(default_factory=dict)
+    # When True, the agent uses output as the final response directly and skips
+    # the follow-up LLM call. Use for skills that already produce a complete,
+    # presentation-ready answer (e.g. orchestrate_task).
+    direct_response: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         d = {"success": self.success, "output": self.output}

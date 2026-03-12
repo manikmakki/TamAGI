@@ -121,8 +121,8 @@ autonomy:
   interval_minutes: 30
 
   # Only dream during these hours (24h format, local time)
-  active_hours_start: 8
-  active_hours_end: 23
+  inactive_hours_start: 23
+  inactive_hours_end: 6
 
   # Which activities are enabled:
   #   dream      — Replay memories, find connections and insights
@@ -138,3 +138,31 @@ autonomy:
   # Relative weights for activity selection (higher = more likely)
   # Must match the order of activities above
   weights: [30, 25, 25, 20]
+
+# ── Multi-Agent Orchestration ─────────────────
+# When TamAGI encounters a complex multi-step task, it can spawn specialized
+# subagents to work in parallel or sequence. It plans the work, delegates,
+# reviews results, and synthesizes a final answer — fully autonomous.
+orchestrator:
+  # Set to false to disable the orchestrate_task skill entirely
+  enabled: true
+
+  # Maximum number of subtasks TamAG can delegate per workflow
+  max_subagents: 4
+
+  # Max tool-call rounds each subagent is allowed (keep below agent.max_tool_rounds)
+  subagent_max_rounds: 3
+
+  # Optional: dedicated LLM for subagents.
+  # When set, subagents use this model/endpoint instead of TamAGI's.
+  # Useful for pointing subagents at a faster/smaller model to reduce latency.
+  # Remove or comment out this block to share TamAGI's LLM (default).
+  #
+  # subagent_llm:
+  #   base_url: "http://localhost:11434/v1"
+  #   api_key: "ollama"
+  #   model: "granite4:3b"          # faster/cheaper model for worker tasks
+  #   temperature: 0.2              # lower = more deterministic tool use
+  #   max_tokens: 1024
+  #   timeout: 120
+  #   num_ctx: 8192                 # smaller context for subagents

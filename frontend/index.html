@@ -393,14 +393,16 @@
     .msg.assistant .bubble table { border-collapse: collapse; margin: 6px 0; width: 100%; font-size: 12px; }
     .msg.assistant .bubble th, .msg.assistant .bubble td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
     .msg.assistant .bubble th { background: var(--bg-elevated); color: var(--accent-tertiary); }
-    /* Interim "thinking out loud" messages shown between tool calls */
-    .msg.interim .bubble {
-      opacity: 0.6;
-      font-style: italic;
-      border: 1px dashed var(--border-bright);
-      background: transparent;
-      font-size: 11px;
-    }
+    /* Interim collapsible reasoning group */
+    .interim-group { border: 1px solid var(--border-bright); border-radius: var(--radius-md); overflow: hidden; opacity: 0.75; }
+    .interim-toggle { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 10px; background: var(--bg-elevated); border: none; cursor: pointer; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; text-align: left; }
+    .interim-toggle:hover { color: var(--text-primary); background: var(--bg-surface); }
+    .interim-chevron { font-size: 8px; transition: transform 0.2s; display: inline-block; }
+    .interim-group:not(.collapsed) .interim-chevron { transform: rotate(90deg); }
+    .interim-body { padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border); }
+    .interim-group.collapsed .interim-body { display: none; }
+    .interim-entry { color: var(--text-muted); font-style: italic; font-size: 11px; line-height: 1.5; }
+    .interim-entry + .interim-entry { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
     .msg.user .bubble { white-space: pre-wrap; }
     .msg.user .bubble {
       background: var(--accent-glow);
@@ -419,6 +421,7 @@
     .skill-tag { display: inline-block; padding: 1px 5px; background: var(--bg-elevated); border-radius: 3px; font-size: 8px; color: var(--accent-tertiary); margin-left: 3px; }
     .skill-tag.running { color: var(--text-muted); animation: tag-pulse 1s ease-in-out infinite; }
     .skill-tag[title] { cursor: help; border-bottom: 1px dotted var(--accent-tertiary); }
+    .compact-tag { display: inline-block; padding: 1px 5px; background: var(--bg-elevated); border-radius: 3px; font-size: 8px; color: var(--warning); margin-left: 3px; cursor: help; border-bottom: 1px dotted var(--warning); opacity: 0.7; }
     @keyframes tag-pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
 
     .typing {
@@ -727,6 +730,7 @@ const WS_URL=API.replace(/^http/,'ws')+'/api/ws';
 let convId=null,loading=false;
 let ws=null,wsReady=false;
 let liveToolOutputs={};
+let currentInterimGroup=null;
 
 function connectWS(){
   ws=new WebSocket(WS_URL);
@@ -757,28 +761,38 @@ function handleWsEvent(ev){
     if(span){span.classList.remove('running');span.title=ev.output||'';}
   }else if(ev.type==='message'){
     setTyping(false);clearLiveTags();
+    if(currentInterimGroup){currentInterimGroup.classList.add('collapsed');currentInterimGroup=null;}
     convId=ev.conversation_id;updateState(ev.state);
     const skills=(ev.skills_used||[]).map(name=>({name,output:(liveToolOutputs[name]||[]).join('\n')}));
     liveToolOutputs={};
-    addMsg('assistant',ev.response,skills);
+    addMsg('assistant',ev.response,skills,null,ev.context_compressed||0);
     loadConversations();loading=false;document.getElementById('send-btn').disabled=false;
   }else if(ev.type==='interim_text'){
-    // LLM commentary between tool calls — show immediately as a muted bubble
-    const area=document.getElementById('chat-messages');
-    const d=document.createElement('div');
-    d.className='msg assistant interim';
-    d.innerHTML=`<div class="bubble">${renderMd(ev.content)}</div>`;
-    area.appendChild(d);area.scrollTop=area.scrollHeight;
+    if(!currentInterimGroup){
+      const wrapper=document.createElement('div');
+      wrapper.className='msg assistant';
+      wrapper.innerHTML='<div class="interim-group" data-count="0"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label">Reasoning · <span class="interim-count">0 steps</span></span></button><div class="interim-body"></div></div>';
+      document.getElementById('chat-messages').appendChild(wrapper);
+      currentInterimGroup=wrapper.querySelector('.interim-group');
+    }
+    const entry=document.createElement('div');
+    entry.className='interim-entry';
+    entry.innerHTML=renderMd(ev.content);
+    currentInterimGroup.querySelector('.interim-body').appendChild(entry);
+    const count=currentInterimGroup.querySelectorAll('.interim-entry').length;
+    currentInterimGroup.querySelector('.interim-count').textContent=count+(count===1?' step':' steps');
+    document.getElementById('chat-messages').scrollTop=99999;
   }else if(ev.type==='pose_change'){
-    // Animate the sprite immediately when the LLM triggers an [ACTION:xxx]
     setPose(ev.pose_parts);
   }else if(ev.type==='error'){
     setTyping(false);clearLiveTags();
+    if(currentInterimGroup){currentInterimGroup.classList.add('collapsed');currentInterimGroup=null;}
     addMsg('assistant','\u26A0 '+(ev.message||'Unknown error'));
     loading=false;document.getElementById('send-btn').disabled=false;
   }
 }
 function clearLiveTags(){document.getElementById('live-tags').innerHTML=''}
+function toggleInterim(btn){btn.closest('.interim-group').classList.toggle('collapsed');}
 
 async function api(p,o={}){
   const r=await fetch(`${API}/api${p}`,{headers:{'Content-Type':'application/json'},...o});
@@ -1134,7 +1148,7 @@ async function sendMessage(){
   }catch(e){setTyping(false);addMsg('assistant',`\u26A0 Error: ${e.message}. Is the backend running?`);loading=false;document.getElementById('send-btn').disabled=false;}
 }
 
-function addMsg(role,content,skills=[],ts=null){
+function addMsg(role,content,skills=[],ts=null,compressed=0){
   const area=document.getElementById('chat-messages');
   const d=document.createElement('div');d.className=`msg ${role}`;
   // Use the stored unix timestamp when replaying history, current time for live messages
@@ -1144,8 +1158,9 @@ function addMsg(role,content,skills=[],ts=null){
     const tip=typeof s==='string'?'':(s.output||'');
     return`<span class="skill-tag"${tip?` title="${esc(tip)}"`:''}>&#x2699; ${esc(name)}</span>`;
   }).join('');
+  const cmpTag=compressed?`<span class="compact-tag" title="${compressed} older message${compressed===1?'':'s'} archived to long-term memory">&#x25C8; compacted</span>`:'';
   const rendered=role==='assistant'?renderMd(content):esc(content);
-  d.innerHTML=`<div class="bubble">${rendered}</div><div class="time">${t}${sk}</div>`;
+  d.innerHTML=`<div class="bubble">${rendered}</div><div class="time">${t}${sk}${cmpTag}</div>`;
   area.appendChild(d);area.scrollTop=area.scrollHeight
 }
 function setTyping(v){document.getElementById('typing').classList.toggle('on',v)}
@@ -1156,7 +1171,7 @@ document.addEventListener('click',e=>{if(!e.target.closest('.stat-item'))documen
 function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px'}
 
 async function loadConversations(){try{const d=await api('/conversations');const list=document.getElementById('conv-list');list.innerHTML='';(d.conversations||[]).forEach(c=>{const el=document.createElement('div');el.className=`conv-item${c.id===convId?' active':''}`;el.onclick=()=>openConversation(c.id);const dt=new Date(c.updated_at*1000).toLocaleDateString([],{month:'short',day:'numeric'});el.innerHTML=`<div class="ci-title">${esc(c.title)}</div><div class="ci-meta">${c.message_count} msgs \u00b7 ${dt}</div>`;list.appendChild(el)})}catch{}}
-async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp));loadConversations();closeDrawer()}catch(e){console.error(e)}}
+async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>{if(m.role==='assistant'&&m.metadata?.interim_messages?.length){const steps=m.metadata.interim_messages;const wrapper=document.createElement('div');wrapper.className='msg assistant';wrapper.innerHTML='<div class="interim-group collapsed" data-count="'+steps.length+'"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label">Reasoning · <span class="interim-count">'+steps.length+(steps.length===1?' step':' steps')+'</span></span></button><div class="interim-body">'+steps.map(s=>'<div class="interim-entry">'+renderMd(s)+'</div>').join('')+'</div></div>';area.appendChild(wrapper);}addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp,m.metadata?.context_compressed||0);});loadConversations();closeDrawer()}catch(e){console.error(e)}}
 function newConversation(){convId=null;document.getElementById('chat-messages').innerHTML=`<div class="welcome-msg" id="welcome"><strong>New conversation!</strong><br>What shall we explore?</div>`;loadConversations();closeDrawer();document.getElementById('input').focus()}
 
 function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('drawer-overlay').classList.add('open');loadDreamLog()}

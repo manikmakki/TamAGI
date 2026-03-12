@@ -15,10 +15,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application
-COPY . .
+COPY backend ./backend
+COPY frontend ./frontend
 
-# Create workspace and data dirs
-RUN mkdir -p /app/workspace /app/data /app/backend/skills/custom
 
 # Default port
 EXPOSE 7741
