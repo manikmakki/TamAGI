@@ -441,7 +441,7 @@ class DreamEngine:
         agent: "TamAGIAgent",
         enabled: bool = True,
         interval_minutes: int = 30,
-        active_hours: tuple[int, int] = (8, 23),
+        inactive_hours: tuple[int, int] = (8, 23),
         activities: list[str] | None = None,
         weights: list[int] | None = None,
         journal_dir: str = "dreams",
@@ -449,7 +449,7 @@ class DreamEngine:
         self.agent = agent
         self.enabled = enabled
         self.interval = interval_minutes * 60  # Convert to seconds
-        self.active_start, self.active_end = active_hours
+        self.inactive_start, self.inactive_end = inactive_hours
         self.journal_dir = journal_dir
         self._task: asyncio.Task | None = None
         self._running = False
@@ -487,7 +487,7 @@ class DreamEngine:
         self._task = asyncio.create_task(self._run_loop())
         logger.info(
             f"Dream engine started — interval: {self.interval // 60}min, "
-            f"active hours: {self.active_start:02d}:00-{self.active_end:02d}:00, "
+            f"inactive hours: {self.inactive_start:02d}:00-{self.inactive_end:02d}:00, "
             f"activities: {[a.name for a in self._activities]}"
         )
 
@@ -520,10 +520,16 @@ class DreamEngine:
                     now = datetime.now()
                     current_hour = now.hour
 
-                    if not (self.active_start <= current_hour < self.active_end):
+                    # Handle both same-day (e.g. 8→23) and midnight-wrapping
+                    # (e.g. 23→6) ranges. Wrapping is detected when start > end.
+                    if self.inactive_start <= self.inactive_end:
+                        in_hours = self.inactive_start <= current_hour < self.inactive_end
+                    else:
+                        in_hours = current_hour >= self.inactive_start or current_hour < self.inactive_end
+                    if not in_hours:
                         logger.debug(
-                            f"Dream engine: outside active hours "
-                            f"({self.active_start}-{self.active_end}), sleeping"
+                            f"Dream engine: outside inactive hours "
+                            f"({self.inactive_start:02d}:00-{self.inactive_end:02d}:00), sleeping"
                         )
                         await asyncio.sleep(self.interval)
                         continue
@@ -646,7 +652,7 @@ class DreamEngine:
             "running": self._running,
             "dreaming": self._dreaming,
             "interval_minutes": self.interval // 60,
-            "active_hours": [self.active_start, self.active_end],
+            "inactive_hours": [self.inactive_start, self.inactive_end],
             "activities": [a.name for a in self._activities],
             "dream_count": len(self._dream_log),
             "recent_dreams": self._dream_log[-5:] if self._dream_log else [],

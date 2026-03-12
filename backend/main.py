@@ -154,7 +154,7 @@ async def lifespan(app: FastAPI):
         agent=agent,
         enabled=config.autonomy.enabled and config.autonomy.interval_minutes > 0,
         interval_minutes=config.autonomy.interval_minutes,
-        active_hours=(config.autonomy.active_hours_start, config.autonomy.active_hours_end),
+        inactive_hours=(config.autonomy.inactive_hours_start, config.autonomy.inactive_hours_end),
         activities=config.autonomy.activities,
         weights=config.autonomy.weights,
     )

@@ -121,8 +121,8 @@ autonomy:
   interval_minutes: 30
 
   # Only dream during these hours (24h format, local time)
-  active_hours_start: 8
-  active_hours_end: 23
+  inactive_hours_start: 23
+  inactive_hours_end: 6
 
   # Which activities are enabled:
   #   dream      — Replay memories, find connections and insights

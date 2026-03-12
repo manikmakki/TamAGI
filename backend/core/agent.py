@@ -319,7 +319,9 @@ class TamAGIAgent:
 
         # 4. LLM loop with tool calling
         skills_used = []
+        interim_messages: list[str] = []
         llm_error: str | None = None
+        direct_response_text: str | None = None
         for round_num in range(self.config.agent.max_tool_rounds):
             try:
                 response = await self.llm.chat_with_retry(
@@ -354,17 +356,24 @@ class TamAGIAgent:
             # If the LLM included commentary alongside its tool calls (e.g.
             # "Let me check that file first..." or "I see the issue, trying..."),
             # surface it immediately so the user can follow the agent's reasoning.
-            if response.content and response.content.strip() and event_callback:
-                await event_callback({
-                    "type": "interim_text",
-                    "content": response.content.strip(),
-                })
+            if response.content and response.content.strip():
+                interim_messages.append(response.content.strip())
+                if event_callback:
+                    await event_callback({
+                        "type": "interim_text",
+                        "content": response.content.strip(),
+                    })
 
             # The assistant message for this round is appended ONCE before the
             # tool-result loop. Appending it inside the loop would duplicate it
             # for every tool call in the same round, which corrupts the context
             # and causes Ollama to return 500 on the next request.
-            llm_messages.append(LLMMessage("assistant", response.content or ""))
+            #
+            # Intermediate content (the LLM's commentary alongside tool calls)
+            # is already captured in interim_messages for display — omitting it
+            # from the history prevents the model from re-reading and
+            # re-generating the same reasoning on the next round.
+            llm_messages.append(LLMMessage("assistant", ""))
 
             # Execute each tool call and append its result
             for tc in response.tool_calls:
@@ -374,7 +383,10 @@ class TamAGIAgent:
                 if event_callback:
                     await event_callback({"type": "tool_start", "name": tc.name, "round": round_num + 1})
 
-                result = await self.skills.execute(name=tc.name, **tc.arguments)
+                # Pass the WS event callback to orchestrate_task so it can emit
+                # live interim_text events for each workflow phase/subagent.
+                extra = {"_event_callback": event_callback} if tc.name == "orchestrate_task" else {}
+                result = await self.skills.execute(name=tc.name, **extra, **tc.arguments)
                 self.personality.state.use_skill()
 
                 if event_callback:
@@ -395,14 +407,28 @@ class TamAGIAgent:
                     name=tc.name,
                 ))
 
+                # If the skill signals it provides the complete final response,
+                # skip the follow-up LLM call — the output IS the response.
+                if result.direct_response and result.success:
+                    direct_response_text = result.output
+                    break  # break inner tool-call loop
+
+            if direct_response_text is not None:
+                break  # break outer round loop
+
         # 5. Extract final response
-        final_text = llm_error or response.content or "..."
+        final_text = direct_response_text or llm_error or response.content or "..."
 
         # 6. Record assistant message
+        meta: dict[str, Any] = {"skills_used": skills_used}
+        if interim_messages:
+            meta["interim_messages"] = interim_messages
+        if archived_count:
+            meta["context_compressed"] = archived_count
         conv.messages.append(Message(
             role="assistant",
             content=final_text,
-            metadata={"skills_used": skills_used},
+            metadata=meta,
         ))
 
         # 7. Store conversation summary in memory (every 3 messages for better recall)
@@ -428,6 +454,7 @@ class TamAGIAgent:
             "state": self.personality.state.to_dict(),
             "skills_used": skills_used,
             "memories_recalled": len(memories),
+            "context_compressed": archived_count,
         }
 
     # ── Stage Advancement ─────────────────────────────────────

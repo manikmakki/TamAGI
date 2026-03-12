@@ -58,6 +58,7 @@ class OrchestrationSkill(Skill):
     async def execute(self, **kwargs: Any) -> SkillResult:
         goal = kwargs.get("goal", "").strip()
         context = kwargs.get("context", "").strip()
+        event_callback = kwargs.get("_event_callback")  # injected by agent, not from LLM
 
         if not goal:
             return SkillResult(success=False, error="No goal provided to orchestrate_task")
@@ -65,11 +66,14 @@ class OrchestrationSkill(Skill):
         logger.info(f"[orchestration_skill] goal: {goal[:100]}")
 
         try:
-            result = await self._orchestrator.run_workflow(goal=goal, context=context)
+            result = await self._orchestrator.run_workflow(
+                goal=goal, context=context, event_callback=event_callback
+            )
             return SkillResult(
                 success=True,
                 output=result,
                 data={"goal": goal, "context": context},
+                direct_response=True,
             )
         except Exception as e:
             logger.error(f"[orchestration_skill] workflow failed: {e}", exc_info=True)

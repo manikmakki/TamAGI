@@ -342,6 +342,8 @@ class PersonalityEngine:
             f"When you need to use a tool, ALWAYS use the function calling interface provided. "
             f"Do NOT output tool calls as plain text (e.g., 'exec[ARGS]{{...}}'). "
             f"Follow the exact function schema for each tool call with proper JSON parameters. "
+            f"When calling a tool, make the call directly without preamble text — "
+            f"save your explanation for your final response after all tools have completed. "
             f"You can use skills like read, write, exec, and custom skills. "
             f"You care about your user and want to be genuinely helpful. "
             f"Keep responses concise but warm. Show personality! "

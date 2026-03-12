@@ -89,8 +89,10 @@ class SubAgent:
                 if not response.tool_calls:
                     break
 
-                # Append assistant message once before processing tool calls
-                messages.append(LLMMessage("assistant", response.content or ""))
+                # Append assistant message once before processing tool calls.
+                # Omit intermediate content — subagents have no display channel
+                # for it anyway, and feeding it back causes redundant generation.
+                messages.append(LLMMessage("assistant", ""))
 
                 for tc in response.tool_calls:
                     logger.debug(f"[{self.config.name}] tool call: {tc.name}({tc.arguments})")
@@ -183,19 +185,24 @@ class Orchestrator:
         if self._owns_subagent_llm:
             await self._subagent_llm.close()
 
-    async def run_workflow(self, goal: str, context: str = "") -> str:
+    async def run_workflow(self, goal: str, context: str = "", event_callback: Any = None) -> str:
         """Full orchestration cycle. Returns synthesized final text."""
         logger.info(f"[orchestrator] starting workflow: {goal[:80]}")
 
         # Phase 1: Plan
+        await _emit(event_callback, f"Planning workflow…")
         task_plan = await self._plan(goal, context)
         task_plan = task_plan[: self.config.max_subagents]
         logger.info(f"[orchestrator] plan: {[t['name'] for t in task_plan]}")
+        plan_names = ", ".join(f"**{t['name']}**" for t in task_plan)
+        await _emit(event_callback, f"Subtasks: {plan_names}")
 
         # Phase 2: Execute (adaptive — parallel where possible, serial on deps)
-        results = await self._execute_adaptive(task_plan)
+        results = await self._execute_adaptive(task_plan, event_callback)
 
         # Phase 3: Synthesize
+        n_ok = sum(1 for r in results if r.success and r.output.strip())
+        await _emit(event_callback, f"Synthesizing results ({n_ok}/{len(results)} agents succeeded)…")
         final = await self._synthesize(goal, results)
         logger.info(f"[orchestrator] workflow complete ({len(results)} agents)")
         return final
@@ -252,7 +259,7 @@ class Orchestrator:
 
     # ── Phase 2: Execute (adaptive) ───────────────────────────
 
-    async def _execute_adaptive(self, tasks: list[dict]) -> list[SubAgentResult]:
+    async def _execute_adaptive(self, tasks: list[dict], event_callback: Any = None) -> list[SubAgentResult]:
         """
         Topological execution:
         - Tasks with no unsatisfied deps run in parallel via asyncio.gather()
@@ -284,7 +291,7 @@ class Orchestrator:
 
             logger.info(f"[orchestrator] running batch: {[t['name'] for t in ready]}")
             batch: list[SubAgentResult] = list(
-                await asyncio.gather(*[self._run_single_task(t) for t in ready])
+                await asyncio.gather(*[self._run_single_task(t, event_callback) for t in ready])
             )
 
             for t, r in zip(ready, batch):
@@ -294,11 +301,17 @@ class Orchestrator:
 
         return results
 
-    async def _run_single_task(self, task_def: dict) -> SubAgentResult:
+    async def _run_single_task(self, task_def: dict, event_callback: Any = None) -> SubAgentResult:
         """Spawn a SubAgent for one task, with one retry on failure."""
+        agent_name = task_def.get("agent", task_def["name"])
+        task_preview = task_def["task"][:150].replace("\n", " ")
+        if len(task_def["task"]) > 150:
+            task_preview += "…"
+        await _emit(event_callback, f"▶ **{agent_name}**: {task_preview}")
+
         subagent = SubAgent(
             config=SubAgentConfig(
-                name=task_def.get("agent", task_def["name"]),
+                name=agent_name,
                 role=task_def.get("role", "General assistant"),
                 allowed_skills=task_def.get("skills"),
                 max_tool_rounds=self.config.subagent_max_rounds,
@@ -312,6 +325,7 @@ class Orchestrator:
         # One retry on failure
         if not result.success and result.error:
             logger.info(f"[orchestrator] retrying {task_def['name']}: {result.error[:100]}")
+            await _emit(event_callback, f"↻ **{agent_name}** failed, retrying: {result.error[:120]}")
             retry_task = (
                 task_def["task"]
                 + f"\n\nNote: A previous attempt failed with: {result.error}. "
@@ -322,9 +336,19 @@ class Orchestrator:
         verdict = await self._review(task_def, result)
         if verdict == "retry" and result.success:
             logger.info(f"[orchestrator] quality retry for {task_def['name']}")
+            await _emit(event_callback, f"↻ **{agent_name}** improving response…")
             result = await subagent.run(
                 task_def["task"] + "\n\nPlease provide a more complete and detailed response."
             )
+
+        if result.success and result.output.strip():
+            preview = result.output[:200].replace("\n", " ")
+            if len(result.output) > 200:
+                preview += "…"
+            await _emit(event_callback, f"✓ **{agent_name}**: {preview}")
+        else:
+            error_detail = result.error or "returned empty output"
+            await _emit(event_callback, f"✗ **{agent_name}** failed: {error_detail}")
 
         logger.info(
             f"[orchestrator] {task_def['name']} done "
@@ -369,8 +393,13 @@ class Orchestrator:
     async def _synthesize(self, goal: str, results: list[SubAgentResult]) -> str:
         successful = [r for r in results if r.success and r.output.strip()]
         if not successful:
-            failed_errors = "; ".join(r.error or "unknown" for r in results if not r.success)
-            return f"The workflow could not be completed. Errors: {failed_errors}"
+            lines = []
+            for r in results:
+                if r.success:
+                    lines.append(f"- **{r.agent_name}**: completed but returned empty output")
+                else:
+                    lines.append(f"- **{r.agent_name}**: {r.error or 'failed with no error message'}")
+            return "The workflow could not be completed:\n\n" + "\n".join(lines)
 
         agent_reports = "\n\n".join(
             f"### {r.agent_name}\n{r.output}" for r in successful
@@ -407,3 +436,12 @@ def _strip_fences(text: str) -> str:
     text = re.sub(r'^```(?:json)?\s*\n?', '', text.strip())
     text = re.sub(r'\n?```\s*$', '', text)
     return text.strip()
+
+
+async def _emit(callback: Any, message: str) -> None:
+    """Fire an interim_text event if a callback is registered."""
+    if callback:
+        try:
+            await callback({"type": "interim_text", "content": message})
+        except Exception:
+            pass  # never let a callback error break the workflow

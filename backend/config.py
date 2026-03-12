@@ -97,8 +97,8 @@ class AutonomyConfig(BaseModel):
     """TamAGI's autonomous idle behavior (dream engine)."""
     enabled: bool = True
     interval_minutes: int = 30  # How often TamAGI dreams (0 = disabled)
-    active_hours_start: int = 8   # Don't dream before this hour
-    active_hours_end: int = 23    # Don't dream after this hour
+    inactive_hours_start: int = 23   # Don't dream before this hour
+    inactive_hours_end: int = 6    # Don't dream after this hour
     # Which activities are enabled: dream, explore, experiment, journal
     activities: list[str] = Field(
         default_factory=lambda: ["dream", "explore", "experiment", "journal"]

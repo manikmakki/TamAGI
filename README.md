@@ -144,8 +144,8 @@ agent:
 autonomy:
   enabled: true
   interval_minutes: 30
-  active_hours_start: 8
-  active_hours_end: 23
+  inactive_hours_start: 8
+  inactive_hours_end: 23
   activities:
     - dream
     - explore
@@ -225,8 +225,8 @@ personality stats (happiness, energy, knowledge) and grants XP.
 autonomy:
   enabled: true              # Master switch
   interval_minutes: 30       # How often (0 = disabled)
-  active_hours_start: 8      # Don't dream before 8am
-  active_hours_end: 23       # Don't dream after 11pm
+  inactive_hours_start: 23      # Don't dream before 8am
+  inactive_hours_end: 6       # Don't dream after 11pm
   activities:                 # Which activities to enable
     - dream
     - explore
