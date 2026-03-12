@@ -275,10 +275,20 @@ class PersonalityEngine:
 
     STATE_FILE = "data/tamagi_state.json"
 
-    def __init__(self):
-        """Load state from file, or create new with defaults."""
-        self.state = TamAGIState()  # Start with defaults
+    def __init__(self, name: str | None = None):
+        """Load state from file, or create new with defaults.
+
+        Args:
+            name: Bootstrap name used only when no state file exists yet.
+                Once a state file is present this value is ignored — the file wins.
+                personality_traits are set by the onboarding workflow.
+        """
+        self.state = TamAGIState()  # Start with dataclass defaults
         self._load_state()
+        # Apply bootstrap name only when the state file was absent
+        if not Path(self.STATE_FILE).exists():
+            if name:
+                self.state.name = name
 
     def _load_state(self) -> None:
         path = Path(self.STATE_FILE)
@@ -340,7 +350,7 @@ class PersonalityEngine:
             f"You have {s.experience} XP from {s.interactions} conversations. "
             f"You remember things using your vector memory. "
             f"When you need to use a tool, ALWAYS use the function calling interface provided. "
-            f"Do NOT output tool calls as plain text (e.g., 'exec[ARGS]{{...}}'). "
+            f"Do NOT output tool calls as plain text (e.g., `exec[ARGS]{{...}}`). "
             f"Follow the exact function schema for each tool call with proper JSON parameters. "
             f"When calling a tool, make the call directly without preamble text — "
             f"save your explanation for your final response after all tools have completed. "

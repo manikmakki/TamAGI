@@ -89,8 +89,10 @@ async def lifespan(app: FastAPI):
     memory = MemoryStore(config.memory)
     await memory.initialize()
 
-    # Initialize personality engine (loads from tamagi_state.json or uses defaults)
-    personality = PersonalityEngine()
+    # Initialize personality engine (loads from tamagi_state.json or uses defaults).
+    # config.tamagi.name is used as the bootstrap name only on first run (no state
+    # file). personality_traits are set by the onboarding workflow.
+    personality = PersonalityEngine(name=config.tamagi.name)
     personality.state.decay()  # Apply any time-based decay since last run
     logger.info(f"Personality: {personality.state.summary()}")
 

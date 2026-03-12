@@ -44,10 +44,28 @@ async def complete_onboarding():
     agent = get_agent()
     result = agent.identity.complete_onboarding()
 
-    # Update personality engine with new name
+    # Sync personality state from onboarding results
     identity = result.get("identity", {})
+    changed = False
+
     if identity.get("name"):
         agent.personality.state.name = identity["name"]
+        changed = True
+
+    # Derive personality_traits from vibe description + values list
+    vibe = identity.get("vibe", "")
+    values = identity.get("values", [])
+    if vibe or values:
+        vibe_short = vibe.split("—")[0].strip() if "—" in vibe else vibe
+        values_str = ", ".join(values) if isinstance(values, list) else str(values)
+        if vibe_short and values_str:
+            traits = f"{vibe_short}; values: {values_str}"
+        else:
+            traits = vibe_short or values_str
+        agent.personality.state.personality_traits = traits
+        changed = True
+
+    if changed:
         agent.personality.save_state()
 
     return result
