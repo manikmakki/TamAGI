@@ -50,3 +50,53 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// ── Push Notifications ────────────────────────────────────────────────────────
+
+self.addEventListener('push', (event) => {
+  // Parse payload sent by the backend (JSON: title, body, url, tag)
+  let data = { title: 'TamAGI', body: 'New response', url: '/', tag: 'tamagi-response' };
+  if (event.data) {
+    try { data = { ...data, ...event.data.json() }; } catch (_) { /* use defaults */ }
+  }
+
+  event.waitUntil(
+    // Check if the app window is already visible and focused.
+    // If so, skip the system notification — the user can already see the response.
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const isVisible = clients.some((c) => c.visibilityState === 'visible' && c.focused);
+      if (isVisible) return;
+
+      return self.registration.showNotification(data.title, {
+        body:     data.body,
+        icon:     '/assets/icon-192.png',
+        badge:    '/assets/icon-192.png',   // small monochrome icon (Chrome Android)
+        tag:      data.tag,                 // deduplicates — replaces previous same-tag notification
+        renotify: false,                    // silent replacement (no re-alert sound)
+        data:     { url: data.url },        // passed to notificationclick handler
+        vibrate:  [100, 50, 100],           // gentle vibration pattern (mobile)
+      });
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      // Focus an existing window if one is already open
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.navigate(targetUrl);
+          return client.focus();
+        }
+      }
+      // Otherwise open a new window
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
+  );
+});

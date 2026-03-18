@@ -38,6 +38,8 @@ from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
 from backend.api.dreams import router as dreams_router, set_dream_engine
 from backend.api.auth import router as auth_router
+from backend.core.push import PushNotificationService
+from backend.api.push import router as push_router, set_push_service
 
 # ── Logging ───────────────────────────────────────────────────
 
@@ -163,6 +165,17 @@ async def lifespan(app: FastAPI):
     set_dream_engine(dream_engine)
     dream_engine.start()
 
+    # Initialize push notification service
+    push_service = PushNotificationService(data_dir="data")
+    set_push_service(push_service)
+    if push_service.enabled:
+        logger.info(
+            "Push notifications enabled (VAPID public key: %s...)",
+            push_service.public_key[:20],
+        )
+    else:
+        logger.info("Push notifications unavailable (pywebpush not installed)")
+
     logger.info(f"═══ TamAGI is awake! ═══")
     logger.info(f"    Open http://localhost:{config.server.port} in your browser")
 
@@ -258,6 +271,7 @@ app.include_router(chat_router)
 app.include_router(skills_router)
 app.include_router(onboarding_router)
 app.include_router(dreams_router)
+app.include_router(push_router)
 
 # Serve frontend static files
 frontend_path = Path(__file__).parent.parent / "frontend"

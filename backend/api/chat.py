@@ -4,8 +4,10 @@ Chat API — REST and WebSocket endpoints for TamAGI conversations.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +62,24 @@ def get_agent():
     if _agent is None:
         raise HTTPException(status_code=503, detail="TamAGI agent not initialized")
     return _agent
+
+
+# ── Push notification helpers ─────────────────────────────────
+
+_MIN_PUSH_LENGTH = 50   # skip push for very short responses like "Done!" or "OK"
+
+
+def _should_notify(text: str) -> bool:
+    return len(text.strip()) >= _MIN_PUSH_LENGTH
+
+
+def _make_notification(result: dict, agent) -> tuple[str, str]:
+    name = getattr(agent.personality.state, "name", "TamAGI") or "TamAGI"
+    title = f"{name} replied"
+    clean = re.sub(r"[*_`#\[\]()\n]", " ", result.get("response", ""))
+    clean = re.sub(r"\s+", " ", clean).strip()
+    body = (clean[:100] + "...") if len(clean) > 100 else clean
+    return title, body
 
 
 # ── Chat Endpoints ────────────────────────────────────────────
@@ -210,6 +230,18 @@ async def websocket_chat(websocket: WebSocket):
                     "type": "message",
                     **result,
                 })
+
+                # Web Push — fire-and-forget, does not block the WS loop
+                try:
+                    from backend.api.push import get_push_service as _gpush
+                    _psvc = _gpush()
+                    if _psvc.has_subscription and _should_notify(result.get("response", "")):
+                        _t, _b = _make_notification(result, agent)
+                        asyncio.ensure_future(
+                            _psvc.send_notification(title=_t, body=_b, url="/")
+                        )
+                except Exception:
+                    pass   # push is best-effort; never affect the WS response
 
             except json.JSONDecodeError:
                 await websocket.send_json({"error": "Invalid JSON"})
