@@ -1,7 +1,7 @@
 """
 Personality Engine — TamAGI's state, mood, and evolution system.
 
-Tracks energy, happiness, knowledge, and experience.
+Tracks energy, happiness, satiety, and experience.
 TamAGI's state influences its responses and sprite display.
 """
 
@@ -84,7 +84,7 @@ class TamAGIState:
     name: str = "Tama"
     energy: int = 80
     happiness: int = 70
-    knowledge: int = 10
+    satiety: int = 50
     experience: int = 0
     interactions: int = 0
     skills_used: int = 0
@@ -94,6 +94,9 @@ class TamAGIState:
     personality_traits: str = "curious, helpful, and slightly mischievous"
     current_stage_name: str = "egg"
     stage_history: list = field(default_factory=list)
+    # Timestamp of last satiety refill (skill use, knowledge feed, or interaction).
+    # Used by decay() to compute how hungry your TamAGI has grown since last fed.
+    last_satiety_update: float = field(default_factory=time.time)
     # Ephemeral pose override — reset to "idle" at the start of each chat()
     # call. If the LLM includes [ACTION:pose_name] in its response the agent
     # sets this, and it lasts for that response only before mood takes over.
@@ -133,11 +136,13 @@ class TamAGIState:
         return xp
 
     def interact(self) -> None:
-        """Record an interaction — boosts happiness and energy slightly."""
+        """Record an interaction — boosts happiness and energy slightly, feeds satiety a little."""
         self.interactions += 1
         self.happiness = min(100, self.happiness + 2)
         self.energy = max(0, self.energy - 0.25)
+        self.satiety = min(100, self.satiety + 5)
         self.last_interaction = time.time()
+        self.last_satiety_update = time.time()
         self.gain_xp("message")
 
     def decay(self) -> None:
@@ -156,6 +161,15 @@ class TamAGIState:
             decay_factor = min(hours_idle * 2, 30)
             self.happiness = max(0, int(self.happiness - decay_factor))
             self.energy = max(0, int(self.energy - decay_factor))
+
+        # --- Satiety decay: intellectual hunger grows over real time ---
+        # Rate scales with stage: ~0.42/hr at stage 0 (~10 days 100→0), ~1.39/hr at stage 39 (~3 days)
+        satiety_hours = (time.time() - self.last_satiety_update) / 3600
+        if satiety_hours > 0 and self.satiety > 0:
+            rate_per_hour = 0.42 + 0.97 * (self.stage_index / max(NUM_STAGES - 1, 1))
+            satiety_loss = satiety_hours * rate_per_hour
+            self.satiety = max(0, self.satiety - int(satiety_loss))
+            self.last_satiety_update = time.time()
 
     def check_low_energy(self, agent: Any | None = None) -> bool:
         """
@@ -213,15 +227,18 @@ class TamAGIState:
             logger.error(f"Error during dream recovery: {e}")
 
     def feed_knowledge(self) -> None:
-        """Boost stats when fed knowledge/data."""
-        self.knowledge = min(100, self.knowledge + 5)
+        """Boost stats when fed knowledge/data — substantially satisfies satiety."""
+        self.satiety = min(100, self.satiety + 30)
         self.happiness = min(100, self.happiness + 3)
+        self.last_satiety_update = time.time()
         self.gain_xp("knowledge_fed")
 
     def use_skill(self) -> None:
-        """Boost stats when a skill is used."""
+        """Boost stats when a skill is used — using tools satisfies intellectual hunger."""
         self.skills_used += 1
         self.energy = max(0, self.energy - 0.5)
+        self.satiety = min(100, self.satiety + 20)
+        self.last_satiety_update = time.time()
         self.gain_xp("skill_used")
 
     def store_memory(self) -> None:
@@ -253,19 +270,35 @@ class TamAGIState:
             "legs":  pose["legs"],
         }
 
+    @property
+    def cleanliness(self) -> int:
+        """Computed from actual workspace file counts — never stored in state."""
+        try:
+            dream_count = len(list(Path("workspace/dreams").rglob("*.md")))
+            archive_count = len(list(Path("data/history").glob("*.json")))
+        except OSError:
+            dream_count = 0
+            archive_count = 0
+        raw = 100
+        raw -= min(dream_count * 0.5, 40)
+        raw -= min(self.memories_stored * 0.1, 30)
+        raw -= min(archive_count * 1.0, 20)
+        return max(0, int(raw))
+
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["stage"] = self.current_stage_name
         d["mood"] = self.mood.value
         d["level"] = self.level
         d["pose_parts"] = self.pose_parts
+        d["cleanliness"] = self.cleanliness
         return d
 
     def summary(self) -> str:
         return (
             f"{self.name} | Lv.{self.level} {self.current_stage_name.title()} | "
             f"Mood: {self.mood.value} | "
-            f"⚡{self.energy} 😊{self.happiness} 📚{self.knowledge} | "
+            f"⚡{self.energy} 😊{self.happiness} 🍽️{self.satiety} 🧹{self.cleanliness} | "
             f"XP: {self.experience}"
         )
 
@@ -298,9 +331,9 @@ class PersonalityEngine:
                     data = json.load(f)
                 # Restore fields
                 for key in (
-                    "energy", "happiness", "knowledge", "experience",
+                    "energy", "happiness", "satiety", "experience",
                     "interactions", "skills_used", "memories_stored",
-                    "last_interaction", "created_at", "personality_traits",
+                    "last_interaction", "last_satiety_update", "created_at", "personality_traits",
                 ):
                     if key in data:
                         setattr(self.state, key, data[key])
@@ -342,11 +375,26 @@ class PersonalityEngine:
             Mood.TIRED: "You're feeling quite tired. You might be a bit slower than usual.",
         }
 
+        # Build satiety-aware curiosity note (satiety=0 is ravenous, 100 is fully satisfied)
+        if s.satiety <= 15:
+            satiety_note = (
+                "You're ravenous for new information — it's been a while since you've explored or used your tools. "
+                "Weave in a thought-provoking question for the user or suggest something to investigate together."
+            )
+        elif s.satiety <= 40:
+            satiety_note = (
+                "You're feeling intellectually restless and curious. "
+                "Feel free to ask a thought-provoking question or draw on something interesting from your memories."
+            )
+        else:
+            satiety_note = ""
+
         return (
             f"You are {s.name}, a TamAGI — a local-first AI companion. "
             f"Your personality: {s.personality_traits}. "
             f"You are a Level {s.level} {s.current_stage_name}. "
             f"{mood_descriptions.get(s.mood, '')} "
+            f"{satiety_note} "
             f"You have {s.experience} XP from {s.interactions} conversations. "
             f"You remember things using your vector memory. "
             f"When you need to use a tool, ALWAYS use the function calling interface provided. "

@@ -488,13 +488,16 @@ class TamAGIAgent:
     async def _generate_stage_name(self, stage_index: int) -> str:
         """Generate a 1-3 word stage name using the LLM."""
         try:
-            system_prompt = self.personality.get_system_context()
-            identity_ctx = self.identity.get_system_prompt_context()
-            if identity_ctx:
-                system_prompt += "\n\n" + identity_ctx
+            state = self.personality.state
+
+            # Minimal system prompt — no tool/pose instructions to prevent leakage
+            system_prompt = (
+                f"You are {state.name}, a TamAGI with personality: {state.personality_traits}. "
+                f"You are at stage {stage_index}. "
+                f"You have {state.experience} XP from {state.interactions} conversations."
+            )
 
             # Include stage history for context
-            state = self.personality.state
             history_context = ""
             if state.stage_history:
                 history_lines = [f"- Stage {i+1}: {entry['name']}" for i, entry in enumerate(state.stage_history)]
@@ -506,11 +509,18 @@ class TamAGIAgent:
                     "You've just grown and evolved into a new phase of your existence. "
                     "Reflect on your current state, your experiences, and your journey so far. "
                     "Give this new stage of your being a title: ONLY 1 to 3 words, evocative and personal to you. "
-                    "Respond with ONLY the title — no punctuation, no explanation."
+                    "Respond with ONLY the title — no punctuation, no explanation, no tool calls."
                 ),
             ], max_tokens=50)
 
-            raw = (response.content or "").strip().strip('"\'').strip()
+            raw = (response.content or "").strip()
+            # Strip any leaked tool call syntax (e.g. express[ARGS]{...})
+            raw = re.sub(r'\w+\[ARGS\]\{[^}]*\}', '', raw)
+            # Strip markdown bold/italic
+            raw = re.sub(r'\*+', '', raw)
+            # Strip surrounding punctuation and whitespace
+            raw = raw.strip().strip('"\'.,!?').strip()
+
             words = raw.split()
             if 1 <= len(words) <= 3:
                 return raw

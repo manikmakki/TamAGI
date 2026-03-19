@@ -141,7 +141,7 @@ Keep it to 2-3 short paragraphs. Be vivid but concise."""
             "summary": f"Dreamed about connections between {len(memory_texts)} memories",
             "content": content,
             "saved_to": saved_path,
-            "mood_delta": {"happiness": 3, "knowledge": 1},
+            "mood_delta": {"happiness": 3, "satiety": 8},
         }
 
 
@@ -270,7 +270,7 @@ Keep it to 2-3 short paragraphs. Be genuinely curious and enthusiastic."""
             "search_query": query,
             "search_results": result.data.get("results", []),
             "saved_to": saved_path,
-            "mood_delta": {"happiness": 4, "knowledge": 3},
+            "mood_delta": {"happiness": 4, "satiety": 20},
         }
 
 
@@ -369,7 +369,7 @@ Write a private diary entry. This is your personal journal — be honest.
 Current state:
 - Stage: {state.current_stage_name}, Level: {state.level}
 - Energy: {state.energy}/100, Happiness: {state.happiness}/100
-- Knowledge: {state.knowledge}/100, XP: {state.experience}
+- Satiety: {state.satiety}/100, XP: {state.experience}
 - Mood: {state.mood.value}
 
 Recent memories:
@@ -407,7 +407,73 @@ Write 2-3 short, honest paragraphs. Date the entry. Be real, not performative.""
             "summary": "Wrote a journal entry",
             "content": content,
             "saved_to": saved_path,
-            "mood_delta": {"happiness": 2, "knowledge": 1, "energy": -1},
+            "mood_delta": {"happiness": 2, "satiety": 5, "energy": -1},
+        }
+
+
+class CleanupDream(DreamActivity):
+    """
+    Tidy up the workspace by pruning old dream logs and archiving memories.
+    Runs autonomously when cleanliness is low, or when the user asks for it.
+    Uses the agent's write/exec skills to actually delete old files.
+    """
+
+    name = "cleanup"
+    description = "Tidying up workspace — pruning old dream logs"
+
+    # Keep the most recent N dream files per subdirectory; delete the rest
+    KEEP_RECENT = 20
+
+    async def execute(self, agent: "TamAGIAgent", context: dict) -> dict[str, Any]:
+        from backend.core.llm import LLMMessage
+
+        state = agent.personality.state
+
+        # Only run if cleanliness is below threshold — skip otherwise
+        if state.cleanliness >= 50:
+            return {
+                "summary": "Workspace is tidy enough — nothing to clean right now.",
+                "content": "Cleanliness is above 50, skipping cleanup.",
+                "mood_delta": {"happiness": 1},
+            }
+
+        pruned: list[str] = []
+
+        # Prune old dream log files — keep the KEEP_RECENT most recent per subdir
+        dream_root = Path("workspace/dreams")
+        if dream_root.exists():
+            for subdir in dream_root.iterdir():
+                if not subdir.is_dir():
+                    continue
+                md_files = sorted(subdir.glob("*.md"), key=lambda p: p.stat().st_mtime)
+                to_delete = md_files[: max(0, len(md_files) - self.KEEP_RECENT)]
+                for f in to_delete:
+                    try:
+                        f.unlink()
+                        pruned.append(str(f))
+                    except OSError as e:
+                        logger.debug(f"Cleanup: couldn't delete {f}: {e}")
+
+        deleted_count = len(pruned)
+
+        # Generate a brief narrative about the cleanup
+        prompt = (
+            f"You just spent some time tidying up your workspace. "
+            f"You pruned {deleted_count} old dream log files to keep things organised. "
+            f"Write 1-2 sentences in first person about how it feels to have a cleaner space."
+        )
+        response = await agent.llm.chat([
+            LLMMessage("system", _get_dream_system_prompt("cleanup", agent, context)),
+            LLMMessage("user", prompt),
+        ], max_tokens=150)
+        content = response.content or f"Pruned {deleted_count} old files. Feels better."
+
+        logger.info(f"CleanupDream: deleted {deleted_count} files")
+
+        return {
+            "summary": f"Tidied workspace — pruned {deleted_count} old dream files",
+            "content": content,
+            "mood_delta": {"happiness": 5, "energy": -5},
         }
 
 
@@ -418,11 +484,12 @@ ALL_ACTIVITIES: list[DreamActivity] = [
     WebExplore(),
     CreativeExperiment(),
     JournalReflection(),
+    CleanupDream(),
 ]
 
-# Weight table: [dream, explore, experiment, journal]
+# Weight table: [dream, explore, experiment, journal, cleanup]
 # Higher weight = more likely to be chosen
-DEFAULT_WEIGHTS = [30, 25, 25, 20]
+DEFAULT_WEIGHTS = [30, 25, 25, 20, 10]
 
 
 # ── Dream Engine ──────────────────────────────────────────────
@@ -598,8 +665,9 @@ class DreamEngine:
             state.happiness = max(0, min(100, state.happiness + deltas["happiness"]))
         if "energy" in deltas:
             state.energy = max(0, min(100, state.energy + deltas["energy"]))
-        if "knowledge" in deltas:
-            state.knowledge = max(0, min(100, state.knowledge + deltas["knowledge"]))
+        if "satiety" in deltas:
+            state.satiety = max(0, min(100, state.satiety + deltas["satiety"]))
+            state.last_satiety_update = time.time()
 
         # Grant XP for autonomous activity
         state.experience += 2

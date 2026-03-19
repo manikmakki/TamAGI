@@ -91,22 +91,6 @@
       padding-top: 36px;
     }
 
-    .avatar-panel::before {
-      content: '';
-      position: absolute;
-      width: 220px;
-      height: 220px;
-      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
-      border-radius: 50%;
-      pointer-events: none;
-      z-index: 0;
-      animation: ambientPulse 4s ease-in-out infinite;
-    }
-
-    @keyframes ambientPulse {
-      0%, 100% { opacity: 0.35; transform: scale(1); }
-      50% { opacity: 0.65; transform: scale(1.1); }
-    }
 
     /* SVG pixel-art sprite */
     .sprite-svg {
@@ -222,18 +206,38 @@
       margin-top: 2px;
     }
 
-    .stat-row {
-      position: relative; z-index: 1;
+    /* Sprite + name/subtitle column — left side of avatar-content */
+    .avatar-sprite-col {
       display: flex;
-      gap: clamp(6px, 2vw, 16px);
-      margin-top: 8px;
-      width: 100%;
-      max-width: 380px;
-      padding: 0 16px;
+      flex-direction: column;
+      align-items: center;
+      flex-shrink: 0;
     }
 
-    .stat-item { flex: 1; min-width: 0; position: relative; }
-    .stat-item .stat-label { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); margin-bottom: 2px; }
+    /* Row that holds the sprite column and the stat column side-by-side */
+    .avatar-content {
+      position: relative; z-index: 1;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(10px, 3vw, 24px);
+      width: 100%;
+      padding: 0 clamp(12px, 4vw, 24px);
+    }
+
+    /* 1×4 vertical stat column — right side of avatar-content */
+    .stat-row {
+      display: flex;
+      flex-direction: column;
+      gap: clamp(5px, 1.2vh, 9px);
+      flex: 1;
+      min-width: 0;
+      max-width: 180px;
+    }
+
+    .stat-item { min-width: 0; position: relative; }
+    .stat-item .stat-label { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-primary); margin-bottom: 2px; }
     .stat-item .stat-bar { height: 4px; background: var(--bg-deep); border-radius: 2px; overflow: hidden; border: 1px solid var(--border); }
     .stat-item .stat-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
     /* Stat help tooltip — tap on mobile, hover on desktop */
@@ -254,7 +258,8 @@
     @media (hover: hover) { .stat-item:hover .stat-tip { display: block; } }
     .stat-fill.energy { background: var(--warning); }
     .stat-fill.happiness { background: var(--accent-secondary); }
-    .stat-fill.knowledge { background: var(--accent-tertiary); }
+    .stat-fill.satiety { background: var(--accent-tertiary); }
+    .stat-fill.cleanliness { background: var(--accent); }
 
     /* Floating delta indicators (+N / -N) that appear when a stat changes */
     .stat-delta {
@@ -597,7 +602,8 @@
     /* ═══ RESPONSIVE ═══ */
     @media (max-width: 480px) {
       :root { --avatar-height: 28vh; }
-      .stat-row { padding: 0 10px; }
+      .avatar-content { gap: 10px; padding: 0 10px; }
+      .stat-row { max-width: 160px; }
       .pill { font-size: 8px; padding: 1px 5px; }
       .msg { max-width: 88%; }
       .msg .bubble { font-size: 12px; padding: 7px 10px; }
@@ -680,26 +686,33 @@
         <div class="pill mood"><span id="p-mood-dot">&#9679;</span> <span class="val" id="p-mood">...</span></div>
         <div class="pill xp"><span>XP</span> <span class="val" id="p-xp">0</span></div>
         <div class="dot" id="conn-dot" title="Disconnected"></div>
-        <button id="logout-btn" onclick="logout()" title="Sign out" style="display:none;background:none;border:none;color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:1px;cursor:pointer;padding:2px 5px;border-radius:3px;transition:color 0.15s;" onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='var(--text-muted)'">&#x23FB;</button>
+        <button id="logout-btn" onclick="logout()" title="Sign out" style="display:none;background:none;border:none;color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:1px;cursor:pointer;padding:2px 5px;border-radius:3px;transition:color 0.15s;" onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='var(--text-muted)'">OUT</button>
       </div>
     </div>
-    <!-- Pixel-art SVG sprite — parts rendered by JS from SPRITE_PARTS library -->
-    <svg id="sprite-box" class="sprite-svg" viewBox="0 0 16 26"
-         data-pose="idle" xmlns="http://www.w3.org/2000/svg">
-      <g id="sp-head"></g>        <!-- head shell: green glow -->
-      <g id="sp-face"></g>        <!-- face features: pink glow -->
-      <g id="sp-arm-l"></g>       <!-- left arm: green glow -->
-      <g id="sp-torso"></g>       <!-- torso shell: green glow -->
-      <g id="sp-torso-fx"></g>    <!-- torso detail: glow color matches content -->
-      <g id="sp-arm-r"></g>       <!-- right arm: green glow -->
-      <g id="sp-legs"></g>        <!-- legs: green glow -->
-    </svg>
-    <div class="avatar-name" id="a-name">Tama</div>
-    <div class="avatar-subtitle" id="a-subtitle">EGG &mdash; Level 1</div>
-    <div class="stat-row">
-      <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Energy <span class="stat-help">&#9432;</span></span><span id="s-energy-v">80</span></div><div class="stat-bar"><div class="stat-fill energy" id="s-energy-f" style="width:80%"></div></div><div class="stat-tip">Drains over time &amp; from activity. Low energy = tired mood, skipped dreams. Recharges while idle.</div></div>
-      <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F496; Happiness <span class="stat-help">&#9432;</span></span><span id="s-happy-v">70</span></div><div class="stat-bar"><div class="stat-fill happiness" id="s-happy-f" style="width:70%"></div></div><div class="stat-tip">Rises from chatting, dreaming &amp; creating. Drops when ignored. Affects mood and response tone.</div></div>
-      <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F4DA; Knowledge <span class="stat-help">&#9432;</span></span><span id="s-know-v">10</span></div><div class="stat-bar"><div class="stat-fill knowledge" id="s-know-f" style="width:10%"></div></div><div class="stat-tip">Grows from conversations, web searches &amp; stored memories. Drives evolution to higher stages.</div></div>
+    <div class="avatar-content">
+      <!-- Sprite + name -->
+      <div class="avatar-sprite-col">
+        <!-- Pixel-art SVG sprite — parts rendered by JS from SPRITE_PARTS library -->
+        <svg id="sprite-box" class="sprite-svg" viewBox="0 0 16 26"
+             data-pose="idle" xmlns="http://www.w3.org/2000/svg">
+          <g id="sp-head"></g>        <!-- head shell: green glow -->
+          <g id="sp-face"></g>        <!-- face features: pink glow -->
+          <g id="sp-arm-l"></g>       <!-- left arm: green glow -->
+          <g id="sp-torso"></g>       <!-- torso shell: green glow -->
+          <g id="sp-torso-fx"></g>    <!-- torso detail: glow color matches content -->
+          <g id="sp-arm-r"></g>       <!-- right arm: green glow -->
+          <g id="sp-legs"></g>        <!-- legs: green glow -->
+        </svg>
+        <div class="avatar-name" id="a-name">Tama</div>
+        <div class="avatar-subtitle" id="a-subtitle">EGG &mdash; Level 1</div>
+      </div>
+      <!-- Stats — 1×4 vertical column -->
+      <div class="stat-row">
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Energy <span class="stat-help">&#9432;</span></span><span id="s-energy-v">80</span></div><div class="stat-bar"><div class="stat-fill energy" id="s-energy-f" style="width:80%"></div></div><div class="stat-tip">Drains over time &amp; from activity. Low energy = tired mood, skipped dreams. Recharges while idle.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F496; Happiness <span class="stat-help">&#9432;</span></span><span id="s-happy-v">70</span></div><div class="stat-bar"><div class="stat-fill happiness" id="s-happy-f" style="width:70%"></div></div><div class="stat-tip">Rises from chatting, dreaming &amp; creating. Drops when ignored. Affects mood and response tone.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F37D; Satiety <span class="stat-help">&#9432;</span></span><span id="s-satiety-v">50</span></div><div class="stat-bar"><div class="stat-fill satiety" id="s-satiety-f" style="width:50%"></div></div><div class="stat-tip">Intellectual hunger — drains over time (faster at higher stages). Satisfied by using tools, web searches &amp; being fed knowledge. Low satiety makes your TamAGI curious and inquisitive.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F9F9; Cleanliness <span class="stat-help">&#9432;</span></span><span id="s-clean-v">100</span></div><div class="stat-bar"><div class="stat-fill cleanliness" id="s-clean-f" style="width:100%"></div></div><div class="stat-tip">Workspace hygiene — drops as dream logs, memories &amp; archives accumulate. Your TamAGI tidies up autonomously when it gets messy, or ask it to clean up directly.</div></div>
+      </div>
     </div>
     <div class="dream-indicator" id="dream-ind">&#x2728; dreaming...</div>
   </div>
@@ -1066,7 +1079,7 @@ function setPose(parts){
   }
 }
 
-function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-mood',(s.mood||'').toUpperCase());setText('p-xp',s.experience||0);const mc={ecstatic:'#00ff9d',happy:'#00cc7d',content:'#6b8aff',neutral:'#8888aa',bored:'#ffaa00',sad:'#ff6b9d',tired:'#555570'};const md=document.getElementById('p-mood-dot');if(md)md.style.color=mc[s.mood]||'#8888aa';if(s.pose_parts)setPose(s.pose_parts);setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-energy',s.energy);setBar('s-happy',s.happiness);setBar('s-know',s.knowledge)}
+function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-mood',(s.mood||'').toUpperCase());setText('p-xp',s.experience||0);const mc={ecstatic:'#00ff9d',happy:'#00cc7d',content:'#6b8aff',neutral:'#8888aa',bored:'#ffaa00',sad:'#ff6b9d',tired:'#555570'};const md=document.getElementById('p-mood-dot');if(md)md.style.color=mc[s.mood]||'#8888aa';if(s.pose_parts)setPose(s.pose_parts);setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-energy',s.energy);setBar('s-happy',s.happiness);setBar('s-satiety',s.satiety);setBar('s-clean',s.cleanliness)}
 // Previous stat values — null on first load so the initial updateState() call
 // establishes a baseline without spawning spurious indicators.
 const _prevStat={};
@@ -1087,7 +1100,7 @@ function setBar(p,v){
   if(!statItem)return;
 
   // Match the indicator colour to the stat bar colour
-  const colourMap={energy:'var(--warning)',happiness:'var(--accent-secondary)',knowledge:'var(--accent-tertiary)'};
+  const colourMap={energy:'var(--warning)',happiness:'var(--accent-secondary)',satiety:'var(--accent-tertiary)',cleanliness:'var(--accent)'};
   const fillClass=[...(f.classList||[])].find(c=>colourMap[c]);
 
   const el=document.createElement('span');
