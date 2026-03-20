@@ -17,6 +17,11 @@ class LLMConfig(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 2048
     timeout: int = 120
+    # Provider selection: "openai" | "anthropic" | None (auto-detect from URL).
+    # When None, provider is inferred: URLs containing "anthropic.com" use
+    # Anthropic's Messages API; everything else uses OpenAI-compatible format.
+    # Explicit setting overrides auto-detection.
+    provider: str | None = None
     # Ollama-specific: sets the KV-cache / context window size (num_ctx).
     # Without this, Ollama uses the model's compiled default which can vary
     # and may silently truncate context. Set to match your model's capability.
