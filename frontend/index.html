@@ -619,6 +619,91 @@
       .sprite-svg { width: clamp(100px, 16vmin, 160px); }
     }
 
+    /* ═══ HORIZONTAL LAYOUT MODE ═══ */
+    #app.horizontal {
+      flex-direction: row;
+    }
+    #app.horizontal .avatar-panel {
+      flex: 0 0 var(--avatar-width, 33.33%);
+      min-width: 200px;
+      max-width: 60%;
+      height: 100%;
+      border-bottom: none;
+      border-right: 1px solid var(--border);
+      padding-top: 36px;
+    }
+    #app.horizontal .avatar-content {
+      flex-direction: column;
+      gap: clamp(8px, 2vh, 16px);
+    }
+    #app.horizontal .stat-row {
+      flex-direction: column;
+      max-width: 200px;
+    }
+    #app.horizontal .chat-panel {
+      flex: 1 1 0%;
+      height: 100%;
+      min-width: 280px;
+    }
+    #app.horizontal .top-bar {
+      border-right: 1px solid var(--border);
+    }
+
+    /* Resize handle */
+    .resize-handle {
+      display: none;
+      position: absolute;
+      top: 0;
+      right: -4px;
+      width: 8px;
+      height: 100%;
+      cursor: ew-resize;
+      z-index: 10;
+      background: transparent;
+    }
+    .resize-handle::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 3px;
+      height: 40px;
+      background: var(--border-bright);
+      border-radius: 2px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .resize-handle:hover::after,
+    .resize-handle.dragging::after {
+      opacity: 1;
+      background: var(--accent-dim);
+    }
+    #app.horizontal .resize-handle {
+      display: block;
+    }
+
+    /* Layout toggle button */
+    .layout-toggle {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 2px 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: none;
+    }
+    .layout-toggle:hover {
+      border-color: var(--accent-dim);
+      color: var(--accent);
+    }
+    /* Only show on wider screens where horizontal makes sense */
+    @media (min-width: 768px) {
+      .layout-toggle { display: inline-block; }
+    }
+
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -685,6 +770,7 @@
         <div class="pill lv"><span>LV</span> <span class="val" id="p-lv">1</span></div>
         <div class="pill mood"><span id="p-mood-dot">&#9679;</span> <span class="val" id="p-mood">...</span></div>
         <div class="pill xp"><span>XP</span> <span class="val" id="p-xp">0</span></div>
+        <button class="layout-toggle" id="layout-toggle" onclick="toggleLayout()" title="Toggle layout">&#x25EB;</button>
         <div class="dot" id="conn-dot" title="Disconnected"></div>
         <button id="logout-btn" onclick="logout()" title="Sign out" style="display:none;background:none;border:none;color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:1px;cursor:pointer;padding:2px 5px;border-radius:3px;transition:color 0.15s;" onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='var(--text-muted)'">OUT</button>
       </div>
@@ -715,6 +801,7 @@
       </div>
     </div>
     <div class="dream-indicator" id="dream-ind">&#x2728; dreaming...</div>
+    <div class="resize-handle" id="resize-handle"></div>
   </div>
 
   <!-- CHAT — BOTTOM 2/3 -->
@@ -1248,8 +1335,93 @@ function obPrev(){obStep=Math.max(1,obStep-1);renderOb()}
 async function obSkipAll(){obSteps.forEach(s=>{if(s.field&&s.default!==undefined&&!obR[s.field])obR[s.field]=s.default});await obFinalize()}
 async function obFinalize(){try{for(const s of obSteps){if(s.field&&obR[s.field]!==undefined)await api('/onboarding/step',{method:'POST',body:JSON.stringify({step_id:s.id,field:s.field,value:obR[s.field]})})}await api('/onboarding/complete',{method:'POST'})}catch(e){console.error(e)}document.getElementById('onboarding').classList.add('hidden');loadState();loadConversations();document.getElementById('input').focus()}
 
+// ═══ LAYOUT TOGGLE & RESIZE ═══
+function toggleLayout(){
+  const app=document.getElementById('app');
+  const isHoriz=app.classList.toggle('horizontal');
+  localStorage.setItem('tamagi-layout',isHoriz?'horizontal':'vertical');
+  updateLayoutIcon();
+}
+function updateLayoutIcon(){
+  const btn=document.getElementById('layout-toggle');
+  const isHoriz=document.getElementById('app').classList.contains('horizontal');
+  btn.innerHTML=isHoriz?'&#x25A4;':'&#x25EB;'; // ◧ vertical, ▣ horizontal
+  btn.title=isHoriz?'Switch to vertical layout':'Switch to horizontal layout';
+}
+function initLayout(){
+  const saved=localStorage.getItem('tamagi-layout');
+  if(saved==='horizontal'&&window.innerWidth>=768){
+    document.getElementById('app').classList.add('horizontal');
+  }
+  const savedWidth=localStorage.getItem('tamagi-avatar-width');
+  if(savedWidth){
+    document.documentElement.style.setProperty('--avatar-width',savedWidth);
+  }
+  updateLayoutIcon();
+}
+
+// Resize handle drag logic
+let isResizing=false;
+function initResize(){
+  const handle=document.getElementById('resize-handle');
+  const app=document.getElementById('app');
+  const avatarPanel=document.querySelector('.avatar-panel');
+
+  handle.addEventListener('mousedown',e=>{
+    if(!app.classList.contains('horizontal'))return;
+    isResizing=true;
+    handle.classList.add('dragging');
+    document.body.style.cursor='ew-resize';
+    document.body.style.userSelect='none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove',e=>{
+    if(!isResizing)return;
+    const appRect=app.getBoundingClientRect();
+    const newWidth=e.clientX-appRect.left;
+    const pct=Math.min(60,Math.max(15,(newWidth/appRect.width)*100));
+    document.documentElement.style.setProperty('--avatar-width',pct+'%');
+    localStorage.setItem('tamagi-avatar-width',pct+'%');
+  });
+
+  document.addEventListener('mouseup',()=>{
+    if(isResizing){
+      isResizing=false;
+      handle.classList.remove('dragging');
+      document.body.style.cursor='';
+      document.body.style.userSelect='';
+    }
+  });
+
+  // Touch support for mobile/tablet
+  handle.addEventListener('touchstart',e=>{
+    if(!app.classList.contains('horizontal'))return;
+    isResizing=true;
+    handle.classList.add('dragging');
+    e.preventDefault();
+  },{passive:false});
+
+  document.addEventListener('touchmove',e=>{
+    if(!isResizing)return;
+    const touch=e.touches[0];
+    const appRect=app.getBoundingClientRect();
+    const newWidth=touch.clientX-appRect.left;
+    const pct=Math.min(60,Math.max(15,(newWidth/appRect.width)*100));
+    document.documentElement.style.setProperty('--avatar-width',pct+'%');
+    localStorage.setItem('tamagi-avatar-width',pct+'%');
+  },{passive:true});
+
+  document.addEventListener('touchend',()=>{
+    if(isResizing){
+      isResizing=false;
+      handle.classList.remove('dragging');
+    }
+  });
+}
+
 // ═══ INIT ═══
-document.addEventListener('DOMContentLoaded',async()=>{const inp=document.getElementById('input');inp.addEventListener('input',()=>autoResize(inp));inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
+document.addEventListener('DOMContentLoaded',async()=>{initLayout();initResize();const inp=document.getElementById('input');inp.addEventListener('input',()=>autoResize(inp));inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
 // Render the static shells once — they never change with pose, only their
 // overlay groups do. Shells carry the green glow via their CSS class rules.
 renderGrid(document.getElementById('sp-head'),SPRITE_PARTS.head_shell,0,0,true);
