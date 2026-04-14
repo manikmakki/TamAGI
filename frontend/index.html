@@ -537,6 +537,62 @@
     .dream-trigger-btn { width: 100%; padding: 5px; background: var(--bg-elevated); border: 1px dashed var(--border); border-radius: var(--radius-sm); color: var(--accent-tertiary); font-family: var(--font-mono); font-size: 9px; cursor: pointer; text-align: center; margin-top: 4px; }
     .dream-trigger-btn:hover { border-color: var(--accent-tertiary); background: rgba(107,138,255,0.08); }
 
+    /* ═══ DRAWER TABS ═══ */
+    .drawer-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .drawer-tab { flex: 1; padding: 7px 4px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.5px; cursor: pointer; transition: color 0.15s, border-color 0.15s; text-transform: uppercase; }
+    .drawer-tab:hover { color: var(--text-secondary); }
+    .drawer-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ═══ DRAWER PANELS ═══ */
+    .drawer-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+    .drawer-panel.hidden { display: none; }
+    .drawer-empty { padding: 20px 12px; font-size: 10px; color: var(--text-muted); text-align: center; line-height: 1.6; }
+
+    /* ═══ DREAMS PANEL ═══ */
+    .dream-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 6px; }
+    .dream-status { display: flex; align-items: center; gap: 5px; font-size: 9px; color: var(--text-muted); flex: 1; }
+    .dream-active-badge { display: flex; align-items: center; gap: 4px; color: var(--accent-tertiary); animation: dreamPulse 2s ease-in-out infinite; }
+    .dream-panel-header .dream-trigger-btn { width: auto; margin-top: 0; padding: 4px 8px; flex-shrink: 0; }
+    .dream-entries { flex: 1; overflow-y: auto; padding: 6px 8px; }
+    .dream-entries::-webkit-scrollbar { width: 4px; }
+    .dream-entries::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .dream-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; margin-bottom: 6px; transition: border-color 0.15s; }
+    .dream-card:hover { border-color: var(--border-bright); }
+    .dream-card-header { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+    .dream-type-icon { font-size: 13px; line-height: 1; flex-shrink: 0; }
+    .dream-type-label { font-size: 8px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent-tertiary); font-weight: 500; }
+    .dream-time { margin-left: auto; font-size: 8px; color: var(--text-muted); white-space: nowrap; }
+    .dream-summary { font-size: 10px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 5px; }
+    .dream-mood-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .dream-mood-chip { font-size: 8px; padding: 1px 6px; border-radius: 10px; font-weight: 500; }
+    .dream-mood-chip.pos { background: rgba(0,255,157,0.1); color: var(--accent); border: 1px solid rgba(0,255,157,0.2); }
+    .dream-mood-chip.neg { background: rgba(255,68,102,0.1); color: var(--error); border: 1px solid rgba(255,68,102,0.2); }
+
+    /* ═══ MEMORIES PANEL ═══ */
+    .mem-search-bar { padding: 8px 10px 4px; flex-shrink: 0; }
+    .mem-search-input { width: 100%; padding: 6px 10px; background: var(--bg-surface); border: 1px solid var(--border-bright); border-radius: var(--radius-md); color: var(--text-primary); font-family: var(--font-mono); font-size: 11px; outline: none; transition: border-color 0.2s; }
+    .mem-search-input:focus { border-color: var(--accent-dim); }
+    .mem-search-input::placeholder { color: var(--text-muted); }
+    .mem-count { font-size: 8px; color: var(--text-muted); margin-top: 3px; text-align: right; letter-spacing: 0.3px; }
+    .mem-type-filters { display: flex; gap: 4px; padding: 0 10px 6px; flex-wrap: wrap; flex-shrink: 0; }
+    .mem-filter { padding: 2px 7px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-muted); font-family: var(--font-mono); font-size: 8px; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; transition: all 0.15s; }
+    .mem-filter:hover { border-color: var(--border-bright); color: var(--text-secondary); }
+    .mem-filter.active { border-color: var(--accent-tertiary); color: var(--accent-tertiary); background: rgba(107,138,255,0.08); }
+    .mem-entries { flex: 1; overflow-y: auto; padding: 4px 8px 8px; }
+    .mem-entries::-webkit-scrollbar { width: 4px; }
+    .mem-entries::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .mem-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 7px 10px; margin-bottom: 5px; transition: border-color 0.15s; }
+    .mem-card:hover { border-color: var(--border-bright); }
+    .mem-card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .mem-type-badge { font-size: 8px; padding: 1px 6px; border-radius: 3px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; flex-shrink: 0; }
+    .mem-type-badge[data-type="conversation"] { background: rgba(107,138,255,0.15); color: var(--accent-tertiary); }
+    .mem-type-badge[data-type="fact"]         { background: rgba(255,170,0,0.15);   color: var(--warning); }
+    .mem-type-badge[data-type="knowledge"]    { background: rgba(0,255,157,0.12);   color: var(--accent); }
+    .mem-type-badge[data-type="skill"]        { background: rgba(255,107,157,0.15); color: var(--accent-secondary); }
+    .mem-type-badge[data-type="preference"]   { background: rgba(136,136,170,0.15); color: var(--text-secondary); }
+    .mem-time { margin-left: auto; font-size: 8px; color: var(--text-muted); white-space: nowrap; }
+    .mem-content { font-size: 10px; color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
+
     /* ═══ ONBOARDING ═══ */
     .onboarding-overlay { position: fixed; inset: 0; background: var(--bg-deep); z-index: 200; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 16px; }
     .onboarding-overlay.hidden { display: none; }
@@ -662,13 +718,52 @@
 <!-- DRAWER -->
 <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
 <aside class="drawer" id="drawer">
-  <div class="drawer-header"><h3>Conversations</h3><button class="drawer-close" onclick="closeDrawer()">&times;</button></div>
-  <div class="new-chat-btn" onclick="newConversation()">+ New Conversation</div>
-  <div class="conv-list" id="conv-list"></div>
-  <div class="drawer-section" id="dream-section">
-    <h4>&#x1F4AD; Dream Log</h4>
-    <div id="dream-log"><div style="font-size:10px;color:var(--text-muted)">No dreams yet...</div></div>
-    <button class="dream-trigger-btn" onclick="triggerDream()">&#x2728; Dream Now</button>
+  <div class="drawer-header">
+    <h3 id="drawer-title">Conversations</h3>
+    <button class="drawer-close" onclick="closeDrawer()">&times;</button>
+  </div>
+
+  <div class="drawer-tabs">
+    <button class="drawer-tab active" id="tab-chats"    onclick="switchTab('chats')">Chats</button>
+    <button class="drawer-tab"        id="tab-dreams"   onclick="switchTab('dreams')">Dreams</button>
+    <button class="drawer-tab"        id="tab-memories" onclick="switchTab('memories')">Memories</button>
+  </div>
+
+  <!-- Chats panel (existing behavior) -->
+  <div class="drawer-panel" id="panel-chats">
+    <div class="new-chat-btn" onclick="newConversation()">+ New Conversation</div>
+    <div class="conv-list" id="conv-list"></div>
+  </div>
+
+  <!-- Dreams panel (new) -->
+  <div class="drawer-panel hidden" id="panel-dreams">
+    <div class="dream-panel-header">
+      <div class="dream-status" id="dream-status-row"></div>
+      <button class="dream-trigger-btn" id="dream-trigger-btn" onclick="triggerDream()">&#x2728; Dream Now</button>
+    </div>
+    <div class="dream-entries" id="dream-entries">
+      <div class="drawer-empty">No dreams yet &mdash; trigger one!</div>
+    </div>
+  </div>
+
+  <!-- Memories panel (new) -->
+  <div class="drawer-panel hidden" id="panel-memories">
+    <div class="mem-search-bar">
+      <input class="mem-search-input" id="mem-search" type="text"
+             placeholder="Search memories..." oninput="debouncedSearch(this.value)" />
+      <div class="mem-count" id="mem-count">&mdash; memories</div>
+    </div>
+    <div class="mem-type-filters" id="mem-filters">
+      <button class="mem-filter active" data-type="all"          onclick="setMemFilter(this,'all')">ALL</button>
+      <button class="mem-filter"        data-type="conversation" onclick="setMemFilter(this,'conversation')">conv</button>
+      <button class="mem-filter"        data-type="fact"         onclick="setMemFilter(this,'fact')">fact</button>
+      <button class="mem-filter"        data-type="knowledge"    onclick="setMemFilter(this,'knowledge')">know</button>
+      <button class="mem-filter"        data-type="skill"        onclick="setMemFilter(this,'skill')">skill</button>
+      <button class="mem-filter"        data-type="preference"   onclick="setMemFilter(this,'preference')">pref</button>
+    </div>
+    <div class="mem-entries" id="mem-entries">
+      <div class="drawer-empty">Search your memories...</div>
+    </div>
   </div>
 </aside>
 
@@ -744,6 +839,8 @@ let convId=null,loading=false;
 let ws=null,wsReady=false;
 let liveToolOutputs={};
 let currentInterimGroup=null;
+let activeTab='chats';
+let activeMemFilter='all';
 
 function connectWS(){
   ws=new WebSocket(WS_URL);
@@ -1182,28 +1279,41 @@ function renderMd(s){if(typeof marked!=='undefined'){try{marked.setOptions({brea
 function toggleTip(el){const wasOpen=el.classList.contains('tip-open');document.querySelectorAll('.stat-item.tip-open').forEach(e=>e.classList.remove('tip-open'));if(!wasOpen)el.classList.add('tip-open')}
 document.addEventListener('click',e=>{if(!e.target.closest('.stat-item'))document.querySelectorAll('.stat-item.tip-open').forEach(el=>el.classList.remove('tip-open'))})
 function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px'}
+function debounce(fn,ms){let t;return function(...a){clearTimeout(t);t=setTimeout(()=>fn(...a),ms)}}
+function relativeTime(ts){if(!ts)return'';const d=typeof ts==='number'?new Date(ts*1000):new Date(ts);const diff=Math.floor((Date.now()-d)/1000);if(diff<60)return diff+'s ago';if(diff<3600)return Math.floor(diff/60)+'m ago';if(diff<86400)return Math.floor(diff/3600)+'h ago';return Math.floor(diff/86400)+'d ago'}
 
 async function loadConversations(){try{const d=await api('/conversations');const list=document.getElementById('conv-list');list.innerHTML='';(d.conversations||[]).forEach(c=>{const el=document.createElement('div');el.className=`conv-item${c.id===convId?' active':''}`;el.onclick=()=>openConversation(c.id);const dt=new Date(c.updated_at*1000).toLocaleDateString([],{month:'short',day:'numeric'});el.innerHTML=`<div class="ci-title">${esc(c.title)}</div><div class="ci-meta">${c.message_count} msgs \u00b7 ${dt}</div>`;list.appendChild(el)})}catch{}}
 async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>{if(m.role==='assistant'&&m.metadata?.interim_messages?.length){const steps=m.metadata.interim_messages;const wrapper=document.createElement('div');wrapper.className='msg assistant';wrapper.innerHTML='<div class="interim-group collapsed" data-count="'+steps.length+'"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label">Reasoning · <span class="interim-count">'+steps.length+(steps.length===1?' step':' steps')+'</span></span></button><div class="interim-body">'+steps.map(s=>'<div class="interim-entry">'+renderMd(s)+'</div>').join('')+'</div></div>';area.appendChild(wrapper);}addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp,m.metadata?.context_compressed||0);});loadConversations();closeDrawer()}catch(e){console.error(e)}}
 function newConversation(){convId=null;document.getElementById('chat-messages').innerHTML=`<div class="welcome-msg" id="welcome"><strong>New conversation!</strong><br>What shall we explore?</div>`;loadConversations();closeDrawer();document.getElementById('input').focus()}
 
-function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('drawer-overlay').classList.add('open');loadDreamLog()}
+function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('drawer-overlay').classList.add('open');switchTab('chats');loadConversations()}
 function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('drawer-overlay').classList.remove('open')}
 
 // ═══ DREAM ENGINE UI ═══
-async function loadDreamLog(){
+async function loadDreamsPanel(){
+  const statusRow=document.getElementById('dream-status-row');
+  const entries=document.getElementById('dream-entries');
   try{
-    const d=await api('/dreams/state');
-    const log=document.getElementById('dream-log');
+    const [logData,stateData]=await Promise.all([api('/dreams/log?limit=20'),api('/dreams/state')]);
     const ind=document.getElementById('dream-ind');
-    if(d.dreaming)ind.classList.add('on');else ind.classList.remove('on');
-    const dreams=d.recent_dreams||[];
-    if(!dreams.length){log.innerHTML='<div style="font-size:10px;color:var(--text-muted)">No dreams yet... waiting for idle time.</div>';return}
-    log.innerHTML=dreams.reverse().map(dr=>{
-      const t=dr.timestamp?new Date(dr.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
-      return`<div class="dream-item"><span class="di-type">${esc(dr.type||'?')}</span> <span class="di-time">${t}</span><br>${esc(dr.summary||'').substring(0,100)}</div>`
-    }).join('')
-  }catch{}
+    if(ind)ind.classList.toggle('on',!!stateData?.dreaming);
+    if(stateData?.dreaming){
+      statusRow.innerHTML='<span class="dream-active-badge">&#x2728; dreaming now...</span>';
+    }else{
+      const count=(logData.dreams||[]).length;
+      statusRow.textContent=count?count+' dream'+(count===1?'':'s'):'';
+    }
+    const dreams=logData.dreams||[];
+    if(!dreams.length){entries.innerHTML='<div class="drawer-empty">No dreams yet &mdash; trigger one!</div>';return}
+    const ICONS={dream:'&#x1F4AD;',explore:'&#x1F30D;',experiment:'&#x1F9EA;',journal:'&#x1F4D3;',cleanup:'&#x1F9F9;'};
+    entries.innerHTML=dreams.map(dr=>{
+      const icon=ICONS[dr.type]||'&#x1F4AD;';
+      const moodHtml=dr.mood_delta
+        ?Object.entries(dr.mood_delta).filter(([,v])=>v!==0).map(([k,v])=>`<span class="dream-mood-chip ${v>0?'pos':'neg'}">${v>0?'+':''}${v} ${esc(k)}</span>`).join('')
+        :'';
+      return`<div class="dream-card"><div class="dream-card-header"><span class="dream-type-icon">${icon}</span><span class="dream-type-label">${esc(dr.type||'dream')}</span><span class="dream-time">${relativeTime(dr.timestamp)}</span></div><div class="dream-summary">${esc((dr.summary||'').substring(0,160))}</div>${moodHtml?`<div class="dream-mood-chips">${moodHtml}</div>`:''}</div>`;
+    }).join('');
+  }catch(err){console.error('loadDreamsPanel',err);entries.innerHTML='<div class="drawer-empty">Failed to load dreams.</div>'}
 }
 async function triggerDream(){
   const btn=document.querySelector('.dream-trigger-btn');
@@ -1211,10 +1321,57 @@ async function triggerDream(){
   try{
     const r=await api('/dreams/trigger',{method:'POST'});
     if(r.summary)addMsg('assistant',`\u{1F4AD} *${r.summary}*\n\n${r.content||''}`);
-    await loadDreamLog();await loadState()
+    await loadDreamsPanel();await loadState()
   }catch(e){console.error(e)}
   btn.textContent='\u2728 Dream Now';btn.disabled=false
 }
+
+// ═══ TAB NAVIGATION ═══
+function switchTab(name){
+  activeTab=name;
+  document.querySelectorAll('.drawer-tab').forEach(b=>b.classList.toggle('active',b.id==='tab-'+name));
+  document.querySelectorAll('.drawer-panel').forEach(p=>p.classList.toggle('hidden',p.id!=='panel-'+name));
+  const titles={chats:'Conversations',dreams:'Dream Log',memories:'Memories'};
+  document.getElementById('drawer-title').textContent=titles[name]||name;
+  if(name==='dreams')loadDreamsPanel();
+  if(name==='memories'){loadMemTotalCount();document.getElementById('mem-search').focus();}
+}
+
+async function loadMemTotalCount(){
+  try{
+    const d=await api('/state');
+    if(d?.memory?.total_memories!=null){
+      const n=d.memory.total_memories;
+      document.getElementById('mem-count').textContent=n+' memor'+(n===1?'y':'ies');
+    }
+  }catch{}
+}
+
+function setMemFilter(btn,type){
+  activeMemFilter=type;
+  document.querySelectorAll('.mem-filter').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  searchMemories(document.getElementById('mem-search').value.trim());
+}
+
+async function searchMemories(query){
+  const entries=document.getElementById('mem-entries');
+  if(!query&&activeMemFilter==='all'){entries.innerHTML='<div class="drawer-empty">Search your memories...</div>';return}
+  const effectiveQuery=query||activeMemFilter;
+  try{
+    const d=await api('/memory/recall',{method:'POST',body:JSON.stringify({query:effectiveQuery,limit:20})});
+    let memories=d.memories||[];
+    if(activeMemFilter!=='all')memories=memories.filter(m=>m.memory_type===activeMemFilter);
+    if(!memories.length){entries.innerHTML='<div class="drawer-empty">No memories found.</div>';return}
+    entries.innerHTML=memories.map(m=>{
+      const preview=(m.content||'').substring(0,150)+((m.content||'').length>150?'\u2026':'');
+      const type=m.memory_type||'fact';
+      return`<div class="mem-card"><div class="mem-card-header"><span class="mem-type-badge" data-type="${esc(type)}">${esc(type)}</span><span class="mem-time">${relativeTime(m.timestamp)}</span></div><div class="mem-content">${esc(preview)}</div></div>`;
+    }).join('');
+  }catch(err){console.error('searchMemories',err);entries.innerHTML='<div class="drawer-empty">Search failed.</div>'}
+}
+
+const debouncedSearch=debounce(searchMemories,400);
 
 // ═══ ONBOARDING ═══
 let obSteps=[],obStep=0,obR={};

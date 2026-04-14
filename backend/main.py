@@ -33,6 +33,7 @@ from backend.skills.write_skill import WriteSkill
 from backend.skills.exec_skill import ExecSkill
 from backend.skills.web_search_skill import WebSearchSkill
 from backend.skills.express_skill import ExpressSkill
+from backend.skills.recall_dreams_skill import RecallDreamsSkill
 from backend.api.chat import router as chat_router, set_agent
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
@@ -161,6 +162,12 @@ async def lifespan(app: FastAPI):
         weights=config.autonomy.weights,
     )
     set_dream_engine(dream_engine)
+    agent.set_dream_engine(dream_engine)
+    skills.register(RecallDreamsSkill(
+        dream_engine=dream_engine,
+        dreams_dir=Path(config.workspace.path) / "dreams",
+    ))
+    logger.info("Dream engine linked to agent — recall_dreams skill registered")
     dream_engine.start()
 
     logger.info(f"═══ TamAGI is awake! ═══")

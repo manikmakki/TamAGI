@@ -126,18 +126,25 @@ autonomy:
 
   # Which activities are enabled:
   #   dream      — Replay memories, find connections and insights
-  #   explore    — Search the web for interesting topics
-  #   experiment — Create something: haiku, micro-stories, thought experiments
+  #   explore    — Search the web for a topic the LLM chooses based on personality/memories
+  #   experiment — Create something; the LLM proposes its own creative prompt each time
   #   journal    — Write a private diary entry reflecting on growth
+  #   wander     — Fully freeform: no category, no template — follow any thread
+  #   cleanup    — Prune old dream logs when workspace cleanliness is low
   activities:
     - dream
     - explore
     - experiment
     - journal
+    - cleanup
+    - wander
 
   # Relative weights for activity selection (higher = more likely)
-  # Must match the order of activities above
-  weights: [30, 25, 25, 20]
+  # Must match the order of activities above.
+  # Weights are further nudged at runtime based on current mood/stats:
+  #   low satiety → explore/wander boosted  |  low happiness → journal/wander boosted
+  #   high energy → experiment/wander boosted
+  weights: [25, 20, 20, 20, 10, 25]
 
 # ── Multi-Agent Orchestration ─────────────────
 # When TamAGI encounters a complex multi-step task, it can spawn specialized

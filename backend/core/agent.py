@@ -18,7 +18,7 @@ import uuid
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 import httpx
 
@@ -29,7 +29,25 @@ from backend.core.personality import PersonalityEngine
 from backend.core.identity import IdentityManager
 from backend.skills.registry import SkillRegistry
 
+if TYPE_CHECKING:
+    from backend.core.dreamer import DreamEngine
+
 logger = logging.getLogger("tamagi.agent")
+
+
+def _dream_time_label(iso_ts: str) -> str:
+    """Convert an ISO timestamp to a human-readable 'X ago' string."""
+    try:
+        from datetime import datetime
+        dt = datetime.fromisoformat(iso_ts)
+        diff = (datetime.now() - dt).total_seconds()
+        if diff < 3600:
+            return f"{int(diff // 60)}m ago"
+        if diff < 86400:
+            return f"{int(diff // 3600)}h ago"
+        return f"{int(diff // 86400)}d ago"
+    except Exception:
+        return iso_ts[:16] if iso_ts else ""
 
 
 def parse_text_tool_calls(content: str) -> list:
@@ -138,7 +156,12 @@ class TamAGIAgent:
         self.identity = identity or IdentityManager()
         self.conversations: dict[str, Conversation] = {}
         self._history_dir = Path(config.history.persist_path)
+        self._dream_engine: "DreamEngine | None" = None
         self._load_conversations()
+
+    def set_dream_engine(self, engine: "DreamEngine") -> None:
+        """Wire up the dream engine so the agent can surface recent dream activity."""
+        self._dream_engine = engine
 
     # ── Conversation Management ───────────────────────────────
 
@@ -244,6 +267,27 @@ class TamAGIAgent:
             system_prompt += "\n\n" + identity_context
         if memory_context:
             system_prompt += memory_context
+
+        # Inject recent dream activity so TamAGI is passively aware of its idle life.
+        # This is a lightweight summary — the agent can call recall_dreams for depth.
+        if self._dream_engine:
+            recent_dreams = self._dream_engine.get_dream_log(limit=3)
+            if recent_dreams:
+                dream_lines = []
+                for d in recent_dreams:
+                    ts_label = _dream_time_label(d.get("timestamp", ""))
+                    dtype = d.get("type", "?")
+                    summary = d.get("summary", "")
+                    line = f"  [{dtype}] {summary}"
+                    if ts_label:
+                        line += f" ({ts_label})"
+                    dream_lines.append(line)
+                system_prompt += (
+                    "\n\nYour recent autonomous activity (while you were idle):\n"
+                    + "\n".join(dream_lines)
+                    + "\nCall `recall_dreams` to surface full content from any of these."
+                )
+
         llm_messages = [LLMMessage("system", system_prompt)]
 
         # ── Build conversation history ─────────────────────────────────────────

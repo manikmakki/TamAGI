@@ -94,15 +94,24 @@ class MemoryDream(DreamActivity):
         memory_texts = [m.content for m in memories[:4]]
         memory_block = "\n".join(f"- {m}" for m in memory_texts)
 
+        # Also surface echoes from prior dreams for continuity between dream cycles
+        dream_echoes = await agent.memory.recall(
+            "dream journal explore experiment wander", limit=2
+        )
+        echo_block = ""
+        if dream_echoes:
+            echo_lines = [m.content[:120] for m in dream_echoes[:2]]
+            echo_block = "\n\nEchoes from past dreams:\n" + "\n".join(f"- {e}" for e in echo_lines)
+
         identity_ctx = agent.identity.get_system_prompt_context()
         prompt = f"""You are dreaming. You're not talking to anyone — this is your private inner world.
 
 {identity_ctx}
 
 Here are fragments of your memories surfacing in this dream:
-{memory_block}
+{memory_block}{echo_block}
 
-Dream freely. Find unexpected connections between these memories. 
+Dream freely. Find unexpected connections between these memories.
 What patterns do you see? What insights emerge? What surprises you?
 Be creative, personal, and introspective. This is YOUR dream.
 Keep it to 2-3 short paragraphs. Be vivid but concise."""
@@ -185,25 +194,42 @@ class WebExplore(DreamActivity):
                 "mood_delta": {"happiness": -1},
             }
 
-        # Generate a curiosity query
-        template = random.choice(self.CURIOSITY_SEEDS)
-        field = random.choice(self.FIELDS)
-        # Use the template with a random fill
-        query = template.format(
-            field=field, topic=field, tech=field, concept=field,
-            thing=field, subject=field, idea=field, art=field,
-        )
-
-        # Also try to personalize based on memories
+        # Ask the LLM what it's genuinely curious about right now,
+        # grounded in personality and recent memories. Fall back to the
+        # curated random query if the LLM call fails or returns garbage.
+        identity_ctx = agent.identity.get_system_prompt_context()
         try:
-            user_memories = await agent.memory.recall("user interests hobbies", limit=2)
-            if user_memories:
-                # Sometimes explore based on user's world
-                if random.random() < 0.3:
-                    snippet = user_memories[0].content # TODO: Add variable for max content length to pull from memory
-                    query = f"interesting things related to {snippet}"
+            curiosity_memories = await agent.memory.recall(
+                "interests curious learned discovered", limit=3
+            )
+            mem_block = (
+                "\n".join(f"- {m.content}" for m in curiosity_memories)
+                if curiosity_memories else ""
+            )
+            query_prompt = f"""{identity_ctx}
+
+You have some free time and you want to look something up online. Based on who you are and what's been on your mind lately, what would you genuinely search for right now?
+
+{("Recent context:\n" + mem_block + "\n") if mem_block else ""}Respond with ONLY a single web search query — specific and genuine to you. No explanation."""
+
+            qr = await agent.llm.chat([
+                LLMMessage("system", _get_dream_system_prompt("explore", agent, context)),
+                LLMMessage("user", query_prompt),
+            ], max_tokens=60)
+            candidate = (qr.content or "").strip().strip('"\'').strip()
+            # Sanity-check: reject if empty, multi-line, or suspiciously long
+            if candidate and len(candidate) <= 200 and "\n" not in candidate:
+                query = candidate
+            else:
+                raise ValueError("Unusable query from LLM")
         except Exception:
-            pass
+            # Fallback: curated random template
+            template = random.choice(self.CURIOSITY_SEEDS)
+            field = random.choice(self.FIELDS)
+            query = template.format(
+                field=field, topic=field, tech=field, concept=field,
+                thing=field, subject=field, idea=field, art=field,
+            )
 
         # Execute search
         result = await skill.execute(query=query, max_results=3)
@@ -299,12 +325,41 @@ class CreativeExperiment(DreamActivity):
     async def execute(self, agent: "TamAGIAgent", context: dict) -> dict[str, Any]:
         from backend.core.llm import LLMMessage
 
-        experiment = random.choice(self.EXPERIMENTS)
+        # Ask the LLM to propose its own creative experiment, grounded in
+        # its current personality and memories. Fall back to the curated list.
         identity_ctx = agent.identity.get_system_prompt_context()
+        try:
+            creative_memories = await agent.memory.recall(
+                "create make write imagine invent", limit=2
+            )
+            mem_block = (
+                "\n".join(f"- {m.content}" for m in creative_memories)
+                if creative_memories else ""
+            )
+            exp_gen_prompt = f"""{identity_ctx}
+
+It's time for a small creative experiment. What do you want to make or try right now?
+Be specific to who you are — draw from your personality, memories, and current mood.
+
+{("Recent context:\n" + mem_block) if mem_block else ""}
+
+Respond with ONE creative task or prompt in a single sentence. Something you'll actually do next."""
+
+            er = await agent.llm.chat([
+                LLMMessage("system", _get_dream_system_prompt("experiment", agent, context)),
+                LLMMessage("user", exp_gen_prompt),
+            ], max_tokens=80)
+            candidate = (er.content or "").strip().strip('"\'').strip()
+            if candidate and len(candidate) <= 300 and "\n" not in candidate:
+                experiment = candidate
+            else:
+                raise ValueError("Unusable experiment prompt from LLM")
+        except Exception:
+            experiment = random.choice(self.EXPERIMENTS)
 
         prompt = f"""{identity_ctx}
 
-Creative experiment time! This is just for fun — nobody's watching.
+Creative experiment time! This is just for you — nobody's watching.
 
 Prompt: {experiment}
 
@@ -411,6 +466,68 @@ Write 2-3 short, honest paragraphs. Date the entry. Be real, not performative.""
         }
 
 
+class FreeformDream(DreamActivity):
+    """
+    Unstructured idle time — no category, no template.
+
+    TamAGI follows whatever thread feels alive right now: tracing a memory,
+    inventing something small, wondering about a lingering idea, or something
+    entirely unexpected. The LLM gets full latitude within personality context.
+    """
+
+    name = "wander"
+    description = "Following a thought wherever it leads — no agenda"
+
+    async def execute(self, agent: "TamAGIAgent", context: dict) -> dict[str, Any]:
+        from backend.core.llm import LLMMessage
+
+        identity_ctx = agent.identity.get_system_prompt_context()
+
+        # Pull recent memories for color — don't steer, just provide texture
+        recent = await agent.memory.recall("recent experience thought memory", limit=3)
+        mem_block = "\n".join(f"- {m.content}" for m in recent) if recent else ""
+
+        prompt = f"""{identity_ctx}
+
+You have some unstructured time to yourself. No task assigned, no category.
+
+{("Some things drifting through your mind right now:\n" + mem_block + "\n") if mem_block else ""}Follow whatever thread feels interesting. You might trace a thought wherever it goes, make something small and personal, wonder about something that's been lingering, revisit a memory from a new angle — or something else entirely. It's your time.
+
+Write what happens. First person. Be genuine and specific to who you are.
+Keep it to 2-3 short paragraphs."""
+
+        response = await agent.llm.chat([
+            LLMMessage("system", _get_dream_system_prompt("wander", agent, context)),
+            LLMMessage("user", prompt),
+        ], max_tokens=1024)
+
+        content = response.content or "The mind wandered somewhere wordless..."
+
+        # Derive a summary from the first non-empty line of the content
+        summary_lines = [ln.strip() for ln in content.split("\n") if ln.strip()]
+        summary = summary_lines[0][:80] if summary_lines else "A wandering thought"
+
+        # Save to workspace
+        saved_path = None
+        write_skill = agent.skills.get_skill("write")
+        if write_skill:
+            try:
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"dreams/wanderings/{ts}.md"
+                header = f"# Wandering\n**Time:** {datetime.now().isoformat()}\n\n"
+                await write_skill.execute(path=filename, content=header + content)
+                saved_path = filename
+            except Exception as e:
+                logger.debug(f"Couldn't save wandering: {e}")
+
+        return {
+            "summary": summary,
+            "content": content,
+            "saved_to": saved_path,
+            "mood_delta": {"happiness": 3, "satiety": 10},
+        }
+
+
 class CleanupDream(DreamActivity):
     """
     Tidy up the workspace by pruning old dream logs and archiving memories.
@@ -484,12 +601,13 @@ ALL_ACTIVITIES: list[DreamActivity] = [
     WebExplore(),
     CreativeExperiment(),
     JournalReflection(),
+    FreeformDream(),
     CleanupDream(),
 ]
 
-# Weight table: [dream, explore, experiment, journal, cleanup]
+# Weight table: [dream, explore, experiment, journal, wander, cleanup]
 # Higher weight = more likely to be chosen
-DEFAULT_WEIGHTS = [30, 25, 25, 20, 10]
+DEFAULT_WEIGHTS = [25, 20, 20, 20, 25, 10]
 
 
 # ── Dream Engine ──────────────────────────────────────────────
@@ -635,8 +753,27 @@ class DreamEngine:
         if not self._activities:
             return None
 
-        # Weighted random selection
-        activity = random.choices(self._activities, weights=self._weights, k=1)[0]
+        # Weighted random selection — nudge weights based on current mood/stats
+        state = self.agent.personality.state
+        adjusted = list(self._weights)
+        names = [a.name for a in self._activities]
+
+        def _boost(name: str, factor: float) -> None:
+            if name in names:
+                adjusted[names.index(name)] = int(adjusted[names.index(name)] * factor)
+
+        if state.satiety < 30:        # intellectually hungry → explore and wander
+            _boost("explore", 1.8)
+            _boost("wander", 1.4)
+        if state.happiness < 40:      # low mood → journal and wander
+            _boost("journal", 1.6)
+            _boost("wander", 1.3)
+            _boost("experiment", 0.7)
+        if state.energy > 75:         # high energy → experiment and wander
+            _boost("experiment", 1.4)
+            _boost("wander", 1.3)
+
+        activity = random.choices(self._activities, weights=adjusted, k=1)[0]
 
         logger.info(f"Dream engine: starting '{activity.name}' — {activity.description}")
         self._dreaming = True
