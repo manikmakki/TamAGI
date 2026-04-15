@@ -34,7 +34,7 @@ from backend.skills.exec_skill import ExecSkill
 from backend.skills.web_search_skill import WebSearchSkill
 from backend.skills.express_skill import ExpressSkill
 from backend.skills.recall_dreams_skill import RecallDreamsSkill
-from backend.api.chat import router as chat_router, set_agent
+from backend.api.chat import router as chat_router, set_agent, set_aura_client
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
 from backend.api.dreams import router as dreams_router, set_dream_engine
@@ -143,6 +143,16 @@ async def lifespan(app: FastAPI):
     )
     set_agent(agent)
 
+    # Initialize AURA client if brain is in aura mode
+    aura_client = None
+    if config.brain.mode == "aura":
+        from backend.core.aura_client import AuraClient
+        aura_client = AuraClient(config.brain)
+        set_aura_client(aura_client)
+        logger.info(f"Brain mode: aura — routing chat through {config.brain.aura_base_url}")
+    else:
+        logger.info("Brain mode: local — using native agent loop")
+
     # Initialize multi-agent orchestration
     orchestrator = None
     if config.orchestrator.enabled:
@@ -181,6 +191,8 @@ async def lifespan(app: FastAPI):
     personality.save_state()
     if orchestrator is not None:
         await orchestrator.close()
+    if aura_client is not None:
+        await aura_client.aclose()
     await llm.close()
 
 

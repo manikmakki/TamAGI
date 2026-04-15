@@ -22,3 +22,5 @@ config.yaml
 .DS_Store
 Thumbs.db
 backend/skills/custom/
+*phase1*
+AI_ENV*

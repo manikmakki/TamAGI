@@ -326,6 +326,7 @@
     .pill.xp .val { color: var(--accent); }
 
     .btn-icon {
+      position: relative;
       background: none;
       border: 1px solid var(--border);
       border-radius: 5px;
@@ -336,6 +337,15 @@
       transition: all 0.2s;
     }
     .btn-icon:hover { border-color: var(--accent-dim); color: var(--accent); }
+    .approval-badge {
+      position: absolute; top: -5px; right: -5px;
+      min-width: 14px; height: 14px; padding: 0 3px;
+      border-radius: 7px; background: var(--error); color: var(--bg-primary);
+      font-family: var(--font-mono); font-size: 8px; font-weight: bold; line-height: 14px;
+      text-align: center; display: none; pointer-events: none;
+    }
+    .approval-badge.on { display: block; animation: approvalPing 2s ease-in-out infinite; }
+    @keyframes approvalPing { 0%,100% { box-shadow: 0 0 4px var(--error); } 50% { box-shadow: 0 0 10px var(--error); } }
 
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--error); transition: background 0.3s; }
     .dot.on { background: var(--success); box-shadow: 0 0 5px var(--success); }
@@ -593,6 +603,30 @@
     .mem-time { margin-left: auto; font-size: 8px; color: var(--text-muted); white-space: nowrap; }
     .mem-content { font-size: 10px; color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
 
+    /* ═══ APPROVALS PANEL ═══ */
+    .approval-panel-header { display: flex; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .approval-status { font-size: 9px; color: var(--text-muted); }
+    .approval-entries { flex: 1; overflow-y: auto; padding: 6px 8px; }
+    .approval-entries::-webkit-scrollbar { width: 4px; }
+    .approval-entries::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .approval-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; margin-bottom: 8px; transition: border-color 0.15s, opacity 0.4s; }
+    .approval-card:hover { border-color: var(--border-bright); }
+    .approval-card-header { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
+    .approval-type { font-size: 8px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 500; color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .approval-target { font-size: 8px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80px; }
+    .approval-stance { font-size: 8px; padding: 1px 6px; border-radius: 3px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; flex-shrink: 0; }
+    .approval-stance.agree        { background: rgba(0,255,157,0.12);   color: var(--accent); }
+    .approval-stance.concern      { background: rgba(255,170,0,0.12);   color: var(--warning); }
+    .approval-stance.counterpoint { background: rgba(255,107,157,0.12); color: var(--accent-secondary); }
+    .approval-summary { font-size: 10px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 7px; }
+    .approval-actions { display: flex; gap: 5px; }
+    .approval-btn { flex: 1; padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid; font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; cursor: pointer; transition: all 0.15s; background: none; }
+    .approval-btn.accept { border-color: var(--accent-dim); color: var(--accent); }
+    .approval-btn.accept:hover { background: rgba(0,255,157,0.08); }
+    .approval-btn.reject { border-color: var(--error); color: var(--error); }
+    .approval-btn.reject:hover { background: rgba(255,68,102,0.08); }
+    .approval-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
     /* ═══ ONBOARDING ═══ */
     .onboarding-overlay { position: fixed; inset: 0; background: var(--bg-deep); z-index: 200; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 16px; }
     .onboarding-overlay.hidden { display: none; }
@@ -809,9 +843,10 @@
   </div>
 
   <div class="drawer-tabs">
-    <button class="drawer-tab active" id="tab-chats"    onclick="switchTab('chats')">Chats</button>
-    <button class="drawer-tab"        id="tab-dreams"   onclick="switchTab('dreams')">Dreams</button>
-    <button class="drawer-tab"        id="tab-memories" onclick="switchTab('memories')">Memories</button>
+    <button class="drawer-tab active" id="tab-chats"     onclick="switchTab('chats')">Chats</button>
+    <button class="drawer-tab"        id="tab-dreams"    onclick="switchTab('dreams')">Dreams</button>
+    <button class="drawer-tab"        id="tab-memories"  onclick="switchTab('memories')">Memories</button>
+    <button class="drawer-tab"        id="tab-approvals" onclick="switchTab('approvals')">Apprvls</button>
   </div>
 
   <!-- Chats panel (existing behavior) -->
@@ -828,6 +863,16 @@
     </div>
     <div class="dream-entries" id="dream-entries">
       <div class="drawer-empty">No dreams yet &mdash; trigger one!</div>
+    </div>
+  </div>
+
+  <!-- Approvals panel — AURA Tier-2 deliberations awaiting human sign-off -->
+  <div class="drawer-panel hidden" id="panel-approvals">
+    <div class="approval-panel-header">
+      <div class="approval-status" id="approval-status-row">Loading...</div>
+    </div>
+    <div class="approval-entries" id="approval-entries">
+      <div class="drawer-empty">No pending approvals</div>
     </div>
   </div>
 
@@ -858,7 +903,7 @@
   <div class="avatar-panel">
     <div class="top-bar">
       <div style="display:flex;align-items:center;gap:7px">
-        <button class="btn-icon" onclick="openDrawer()" title="Conversations">&#9776;</button>
+        <button class="btn-icon" onclick="openDrawer()" title="Conversations">&#9776;<span class="approval-badge" id="approval-badge"></span></button>
         <div class="logo-small">TAMAGI<span>v0.1</span></div>
       </div>
       <div class="top-pills">
@@ -1418,10 +1463,62 @@ function switchTab(name){
   activeTab=name;
   document.querySelectorAll('.drawer-tab').forEach(b=>b.classList.toggle('active',b.id==='tab-'+name));
   document.querySelectorAll('.drawer-panel').forEach(p=>p.classList.toggle('hidden',p.id!=='panel-'+name));
-  const titles={chats:'Conversations',dreams:'Dream Log',memories:'Memories'};
+  const titles={chats:'Conversations',dreams:'Dream Log',memories:'Memories',approvals:'Approvals'};
   document.getElementById('drawer-title').textContent=titles[name]||name;
   if(name==='dreams')loadDreamsPanel();
   if(name==='memories'){loadMemTotalCount();document.getElementById('mem-search').focus();}
+  if(name==='approvals')loadApprovalsPanel();
+}
+
+// ═══ APPROVALS ═══
+function updateApprovalBadge(count){
+  const badge=document.getElementById('approval-badge');
+  if(!badge)return;
+  if(count>0){badge.textContent=count>9?'9+':String(count);badge.classList.add('on');}
+  else{badge.classList.remove('on');badge.textContent='';}
+}
+
+async function loadApprovalsPanel(){
+  const statusRow=document.getElementById('approval-status-row');
+  const entries=document.getElementById('approval-entries');
+  statusRow.textContent='Loading...';
+  try{
+    const data=await api('/aura/deliberation/pending');
+    const pending=data.pending||[];
+    const count=pending.length;
+    statusRow.textContent=count?count+' pending approval'+(count===1?'':'s'):'No pending approvals';
+    updateApprovalBadge(count);
+    if(!count){entries.innerHTML='<div class="drawer-empty">No pending approvals</div>';return;}
+    entries.innerHTML=pending.map(p=>{
+      const stanceCls={'agree':'agree','concern':'concern','counterpoint':'counterpoint'}[p.stance]||'concern';
+      const summary=esc((p.nl_summary||p.rationale||'No summary available.').substring(0,220));
+      const type=esc((p.modification_type||'modification').replace(/_/g,' '));
+      const rawTarget=p.target||'';
+      const target=esc(rawTarget.length>32?rawTarget.substring(0,32)+'\u2026':rawTarget);
+      return`<div class="approval-card" data-pid="${esc(p.proposal_id)}"><div class="approval-card-header"><span class="approval-type">${type}</span><span class="approval-target" title="${esc(rawTarget)}">${target}</span><span class="approval-stance ${stanceCls}">${esc(p.stance||'')}</span></div><div class="approval-summary">${summary}</div><div class="approval-actions"><button class="approval-btn accept" onclick="respondApproval(this,'accept_original')">Accept</button><button class="approval-btn reject" onclick="respondApproval(this,'reject')">Reject</button></div></div>`;
+    }).join('');
+  }catch(err){
+    const is503=err.message&&err.message.includes('503');
+    statusRow.textContent='';
+    entries.innerHTML=is503
+      ?'<div class="drawer-empty">AURA not active &mdash; set brain.mode: aura to use approvals.</div>'
+      :'<div class="drawer-empty">Failed to load approvals.</div>';
+    console.error('loadApprovalsPanel',err);
+  }
+}
+
+async function respondApproval(btn,choice){
+  const card=btn.closest('.approval-card');
+  const pid=card.dataset.pid;
+  card.querySelectorAll('.approval-btn').forEach(b=>{b.disabled=true;});
+  try{
+    await api('/aura/deliberation/respond',{method:'POST',body:JSON.stringify({proposal_id:pid,choice:choice})});
+    card.style.opacity='0.35';
+    setTimeout(()=>{card.remove();loadApprovalsPanel();},500);
+  }catch(e){
+    console.error('respondApproval',e);
+    card.querySelectorAll('.approval-btn').forEach(b=>{b.disabled=false;});
+  }
 }
 
 async function loadMemTotalCount(){
@@ -1597,6 +1694,7 @@ async function loadState(){
       document.getElementById('logout-btn').style.display=a.enabled?'inline':'none';
     }catch{}
     try{const dr=await api('/dreams/state');document.getElementById('dream-ind').classList.toggle('on',dr.dreaming===true)}catch{}
+    try{const appr=await api('/aura/deliberation/pending');updateApprovalBadge((appr.pending||[]).length);}catch{}
   }catch{setConnected(false)}
 }
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});

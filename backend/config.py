@@ -136,6 +136,14 @@ class AuthConfig(BaseModel):
     password_hash: str = ""
 
 
+class BrainConfig(BaseModel):
+    # "local" — TamAGI handles all reasoning natively (default).
+    # "aura"  — TamAGI forwards chat to AURA and renders its responses.
+    mode: str = "local"
+    aura_base_url: str = "http://localhost:8420"
+    aura_timeout: int = 120
+
+
 class TamAGIConfig(BaseModel):
     """Root configuration model."""
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -150,6 +158,7 @@ class TamAGIConfig(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
+    brain: BrainConfig = Field(default_factory=BrainConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> TamAGIConfig:
@@ -177,6 +186,8 @@ def load_config(config_path: str | Path | None = None) -> TamAGIConfig:
         "TAMAGI_SEARXNG_URL": ("web_search", "searxng_url"),
         "TAMAGI_AUTONOMY_ENABLED": ("autonomy", "enabled"),
         "TAMAGI_AUTONOMY_INTERVAL": ("autonomy", "interval_minutes"),
+        "TAMAGI_BRAIN_MODE": ("brain", "mode"),
+        "TAMAGI_AURA_BASE_URL": ("brain", "aura_base_url"),
     }
 
     for env_var, path in env_mappings.items():
