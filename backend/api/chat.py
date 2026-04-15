@@ -141,13 +141,7 @@ async def _build_persona_context(agent, user_message: str) -> str:
     except Exception:
         pass
 
-    lines = [
-        f"Name: {name}",
-        f"Personality: {personality}",
-        "",
-        "Current state:",
-        f"  mood: {mood} | energy: {energy} | happiness: {happiness} | level: {level}",
-    ]
+    lines = []
     if identity_lines:
         lines += ["", "Identity:", identity_lines]
     if memory_lines:
