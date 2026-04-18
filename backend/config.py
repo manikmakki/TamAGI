@@ -46,6 +46,13 @@ class ChromaDBConfig(BaseModel):
 class ElasticsearchConfig(BaseModel):
     url: str = "http://localhost:9200"
     index: str = "tamagi_memory"
+    # Auth: supply api_key OR username+password (api_key takes precedence)
+    api_key: str = ""
+    username: str = ""
+    password: str = ""
+    # Embedding model (sentence-transformers). Must match the dim stored in the index.
+    # Changing this after the index is populated requires re-indexing all documents.
+    embedding_model: str = "all-MiniLM-L6-v2"
 
 
 class MemoryConfig(BaseModel):
@@ -136,12 +143,14 @@ class AuthConfig(BaseModel):
     password_hash: str = ""
 
 
-class BrainConfig(BaseModel):
-    # "local" — TamAGI handles all reasoning natively (default).
-    # "aura"  — TamAGI forwards chat to AURA and renders its responses.
-    mode: str = "local"
-    aura_base_url: str = "http://localhost:8420"
-    aura_timeout: int = 120
+class SelfModelConfig(BaseModel):
+    data_path: str = "data/self_model.json"
+    save_interval: int = 10  # Save every N interactions
+
+
+class MotivationConfig(BaseModel):
+    tick_interval_seconds: int = 300   # How often the motivation engine ticks during dreams
+    voi_threshold: float = 0.2         # Minimum VOI to generate an exploration goal
 
 
 class TamAGIConfig(BaseModel):
@@ -158,7 +167,8 @@ class TamAGIConfig(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
-    brain: BrainConfig = Field(default_factory=BrainConfig)
+    self_model: SelfModelConfig = Field(default_factory=SelfModelConfig)
+    motivation: MotivationConfig = Field(default_factory=MotivationConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> TamAGIConfig:
@@ -186,22 +196,31 @@ def load_config(config_path: str | Path | None = None) -> TamAGIConfig:
         "TAMAGI_SEARXNG_URL": ("web_search", "searxng_url"),
         "TAMAGI_AUTONOMY_ENABLED": ("autonomy", "enabled"),
         "TAMAGI_AUTONOMY_INTERVAL": ("autonomy", "interval_minutes"),
-        "TAMAGI_BRAIN_MODE": ("brain", "mode"),
-        "TAMAGI_AURA_BASE_URL": ("brain", "aura_base_url"),
+        # Memory backend selector and Elasticsearch connection settings
+        "TAMAGI_MEMORY_BACKEND": ("memory", "backend"),
+        "TAMAGI_ES_URL": ("memory", "elasticsearch", "url"),
+        "TAMAGI_ES_INDEX": ("memory", "elasticsearch", "index"),
+        "TAMAGI_ES_API_KEY": ("memory", "elasticsearch", "api_key"),
+        "TAMAGI_ES_USERNAME": ("memory", "elasticsearch", "username"),
+        "TAMAGI_ES_PASSWORD": ("memory", "elasticsearch", "password"),
     }
 
     for env_var, path in env_mappings.items():
         value = os.environ.get(env_var)
         if value is not None:
-            section, key = path
-            if section not in raw:
-                raw[section] = {}
             # Coerce port/interval to int, enabled to bool
+            key = path[-1]
             if key == "port" or key == "interval_minutes":
                 value = int(value)
             if key == "enabled":
                 value = value.lower() in ("true", "1", "yes")
-            raw[section][key] = value
+            # Drill into raw dict, creating missing dicts along the way
+            node = raw
+            for part in path[:-1]:
+                if part not in node:
+                    node[part] = {}
+                node = node[part]
+            node[key] = value
 
     return TamAGIConfig(**raw)
 

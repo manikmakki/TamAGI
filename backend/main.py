@@ -22,11 +22,15 @@ from starlette.middleware.sessions import SessionMiddleware
 from backend.auth import load_session_secret
 from backend.config import get_config, load_config, set_config
 from backend.core.llm import LLMClient
-from backend.core.memory import MemoryStore
+from backend.core.memory import create_memory_store
 from backend.core.personality import PersonalityEngine
 from backend.core.agent import TamAGIAgent
 from backend.core.identity import IdentityManager
 from backend.core.dreamer import DreamEngine
+from backend.core.self_model import SelfModel, seed_self_model
+from backend.core.motivation import MotivationEngine
+from backend.core.planning_engine import PlanningEngine
+from backend.core.reflection import ReflectionEngine
 from backend.skills.registry import SkillRegistry
 from backend.skills.read_skill import ReadSkill
 from backend.skills.write_skill import WriteSkill
@@ -34,11 +38,12 @@ from backend.skills.exec_skill import ExecSkill
 from backend.skills.web_search_skill import WebSearchSkill
 from backend.skills.express_skill import ExpressSkill
 from backend.skills.recall_dreams_skill import RecallDreamsSkill
-from backend.api.chat import router as chat_router, set_agent, set_aura_client
+from backend.api.chat import router as chat_router, set_agent
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
 from backend.api.dreams import router as dreams_router, set_dream_engine
 from backend.api.auth import router as auth_router
+from backend.api.self_model import router as self_model_router
 
 # ── Logging ───────────────────────────────────────────────────
 
@@ -86,8 +91,8 @@ async def lifespan(app: FastAPI):
     llm = LLMClient(config.llm)
     logger.info("LLM client initialized")
 
-    # Initialize memory store
-    memory = MemoryStore(config.memory)
+    # Initialize memory store (chromadb or elasticsearch, per config.memory.backend)
+    memory = create_memory_store(config.memory)
     await memory.initialize()
 
     # Initialize personality engine (loads from tamagi_state.json or uses defaults).
@@ -132,7 +137,32 @@ async def lifespan(app: FastAPI):
     else:
         logger.info(f"Identity loaded: {identity.get_identity()}")
 
-    # Create the agent
+    # ── Self-model: load from disk or seed from identity ──────
+    self_model_path = config.self_model.data_path
+    self_model = SelfModel(data_path=self_model_path)
+    if Path(self_model_path).exists():
+        self_model.load()
+        logger.info(
+            f"Self-model loaded: {self_model.node_count} nodes, "
+            f"{self_model.edge_count} edges"
+        )
+    else:
+        workspace_path = Path(config.workspace.path)
+        counts = seed_self_model(self_model, workspace_path=workspace_path)
+        self_model.save()
+        logger.info(f"Self-model seeded: {counts}")
+
+    # ── Brain engines ──────────────────────────────────────────
+    motivation_engine = MotivationEngine(
+        model=self_model,
+        voi_threshold=config.motivation.voi_threshold,
+    )
+    planning_engine = PlanningEngine(model=self_model)
+    planning_engine.set_llm(llm)
+    reflection_engine = ReflectionEngine(model=self_model)
+    logger.info("Brain engines initialized (motivation, planning, reflection)")
+
+    # ── Create the agent ───────────────────────────────────────
     agent = TamAGIAgent(
         config=config,
         llm=llm,
@@ -140,18 +170,12 @@ async def lifespan(app: FastAPI):
         personality=personality,
         skills=skills,
         identity=identity,
+        self_model=self_model,
+        motivation_engine=motivation_engine,
+        planning_engine=planning_engine,
+        reflection_engine=reflection_engine,
     )
     set_agent(agent)
-
-    # Initialize AURA client if brain is in aura mode
-    aura_client = None
-    if config.brain.mode == "aura":
-        from backend.core.aura_client import AuraClient
-        aura_client = AuraClient(config.brain)
-        set_aura_client(aura_client)
-        logger.info(f"Brain mode: aura — routing chat through {config.brain.aura_base_url}")
-    else:
-        logger.info("Brain mode: local — using native agent loop")
 
     # Initialize multi-agent orchestration
     orchestrator = None
@@ -170,6 +194,7 @@ async def lifespan(app: FastAPI):
         inactive_hours=(config.autonomy.inactive_hours_start, config.autonomy.inactive_hours_end),
         activities=config.autonomy.activities,
         weights=config.autonomy.weights,
+        motivation_engine=motivation_engine,
     )
     set_dream_engine(dream_engine)
     agent.set_dream_engine(dream_engine)
@@ -189,10 +214,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"═══ {config.tamagi.name} is going to sleep... ═══")
     await dream_engine.stop()
     personality.save_state()
+    self_model.save()
+    logger.info(
+        f"Self-model saved: {self_model.node_count} nodes, "
+        f"{self_model.edge_count} edges"
+    )
     if orchestrator is not None:
         await orchestrator.close()
-    if aura_client is not None:
-        await aura_client.aclose()
     await llm.close()
 
 
@@ -277,6 +305,7 @@ app.include_router(chat_router)
 app.include_router(skills_router)
 app.include_router(onboarding_router)
 app.include_router(dreams_router)
+app.include_router(self_model_router)
 
 # Serve frontend static files
 frontend_path = Path(__file__).parent.parent / "frontend"
@@ -296,6 +325,10 @@ if frontend_path.exists():
     async def login_page():
         # Serve the standalone login page (exempt from auth middleware above)
         return FileResponse(frontend_path / "login.html")
+
+    @app.get("/self-model")
+    async def self_model_page():
+        return FileResponse(frontend_path / "self-model.html")
 
     @app.get("/{path:path}")
     async def serve_frontend(path: str):

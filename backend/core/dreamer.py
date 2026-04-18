@@ -25,12 +25,16 @@ import json
 import logging
 import random
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from backend.core.self_model.schemas import EdgeType
+
 if TYPE_CHECKING:
     from backend.core.agent import TamAGIAgent
+    from backend.core.motivation import MotivationEngine, ExplorationGoal
 
 logger = logging.getLogger("tamagi.dreamer")
 
@@ -259,7 +263,7 @@ Keep it to 2-3 short paragraphs. Be genuinely curious and enthusiastic."""
             LLMMessage("user", reflect_prompt),
         ], max_tokens=1024)
 
-        content = response.content or f"Found some things about {field} but couldn't quite process them."
+        content = response.content or f"Found some things about '{query}' but couldn't quite process them."
 
         # Save exploration to workspace
         saved_path = None
@@ -487,7 +491,18 @@ class FreeformDream(DreamActivity):
         recent = await agent.memory.recall("recent experience thought memory", limit=3)
         mem_block = "\n".join(f"- {m.content}" for m in recent) if recent else ""
 
-        prompt = f"""{identity_ctx}
+        active_goal = context.get("active_goal")
+        if active_goal:
+            prompt = f"""{identity_ctx}
+
+You have some unstructured time, and there's a thread pulling at you: **{active_goal.description}**
+
+You don't have to follow it strictly — but that's what's on your mind. Let it take you wherever it naturally goes. You might explore it directly, find it connecting to something unexpected, or drift somewhere adjacent entirely. It's your time.
+
+{("Some things drifting through your mind right now:\n" + mem_block + "\n") if mem_block else ""}Write what happens. First person. Be genuine and specific to who you are.
+Keep it to 2-3 short paragraphs."""
+        else:
+            prompt = f"""{identity_ctx}
 
 You have some unstructured time to yourself. No task assigned, no category.
 
@@ -630,12 +645,14 @@ class DreamEngine:
         activities: list[str] | None = None,
         weights: list[int] | None = None,
         journal_dir: str = "dreams",
+        motivation_engine: "MotivationEngine | None" = None,
     ):
         self.agent = agent
         self.enabled = enabled
         self.interval = interval_minutes * 60  # Convert to seconds
         self.inactive_start, self.inactive_end = inactive_hours
         self.journal_dir = journal_dir
+        self.motivation_engine = motivation_engine
         self._task: asyncio.Task | None = None
         self._running = False
         self._dreaming = False
@@ -716,6 +733,8 @@ class DreamEngine:
                             f"Dream engine: outside inactive hours "
                             f"({self.inactive_start:02d}:00-{self.inactive_end:02d}:00), sleeping"
                         )
+                        self.agent.personality.state.decay()
+                        self.agent.personality.save_state()
                         await asyncio.sleep(self.interval)
                         continue
 
@@ -728,6 +747,9 @@ class DreamEngine:
                         self.agent.personality.save_state()
                         await asyncio.sleep(self.interval)
                         continue
+
+                    # Tick personality decay before dreaming
+                    self.agent.personality.state.decay()
 
                     # Pick and execute an activity
                     await self._dream_once()
@@ -748,12 +770,48 @@ class DreamEngine:
             self._dreaming = False
             logger.info("Dream engine loop exited")
 
-    async def _dream_once(self) -> dict[str, Any] | None:
-        """Execute a single dream activity."""
-        if not self._activities:
-            return None
+    def _select_activity(self) -> DreamActivity:
+        """Select the next dream activity.
 
-        # Weighted random selection — nudge weights based on current mood/stats
+        If the motivation engine is wired in, tick it first and map any
+        returned exploration goals to the most relevant activity type.
+        Falls back to mood-weighted random selection.
+        """
+        active_goal: "ExplorationGoal | None" = None
+
+        if self.motivation_engine:
+            try:
+                goals = self.motivation_engine.tick()
+                if goals:
+                    goal = goals[0]
+                    active_goal = goal
+                    domain = goal.domain.lower()
+                    if any(w in domain for w in ("web", "search", "internet", "explore")):
+                        matched = next((a for a in self._activities if a.name == "explore"), None)
+                    elif any(w in domain for w in ("code", "python", "tool", "create", "program")):
+                        matched = next((a for a in self._activities if a.name == "experiment"), None)
+                    elif any(w in domain for w in ("memory", "reflect", "journal", "self")):
+                        matched = next((a for a in self._activities if a.name == "journal"), None)
+                    elif any(w in domain for w in ("plan", "reason", "think")):
+                        matched = next((a for a in self._activities if a.name == "wander"), None)
+                    else:
+                        # No specific activity mapped — let wander explore it freely
+                        matched = next(
+                            (a for a in self._activities if a.name == "wander"), None
+                        )
+
+                    if matched is not None:
+                        logger.info(
+                            "Motivation-driven activity: '%s' (goal=%s, domain=%s)",
+                            matched.name, goal.id, goal.domain,
+                        )
+                        self._active_goal = active_goal
+                        return matched
+            except Exception as exc:
+                logger.debug("Motivation engine tick failed: %s", exc)
+
+        # Fallback: mood-weighted random selection
+        self._active_goal = None
         state = self.agent.personality.state
         adjusted = list(self._weights)
         names = [a.name for a in self._activities]
@@ -762,18 +820,26 @@ class DreamEngine:
             if name in names:
                 adjusted[names.index(name)] = int(adjusted[names.index(name)] * factor)
 
-        if state.satiety < 30:        # intellectually hungry → explore and wander
+        if state.satiety < 30:
             _boost("explore", 1.8)
             _boost("wander", 1.4)
-        if state.happiness < 40:      # low mood → journal and wander
+        if state.happiness < 40:
             _boost("journal", 1.6)
             _boost("wander", 1.3)
             _boost("experiment", 0.7)
-        if state.energy > 75:         # high energy → experiment and wander
+        if state.energy > 75:
             _boost("experiment", 1.4)
             _boost("wander", 1.3)
 
-        activity = random.choices(self._activities, weights=adjusted, k=1)[0]
+        return random.choices(self._activities, weights=adjusted, k=1)[0]
+
+    async def _dream_once(self) -> dict[str, Any] | None:
+        """Execute a single dream activity."""
+        if not self._activities:
+            return None
+
+        self._active_goal = None
+        activity = self._select_activity()
 
         logger.info(f"Dream engine: starting '{activity.name}' — {activity.description}")
         self._dreaming = True
@@ -781,6 +847,7 @@ class DreamEngine:
         context = {
             "timestamp": time.time(),
             "state": self.agent.personality.state.to_dict(),
+            "active_goal": self._active_goal,
         }
 
         try:
@@ -794,6 +861,96 @@ class DreamEngine:
             }
         finally:
             self._dreaming = False
+
+        # Compute success score from mood delta — used by motivation engine and reflection
+        _happiness_delta = result.get("mood_delta", {}).get("happiness", 0)
+        success_score = 0.8 if _happiness_delta >= 0 else 0.2
+
+        # Report outcome back to motivation engine if a goal drove this activity
+        if self.motivation_engine and self._active_goal is not None:
+            try:
+                self.motivation_engine.record_exploration_outcome(self._active_goal.id, success_score)
+                logger.debug(
+                    "Reported outcome to motivation engine: goal=%s success=%.2f",
+                    self._active_goal.id, success_score,
+                )
+            except Exception as exc:
+                logger.debug("Could not report outcome to motivation engine: %s", exc)
+
+        # Post-dream reflection: AURA observes the outcome and updates the self-model.
+        # Runs regardless of activity type — this is the "no wasted watts" guarantee.
+        sm = self.agent.self_model
+        refl_engine = self.agent.reflection_engine
+        dream_domain = self._active_goal.domain if self._active_goal else None
+
+        if refl_engine and sm:
+            try:
+                refl = refl_engine.reflect_on_dream(
+                    activity_name=activity.name,
+                    domain=dream_domain,
+                    success=success_score,
+                )
+                for proposal in refl.proposed_updates:
+                    updates = dict(proposal.proposed_state)
+                    updates.pop("success_history_append", None)
+                    if not updates:
+                        continue
+                    try:
+                        sm._apply_update_node(proposal.target, updates)
+                    except Exception as exc:
+                        logger.debug("Dream reflection proposal skipped: %s", exc)
+            except Exception as exc:
+                logger.debug("Dream reflection failed: %s", exc)
+
+        # Guarantee: every dream leaves a belief node in the self-model with
+        # at least one edge — the tangible "gain" from autonomous activity.
+        if sm:
+            try:
+                obs_id = f"obs-{uuid.uuid4().hex[:8]}"
+                summary = (result.get("summary") or "")[:200] or f"{activity.name} autonomous activity"
+                sm._apply_add_node("belief", {
+                    "id": obs_id,
+                    "description": summary,
+                    "confidence": 0.55,
+                    "evidence_count": 1,
+                })
+                linked = False
+                # 1. Uncertainty node matching the active motivation goal domain
+                if dream_domain:
+                    for u in sm.get_uncertainty_map():
+                        if (dream_domain.lower() in u.domain.lower()
+                                or u.domain.lower() in dream_domain.lower()):
+                            try:
+                                sm._apply_add_edge(obs_id, u.id, EdgeType.RELATES_TO.value)
+                                linked = True
+                            except Exception:
+                                pass
+                            break
+                # 2. Any non-transient active goal
+                if not linked:
+                    for g in sm.get_goals(status="active"):
+                        if not g.id.startswith("tg-"):
+                            try:
+                                sm._apply_add_edge(obs_id, g.id, EdgeType.RELATES_TO.value)
+                                linked = True
+                            except Exception:
+                                pass
+                            break
+                # 3. Highest-entropy uncertainty (always exists after seeding)
+                if not linked:
+                    for u in sm.get_uncertainty_map():
+                        try:
+                            sm._apply_add_edge(obs_id, u.id, EdgeType.RELATES_TO.value)
+                            linked = True
+                        except Exception:
+                            pass
+                        break
+                logger.info(
+                    "Dream gain: observation node %s %s (activity=%s)",
+                    obs_id, "linked" if linked else "created", activity.name,
+                )
+            except Exception as exc:
+                logger.debug("Could not create observation node: %s", exc)
 
         # Apply mood deltas
         deltas = result.get("mood_delta", {})

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TamAGI — Self-Model Graph</title>
+<style>
+:root{
+  --bg-base:#0a0d13;--bg-panel:#10151e;--bg-elevated:#161c27;
+  --border:#1e2a3a;--border-hover:#2a3a50;
+  --text-main:#c5cdd8;--text-secondary:#6b7a8d;--text-dim:#3d4f63;
+  --accent-blue:#4da6ff;--accent-green:#3ddc84;--accent-yellow:#ffd866;
+  --accent-red:#ff6b6b;--accent-purple:#c084fc;--accent-cyan:#67e8f9;--accent-orange:#ff9f43;
+  --node-goal:#4da6ff;--node-capability:#3ddc84;--node-strategy:#ffd866;
+  --node-belief:#c084fc;--node-preference:#67e8f9;--node-uncertainty:#ff6b6b;--node-signal:#ff9f43;
+  --font-mono:'JetBrains Mono','Fira Code','SF Mono',monospace;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;background:var(--bg-base);color:var(--text-main);font-family:var(--font-sans)}
+
+/* ── Layout ── */
+.app{display:grid;grid-template-rows:44px minmax(0,1fr);height:100vh}
+.header{background:var(--bg-panel);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;padding:0 14px;overflow:hidden}
+.logo{font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--accent-blue);letter-spacing:2px;white-space:nowrap}
+.logo span{color:var(--text-secondary);font-weight:400}
+.sep{width:1px;height:18px;background:var(--border);flex-shrink:0}
+.toggles{display:flex;gap:3px;flex-wrap:nowrap;overflow:hidden}
+.toggle{font-family:var(--font-mono);font-size:9px;padding:2px 6px;border-radius:3px;cursor:pointer;border:1px solid;opacity:.3;transition:opacity .15s;user-select:none;white-space:nowrap}
+.toggle.on{opacity:1}
+.toggle[data-t=goal]{color:var(--node-goal);border-color:var(--node-goal)}
+.toggle[data-t=capability]{color:var(--node-capability);border-color:var(--node-capability)}
+.toggle[data-t=strategy]{color:var(--node-strategy);border-color:var(--node-strategy)}
+.toggle[data-t=belief]{color:var(--node-belief);border-color:var(--node-belief)}
+.toggle[data-t=preference]{color:var(--node-preference);border-color:var(--node-preference)}
+.toggle[data-t=uncertainty]{color:var(--node-uncertainty);border-color:var(--node-uncertainty)}
+.toggle[data-t=signal]{color:var(--node-signal);border-color:var(--node-signal)}
+.stats{font-family:var(--font-mono);font-size:10px;color:var(--text-secondary);white-space:nowrap;margin-left:auto;flex-shrink:0}
+.stats .val{color:var(--text-main)}
+.back-link{font-family:var(--font-mono);font-size:10px;color:var(--text-secondary);text-decoration:none;white-space:nowrap;flex-shrink:0;padding:4px 8px;border:1px solid var(--border);border-radius:3px;transition:color .15s,border-color .15s}
+.back-link:hover{color:var(--accent-blue);border-color:var(--accent-blue)}
+.refresh-btn{font-family:var(--font-mono);font-size:10px;color:var(--text-dim);cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:none;transition:color .15s;flex-shrink:0}
+.refresh-btn:hover{color:var(--text-secondary)}
+
+.main{display:grid;grid-template-columns:minmax(0,1fr) 280px;height:100%;background:var(--border);gap:1px}
+
+/* ── Graph ── */
+.graph-area{background:var(--bg-base);position:relative;overflow:hidden}
+#graph-svg{display:block;width:100%;height:100%}
+.node-label{font-family:var(--font-mono);font-size:9px;fill:var(--text-secondary);pointer-events:none}
+.edge-line{stroke-width:1;pointer-events:none}
+.node-circle{cursor:pointer;stroke-width:2;transition:filter .15s}
+.node-circle:hover{stroke-width:3;filter:brightness(1.5)}
+.node-circle.selected{stroke:#fff;stroke-width:3}
+.tier-label{font-family:var(--font-mono);font-size:8px;fill:var(--text-dim);text-anchor:end}
+.graph-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;color:var(--text-dim)}
+
+/* ── Inspector ── */
+.inspector{background:var(--bg-panel);display:flex;flex-direction:column;overflow:hidden}
+.inspector-header{padding:10px 12px;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-secondary);flex-shrink:0}
+.inspector-empty{padding:20px 12px;color:var(--text-dim);font-family:var(--font-mono);font-size:10px;text-align:center;line-height:1.6}
+.inspector-body{flex:1;overflow-y:auto;padding:8px 12px;min-height:0}
+.inspector-body::-webkit-scrollbar{width:3px}
+.inspector-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.field{margin-bottom:8px}
+.field-label{font-family:var(--font-mono);font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.field-value{font-family:var(--font-mono);font-size:11px;color:var(--text-main);word-break:break-all;line-height:1.4}
+.field-value.desc{color:var(--text-secondary);font-size:11px;font-family:var(--font-sans);word-break:normal}
+.type-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-family:var(--font-mono);font-size:9px;border:1px solid;margin-bottom:8px}
+.edges-section{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
+.edges-label{font-family:var(--font-mono);font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.edge-item{font-family:var(--font-mono);font-size:10px;color:var(--text-secondary);padding:2px 0;display:flex;gap:6px;align-items:baseline}
+.edge-type{color:var(--accent-cyan);flex-shrink:0}
+.edge-dir{color:var(--text-dim);flex-shrink:0}
+.edge-node{color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.edge-node:hover{color:var(--text-main)}
+
+/* ── Tooltip ── */
+.tooltip{position:fixed;background:var(--bg-elevated);border:1px solid var(--border-hover);border-radius:4px;padding:6px 8px;font-family:var(--font-mono);font-size:10px;color:var(--text-main);max-width:240px;pointer-events:none;z-index:100;display:none;line-height:1.4}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">TamAGI <span>/ Self-Model</span></div>
+    <div class="sep"></div>
+    <div class="toggles" id="toggles"></div>
+    <div class="stats">Nodes: <span class="val" id="nc">–</span> · Edges: <span class="val" id="ec">–</span></div>
+    <button class="refresh-btn" onclick="load()" title="Refresh">↺</button>
+    <a class="back-link" href="/">← Tama</a>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="graph-area" id="graph-area">
+      <svg id="graph-svg"></svg>
+      <div class="graph-empty" id="graph-empty" style="display:none">Loading…</div>
+    </div>
+    <div class="inspector">
+      <div class="inspector-header">Inspector</div>
+      <div id="inspector-empty" class="inspector-empty">Click any node<br>to inspect it</div>
+      <div id="inspector-body" class="inspector-body" style="display:none"></div>
+    </div>
+  </div>
+
+</div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ── Constants (ported from AURA dashboard) ────────────────────────────────────
+const NC={goal:'#4da6ff',capability:'#3ddc84',strategy:'#ffd866',belief:'#c084fc',preference:'#67e8f9',uncertainty:'#ff6b6b',signal:'#ff9f43'};
+const NR={goal:11,capability:9,strategy:10,belief:8,preference:7,uncertainty:10,signal:6};
+const TIER={goal:0,capability:1,strategy:1,belief:2,preference:2,uncertainty:3,signal:3};
+const TIER_LABELS=['Goals','Capabilities & Strategies','Beliefs & Preferences','Uncertainties & Signals'];
+const EC={explored_by:'#ff6b6b30',requires:'#4da6ff30',supports:'#ffd86630',informs:'#c084fc30',conflicts_with:'#ff6b6b50',relates_to:'#ff9f4330',derived_from:'#c084fc22'};
+const NODE_TYPE_ABBREV={goal:'goal',capability:'cap',strategy:'strat',belief:'belief',preference:'pref',uncertainty:'uncert',signal:'signal'};
+
+let visTypes=new Set(['goal','capability','strategy','belief','preference','uncertainty']);
+let graphData={nodes:[],edges:[]};
+let selectedId=null;
+let pollTimer=null;
+
+// ── Type toggles ──────────────────────────────────────────────────────────────
+function buildToggles(){
+  const c=document.getElementById('toggles');
+  Object.keys(NC).forEach(t=>{
+    const el=document.createElement('span');
+    el.className='toggle'+(visTypes.has(t)?' on':'');
+    el.dataset.t=t;
+    el.textContent=NODE_TYPE_ABBREV[t]||t;
+    el.onclick=()=>{
+      if(visTypes.has(t))visTypes.delete(t);else visTypes.add(t);
+      el.classList.toggle('on',visTypes.has(t));
+      renderGraph(graphData);
+    };
+    c.appendChild(el);
+  });
+}
+
+// ── Hierarchical layout (ported from AURA) ────────────────────────────────────
+function layoutH(data,W,H){
+  const PT=30,PB=30,PX=60,nT=TIER_LABELS.length,uH=H-PT-PB,tH=uH/Math.max(nT-1,1);
+  const tiers={};
+  for(let i=0;i<nT;i++)tiers[i]=[];
+  data.nodes.forEach(n=>{const t=TIER[n.node_type]??2;(tiers[t]=tiers[t]||[]).push(n)});
+  const pos=[];
+  for(let t=0;t<nT;t++){
+    const ns=tiers[t]||[];if(!ns.length)continue;
+    const y=PT+t*tH,uW=W-PX*2,sp=uW/(ns.length+1);
+    ns.forEach((n,i)=>pos.push({...n,x:PX+sp*(i+1),y,tier:t}));
+  }
+  return{nodes:pos,tierY:t=>PT+t*tH,tH};
+}
+
+// ── Graph rendering (SVG, ported from AURA) ───────────────────────────────────
+function renderGraph(data){
+  const filtered={
+    nodes:data.nodes.filter(n=>{
+      if(!visTypes.has(n.node_type))return false;
+      if(n.node_type==='goal'&&n.status&&n.status!=='active')return false;
+      return true;
+    }),
+    edges:[...data.edges]
+  };
+  const visIds=new Set(filtered.nodes.map(n=>n.id));
+  filtered.edges=filtered.edges.filter(e=>visIds.has(e.source)&&visIds.has(e.target));
+
+  const area=document.getElementById('graph-area');
+  const svg=document.getElementById('graph-svg');
+  const r=area.getBoundingClientRect();
+  const W=r.width||800,H=r.height||600;
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+
+  if(!filtered.nodes.length){
+    svg.innerHTML='';
+    document.getElementById('graph-empty').style.display='flex';
+    document.getElementById('graph-empty').textContent='No nodes match current filters';
+    return;
+  }
+  document.getElementById('graph-empty').style.display='none';
+
+  const L=layoutH(filtered,W,H);
+  const nm={};L.nodes.forEach(n=>nm[n.id]=n);
+  let h='';
+
+  // Tier dividers and labels
+  for(let t=0;t<TIER_LABELS.length;t++){
+    const y=L.tierY(t);
+    h+=`<text class="tier-label" x="${W-10}" y="${y+3}">${TIER_LABELS[t]}</text>`;
+    if(t>0)h+=`<line x1="40" y1="${y-L.tH/2}" x2="${W-10}" y2="${y-L.tH/2}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="3,6"/>`;
+  }
+
+  // Edges
+  filtered.edges.forEach(e=>{
+    const s=nm[e.source],t=nm[e.target];if(!s||!t)return;
+    h+=`<line class="edge-line" x1="${s.x}" y1="${s.y}" x2="${t.x}" y2="${t.y}" stroke="${EC[e.edge_type]||'#1e2a3a'}"/>`;
+  });
+
+  // Nodes
+  L.nodes.forEach(n=>{
+    const col=NC[n.node_type]||'#888',rad=NR[n.node_type]||8;
+    const sel=n.id===selectedId?' selected':'';
+    const op=n.status==='achieved'?.4:n.status==='abandoned'?.2:.9;
+    const lbl=n.id.length>12?n.id.substring(0,10)+'\u2026':n.id;
+    h+=`<circle class="node-circle${sel}" cx="${n.x}" cy="${n.y}" r="${rad}" fill="${col}" stroke="${col}" data-id="${n.id}" opacity="${op}"/>`;
+    h+=`<text class="node-label" x="${n.x}" y="${n.y+rad+11}" text-anchor="middle">${lbl}</text>`;
+  });
+
+  svg.innerHTML=h;
+  document.getElementById('nc').textContent=filtered.nodes.length;
+
+  // Node interactions
+  svg.querySelectorAll('.node-circle').forEach(el=>{
+    el.addEventListener('click',()=>{selectedId=el.dataset.id;renderGraph(graphData);loadInspector(selectedId)});
+    el.addEventListener('mouseenter',e=>showTooltip(e,el.dataset.id));
+    el.addEventListener('mouseleave',hideTooltip);
+    el.addEventListener('mousemove',e=>moveTooltip(e));
+  });
+}
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+function showTooltip(e,id){
+  const node=graphData.nodes.find(n=>n.id===id);if(!node)return;
+  const tip=document.getElementById('tooltip');
+  const desc=node.description||'';
+  const conf=node.confidence!=null?` · conf ${node.confidence.toFixed(2)}`:'';
+  const pri=node.priority!=null?` · pri ${node.priority.toFixed(2)}`:'';
+  const ent=node.entropy_score!=null?` · entropy ${node.entropy_score.toFixed(2)}`:'';
+  tip.innerHTML=`<strong>${id}</strong>${desc?`<br>${desc.substring(0,120)}`:''}${conf||pri||ent?`<br><span style="color:var(--text-dim)">${conf||pri||ent}</span>`:''}`;
+  tip.style.display='block';
+  moveTooltip(e);
+}
+function moveTooltip(e){
+  const tip=document.getElementById('tooltip');
+  tip.style.left=(e.clientX+14)+'px';
+  tip.style.top=(e.clientY-8)+'px';
+}
+function hideTooltip(){document.getElementById('tooltip').style.display='none'}
+
+// ── Inspector ─────────────────────────────────────────────────────────────────
+async function loadInspector(id){
+  try{
+    const r=await fetch(`/api/self-model/node/${id}`);
+    if(!r.ok)throw new Error(r.status);
+    const {node,edges}=await r.json();
+
+    document.getElementById('inspector-empty').style.display='none';
+    const body=document.getElementById('inspector-body');
+    body.style.display='block';
+
+    const col=NC[node.node_type]||'#888';
+    let h=`<span class="type-badge" style="color:${col};border-color:${col}40">${node.node_type||'?'}</span>`;
+
+    // Description first (prominent)
+    if(node.description){
+      h+=`<div class="field"><div class="field-value desc">${esc(node.description)}</div></div>`;
+    }
+
+    // Key numeric attribute
+    const numAttr=node.confidence??node.priority??node.entropy_score??node.preference_weight??node.strength??null;
+    if(numAttr!=null){
+      const label=node.confidence!=null?'confidence':node.priority!=null?'priority':node.entropy_score!=null?'entropy':node.preference_weight!=null?'weight':'strength';
+      const pct=Math.round(numAttr*100);
+      h+=`<div class="field"><div class="field-label">${label}</div>`;
+      h+=`<div class="field-value">${numAttr.toFixed(4)} <span style="color:var(--text-dim);font-size:9px">(${pct}%)</span>`;
+      h+=`<div style="height:3px;background:var(--border);border-radius:2px;margin-top:4px"><div style="height:3px;background:${col};border-radius:2px;width:${pct}%"></div></div>`;
+      h+='</div></div>';
+    }
+
+    // Status badge if present
+    if(node.status){
+      const sc={active:'var(--accent-green)',achieved:'var(--text-dim)',abandoned:'var(--accent-red)',pending:'var(--accent-yellow)'}[node.status]||'var(--text-secondary)';
+      h+=`<div class="field"><div class="field-label">status</div><div class="field-value" style="color:${sc}">${esc(node.status)}</div></div>`;
+    }
+
+    // Remaining attributes (skip already shown)
+    const skip=new Set(['id','node_type','description','confidence','priority','entropy_score','preference_weight','strength','status','created_at']);
+    Object.entries(node).forEach(([k,v])=>{
+      if(skip.has(k)||v==null||v==='')return;
+      let dv=v;
+      if(typeof v==='number')dv=Number.isInteger(v)?v:v.toFixed(4);
+      if(Array.isArray(v))dv=v.length?`[${v.slice(0,5).join(', ')}${v.length>5?'…':''}]`:'—';
+      if(typeof v==='object')dv=JSON.stringify(v).substring(0,60);
+      h+=`<div class="field"><div class="field-label">${esc(k)}</div><div class="field-value">${esc(String(dv))}</div></div>`;
+    });
+
+    // ID and created_at at the bottom
+    h+=`<div class="field"><div class="field-label">id</div><div class="field-value">${esc(node.id)}</div></div>`;
+    if(node.created_at)h+=`<div class="field"><div class="field-label">created</div><div class="field-value" style="color:var(--text-dim)">${esc(node.created_at.substring(0,19).replace('T',' '))}</div></div>`;
+
+    // Edges
+    if(edges&&edges.length){
+      h+=`<div class="edges-section"><div class="edges-label">Edges (${edges.length})</div>`;
+      edges.forEach(e=>{
+        const dir=e.source===id?'→':'←';
+        const other=e.source===id?e.target:e.source;
+        h+=`<div class="edge-item"><span class="edge-type">${esc(e.edge_type)}</span><span class="edge-dir">${dir}</span><span class="edge-node" onclick="selectNode('${esc(other)}')" title="${esc(other)}">${esc(other.length>22?other.substring(0,22)+'\u2026':other)}</span></div>`;
+      });
+      h+='</div>';
+    }
+
+    body.innerHTML=h;
+  }catch(err){
+    document.getElementById('inspector-body').innerHTML=`<div class="field-value" style="color:var(--accent-red)">Failed to load node</div>`;
+  }
+}
+
+function selectNode(id){
+  selectedId=id;
+  renderGraph(graphData);
+  loadInspector(id);
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
+
+// ── Data loading ──────────────────────────────────────────────────────────────
+async function load(){
+  try{
+    document.getElementById('graph-empty').style.display='flex';
+    document.getElementById('graph-empty').textContent='Loading…';
+    const r=await fetch('/api/self-model/graph');
+    if(r.status===401){location.href='/login';return}
+    if(!r.ok)throw new Error(r.status);
+    const data=await r.json();
+    graphData={nodes:data.nodes||[],edges:data.edges||[]};
+    document.getElementById('nc').textContent=data.node_count??graphData.nodes.length;
+    document.getElementById('ec').textContent=data.edge_count??graphData.edges.length;
+    renderGraph(graphData);
+    // Re-load inspector if a node was already selected
+    if(selectedId)loadInspector(selectedId);
+  }catch(e){
+    document.getElementById('graph-empty').style.display='flex';
+    document.getElementById('graph-empty').textContent='Failed to load graph. Is TamAGI running?';
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+buildToggles();
+load();
+// Auto-refresh every 30s
+pollTimer=setInterval(load,30000);
+// Re-render on window resize
+window.addEventListener('resize',()=>{if(graphData.nodes.length)renderGraph(graphData)});
+</script>
+</body>
+</html>

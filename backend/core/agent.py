@@ -16,6 +16,7 @@ import logging
 import time
 import uuid
 import re
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
@@ -28,6 +29,10 @@ from backend.core.memory import MemoryEntry, MemoryStore, MemoryType
 from backend.core.personality import PersonalityEngine
 from backend.core.identity import IdentityManager
 from backend.skills.registry import SkillRegistry
+from backend.core.self_model import SelfModel
+from backend.core.motivation import MotivationEngine
+from backend.core.planning_engine import PlanningEngine, ActionPlan
+from backend.core.reflection import ReflectionEngine, ActualOutcome, bayesian_update
 
 if TYPE_CHECKING:
     from backend.core.dreamer import DreamEngine
@@ -147,6 +152,10 @@ class TamAGIAgent:
         personality: PersonalityEngine,
         skills: SkillRegistry,
         identity: IdentityManager | None = None,
+        self_model: SelfModel | None = None,
+        motivation_engine: MotivationEngine | None = None,
+        planning_engine: PlanningEngine | None = None,
+        reflection_engine: ReflectionEngine | None = None,
     ):
         self.config = config
         self.llm = llm
@@ -154,6 +163,11 @@ class TamAGIAgent:
         self.personality = personality
         self.skills = skills
         self.identity = identity or IdentityManager()
+        self.self_model = self_model
+        self.motivation_engine = motivation_engine
+        self.planning_engine = planning_engine
+        self.reflection_engine = reflection_engine
+        self._interaction_count = 0
         self.conversations: dict[str, Conversation] = {}
         self._history_dir = Path(config.history.persist_path)
         self._dream_engine: "DreamEngine | None" = None
@@ -213,6 +227,9 @@ class TamAGIAgent:
                 "memories_recalled": int,
             }
         """
+        _start = time.time()
+        logger.info("chat() called — message=%r...", user_message[:40])
+
         # Get or create conversation
         if conversation_id and conversation_id in self.conversations:
             conv = self.conversations[conversation_id]
@@ -263,6 +280,7 @@ class TamAGIAgent:
         # Layer: personality base + identity/soul context + memory
         identity_context = self.identity.get_system_prompt_context()
         system_prompt = self.personality.get_system_context()
+        system_prompt += f"\n\nCurrent date and time: {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}."
         if identity_context:
             system_prompt += "\n\n" + identity_context
         if memory_context:
@@ -287,6 +305,13 @@ class TamAGIAgent:
                     + "\n".join(dream_lines)
                     + "\nCall `recall_dreams` to surface full content from any of these."
                 )
+
+        # Inject self-model context: active goals, capabilities, beliefs, uncertainties.
+        # This is the entity's live self-awareness injected into every turn.
+        if self.self_model:
+            sm_ctx = self._build_self_model_context()
+            if sm_ctx:
+                system_prompt += sm_ctx
 
         llm_messages = [LLMMessage("system", system_prompt)]
 
@@ -358,15 +383,43 @@ class TamAGIAgent:
         # Append current user message with image block if provided
         llm_messages.append(LLMMessage("user", user_llm_content))
 
-        # 3. Get tool definitions
+        # 3. Planning engine: for complex requests, build a structured plan first
+        active_plan: ActionPlan | None = None
+        _transient_goal_id: str | None = None
+        sm_mutations: list[dict] = []
+        if self.planning_engine and self._looks_complex(user_message):
+            _transient_goal_id = self._create_transient_goal(user_message)
+            if _transient_goal_id:
+                sm_mutations.append({
+                    "op": "add",
+                    "node_type": "goal",
+                    "id": _transient_goal_id,
+                    "description": user_message[:80],
+                })
+                try:
+                    active_plan = await self.planning_engine.create_plan(_transient_goal_id)
+                    plan_text = self._format_plan(active_plan)
+                    llm_messages[0] = LLMMessage(
+                        "system",
+                        llm_messages[0].content + f"\n\n## Task Plan\n{plan_text}",
+                    )
+                    logger.info(
+                        "Planning engine invoked: plan %s (%d steps)",
+                        active_plan.id, len(active_plan.steps),
+                    )
+                except Exception as exc:
+                    logger.warning("Planning engine failed (skipping): %s", exc)
+
+        # 4. Get tool definitions
         tools = self.skills.get_openai_tools() if self.skills.skill_count > 0 else None
 
-        # 4. LLM loop with tool calling
+        # 5. LLM loop with tool calling
         skills_used = []
         interim_messages: list[str] = []
         llm_error: str | None = None
         direct_response_text: str | None = None
         last_tool_round_content: str | None = None  # fallback if final round is silent
+        response = LLMResponse()  # safe default; overwritten on first successful LLM call
         for round_num in range(self.config.agent.max_tool_rounds):
             try:
                 response = await self.llm.chat_with_retry(
@@ -465,38 +518,74 @@ class TamAGIAgent:
             if direct_response_text is not None:
                 break  # break outer round loop
 
-        # 5. Extract final response
+        # 6. Extract final response
         # last_tool_round_content catches the case where the LLM wrote its
         # complete answer alongside a tool call (common pattern) and then
         # returned empty content in the follow-up round after tools finished.
         final_text = direct_response_text or llm_error or response.content or last_tool_round_content or "..."
 
-        # 6. Record assistant message
+        # 6b. Brain: reflection, capability nudging, periodic self-model save
+        elapsed = time.time() - _start
+        if self.reflection_engine and active_plan:
+            try:
+                outcome = ActualOutcome(
+                    plan_id=active_plan.id,
+                    success=0.8 if not llm_error else 0.2,
+                    time_taken=elapsed,
+                    predicted_time=30.0,
+                    side_effects=list(skills_used),
+                )
+                refl = self.reflection_engine.reflect(active_plan, outcome)
+                sm_mutations.extend(self._apply_reflection(refl))
+            except Exception as exc:
+                logger.warning("Reflection engine error: %s", exc)
+
+        if self.self_model and skills_used:
+            for skill_name in skills_used:
+                mut = self._nudge_capability(skill_name, success=not bool(llm_error))
+                if mut:
+                    sm_mutations.append(mut)
+
+        self._interaction_count += 1
+        if (self.self_model and
+                self._interaction_count % self.config.self_model.save_interval == 0):
+            try:
+                self.self_model.save()
+                logger.debug("Self-model saved (interaction %d)", self._interaction_count)
+            except Exception as exc:
+                logger.warning("Self-model save failed: %s", exc)
+
+        # 7. Record assistant message
         meta: dict[str, Any] = {"skills_used": skills_used}
         if interim_messages:
             meta["interim_messages"] = interim_messages
         if archived_count:
             meta["context_compressed"] = archived_count
+        if sm_mutations:
+            meta["sm_mutations"] = sm_mutations
         conv.messages.append(Message(
             role="assistant",
             content=final_text,
             metadata=meta,
         ))
 
-        # 7. Store conversation summary in memory (every 3 messages for better recall)
-        if len(conv.messages) % 3 == 0 and len(conv.messages) > 0:
-            summary = f"Conversation about: {conv.title}. Latest exchange: User asked '{user_message}', TamAGI responded about {final_text}" # TODO: Add variable for max content length to store in memory
+        # 8. Store conversation summary in memory (every exchange).
+        # Wrapped in try/except so a memory backend error never crashes the chat response.
+        try:
+            summary = f"Conversation about: {conv.title}. Latest exchange: User asked '{user_message}', TamAGI responded about {final_text}"
             await self.memory.store(MemoryEntry(
                 content=summary,
                 memory_type=MemoryType.CONVERSATION,
                 metadata={"conversation_id": conv.id},
             ))
             self.personality.state.store_memory()
+        except Exception as exc:
+            logger.warning("Memory store failed (chat summary): %s", exc)
 
-        # 8. Check for stage advancement and generate name if needed
+        # 9. Check for stage advancement and generate name if needed
         await self._maybe_advance_stage(prev_stage_index)
 
-        # 9. Save state
+        # 10. Save state
         self.personality.save_state()
         self._save_conversation(conv)
 
@@ -507,6 +596,7 @@ class TamAGIAgent:
             "skills_used": skills_used,
             "memories_recalled": len(memories),
             "context_compressed": archived_count,
+            "sm_mutations": sm_mutations,
         }
 
     # ── Stage Advancement ─────────────────────────────────────
@@ -604,6 +694,174 @@ class TamAGIAgent:
         stats["recent_memories"] = [m.to_dict() for m in all_memories[:5]]
         logger.info(f"Memory stats: {stats}")
         return stats
+
+    # ── Brain Helpers ─────────────────────────────────────────
+
+    def _build_self_model_context(self) -> str:
+        """Format self-model state as a compact context section for the system prompt."""
+        if not self.self_model:
+            return ""
+        try:
+            caps = self.self_model.query_capabilities()[:5]
+            goals = self.self_model.get_goals(status="active")[:3]
+            uncertainties = self.self_model.get_uncertainty_map()[:3]
+            beliefs = self.self_model.get_beliefs()[:3]
+
+            lines = ["\n\n## Self-Model State"]
+            if goals:
+                lines.append("**Active Goals:** " + " | ".join(
+                    f"{g.description} (p={g.priority:.1f})" for g in goals
+                ))
+            if caps:
+                lines.append("**Top Capabilities:** " + " | ".join(
+                    f"{c.description} ({c.confidence:.0%})" for c in caps
+                ))
+            if beliefs:
+                lines.append("**Beliefs:** " + " | ".join(
+                    b.description for b in beliefs
+                ))
+            if uncertainties:
+                lines.append("**Uncertainties:** " + " | ".join(
+                    f"{u.domain} (entropy={u.entropy_score:.2f})" for u in uncertainties
+                ))
+            return "\n".join(lines)
+        except Exception as exc:
+            logger.debug("Self-model context build failed: %s", exc)
+            return ""
+
+    def _looks_complex(self, message: str) -> bool:
+        """Heuristic: does this message warrant planning engine invocation?"""
+        if len(message) > 200:
+            return True
+        multi_step_indicators = (
+            "step by step", "plan", "how do i", "implement", "build", "create",
+            "write a", "develop", "set up", "configure", "deploy", "design",
+            "refactor", "migrate", "orchestrate",
+        )
+        lower = message.lower()
+        return any(phrase in lower for phrase in multi_step_indicators)
+
+    def _create_transient_goal(self, user_message: str) -> str | None:
+        """Create a transient goal node in the self-model for this interaction."""
+        if not self.self_model:
+            return None
+        try:
+            import uuid as _uuid
+            goal_id = f"tg-{_uuid.uuid4().hex[:8]}"
+            self.self_model._apply_add_node("goal", {
+                "id": goal_id,
+                "description": user_message[:120],
+                "priority": 0.8,
+                "status": "active",
+            })
+            return goal_id
+        except Exception as exc:
+            logger.debug("Could not create transient goal: %s", exc)
+            return None
+
+    def _format_plan(self, plan: ActionPlan) -> str:
+        """Format an ActionPlan as a compact text guide for system prompt injection."""
+        lines = [f"Plan ID: {plan.id}  Confidence: {plan.confidence:.0%}"]
+        for i, step in enumerate(plan.steps, 1):
+            lines.append(f"  {i}. [{step.step_type}] {step.description}")
+        if plan.capability_risks:
+            risks = ", ".join(r["capability_id"] for r in plan.capability_risks)
+            lines.append(f"  Warning — Capability risks: {risks}")
+        return "\n".join(lines)
+
+    def _apply_reflection(self, refl) -> list[dict]:
+        """Apply reflection proposals directly to the self-model (no pipeline).
+
+        Returns a list of mutation dicts for surface in the chat response.
+        """
+        mutations: list[dict] = []
+        if not self.self_model:
+            return mutations
+        for proposal in refl.proposed_updates:
+            updates = dict(proposal.proposed_state)
+            updates.pop("success_history_append", None)  # not a real node attribute
+            if not updates:
+                continue
+            try:
+                self.self_model._apply_update_node(proposal.target, updates)
+                node = self.self_model.get_node(proposal.target)
+                mutations.append({
+                    "op": "update",
+                    "node_type": node.get("node_type", "?") if node else "?",
+                    "id": proposal.target,
+                    "description": (node.get("description", "") if node else "")[:80],
+                    "fields": list(updates.keys()),
+                })
+                logger.debug(
+                    "Applied reflection proposal: %s → %s",
+                    proposal.target, list(updates.keys()),
+                )
+            except KeyError:
+                logger.debug(
+                    "Reflection target %s not in self-model (skipped).", proposal.target,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Could not apply reflection proposal for %s: %s", proposal.target, exc,
+                )
+        return mutations
+
+    def _nudge_capability(self, skill_name: str, success: bool = True) -> dict | None:
+        """Nudge the confidence of a capability node matching a skill name.
+
+        Returns a mutation dict if a nudge was applied, else None.
+        """
+        if not self.self_model:
+            return None
+        name_lower = skill_name.lower()
+        keyword_map = {
+            "bash": "c-004",
+            "exec": "c-002",
+            "code": "c-002",
+            "web_fetch": "c-005",
+            "fetch": "c-005",
+            "web_search": "c-006",
+            "search": "c-006",
+            "create_skill": "c-007",
+            "tool": "c-007",
+            "write": "c-001",
+            "read": "c-001",
+            "express": "c-001",
+        }
+        cap_id = None
+        for keyword, cid in keyword_map.items():
+            if keyword in name_lower:
+                cap_id = cid
+                break
+        if cap_id is None:
+            return None
+        try:
+            node = self.self_model.get_node(cap_id)
+            if node is None:
+                return None
+            confidence = node.get("confidence", 0.5)
+            test_count = node.get("test_count", 0)
+            observation = 1.0 if success else 0.0
+            new_confidence = bayesian_update(confidence, test_count, observation)
+            self.self_model._apply_update_node(cap_id, {
+                "confidence": round(new_confidence, 4),
+                "test_count": test_count + 1,
+            })
+            logger.debug(
+                "Nudged capability %s: %.3f → %.3f (skill=%s)",
+                cap_id, confidence, new_confidence, skill_name,
+            )
+            return {
+                "op": "nudge",
+                "node_type": "capability",
+                "id": cap_id,
+                "description": node.get("description", "")[:80],
+                "from": round(confidence, 3),
+                "to": round(new_confidence, 3),
+            }
+        except Exception as exc:
+            logger.debug("Could not nudge capability for %s: %s", skill_name, exc)
+            return None
 
     # ── Persistence ───────────────────────────────────────────
 

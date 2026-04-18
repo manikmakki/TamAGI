@@ -168,7 +168,7 @@ class TamAGIState:
         if satiety_hours > 0 and self.satiety > 0:
             rate_per_hour = 0.42 + 0.97 * (self.stage_index / max(NUM_STAGES - 1, 1))
             satiety_loss = satiety_hours * rate_per_hour
-            self.satiety = max(0, self.satiety - int(satiety_loss))
+            self.satiety = round(max(0, self.satiety - satiety_loss), 2)
             self.last_satiety_update = time.time()
 
     def check_low_energy(self, agent: Any | None = None) -> bool:

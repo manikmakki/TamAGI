@@ -11,8 +11,15 @@ httpx>=0.27.0
 # Memory / Vector DB
 chromadb>=0.5.0
 
+# Elasticsearch memory backend (optional — only needed when memory.backend = "elasticsearch")
+elasticsearch[async]>=8.0.0
+sentence-transformers>=3.0.0
+
 # Web Search (free provider — no API key needed)
 ddgs>=7.0.0
+
+# Self-model graph
+networkx>=3.0
 
 # Utilities
 python-multipart>=0.0.12

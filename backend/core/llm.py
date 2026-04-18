@@ -129,7 +129,7 @@ class LLMClient:
         url = f"{self.base_url}/chat/completions"
         payload = self._build_payload(messages, tools=tools, **kwargs)
 
-        logger.debug(f"LLM request to {url} with model={self.config.model}")
+        logger.info("LLM request → %s  model=%s  messages=%d", url, self.config.model, len(messages))
 
         try:
             resp = await self._client.post(url, json=payload)

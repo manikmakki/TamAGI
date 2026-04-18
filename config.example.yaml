@@ -28,15 +28,29 @@ auth:
 
 # Memory Configuration
 memory:
-  backend: "chromadb"                       # chromadb | elasticsearch (in the future)
+  backend: "chromadb"                       # chromadb | elasticsearch
+  # How many memories to surface per recall query
+  retrieval_limit: 5
+  # Minimum cosine similarity to include a result (0.0 = permissive, 1.0 = exact)
+  relevance_threshold: 0.5
+
   chromadb:
-    retrieval_limit: 5                      # How many memories to retrieve for context
-    relevance_threshold: 0.5                # Minimum relevance score (0.0 - 1.0)
     persist_directory: "./data/chromadb"
     collection_name: "tamagi_memory"
-  # elasticsearch:
-  #   url: "http://localhost:9200"
-  #   index: "tamagi_memory"
+
+  # Elasticsearch backend — switch backend to "elasticsearch" to activate.
+  # Requires: pip install elasticsearch sentence-transformers
+  # Or start the bundled service: docker compose --profile elasticsearch up -d elasticsearch
+  elasticsearch:
+    url: "http://localhost:9200"            # ES endpoint (env: TAMAGI_ES_URL)
+    index: "tamagi_memory"                  # Index name  (env: TAMAGI_ES_INDEX)
+    # Auth — supply api_key OR username+password. Leave blank for no auth (local dev).
+    api_key: ""                             # (env: TAMAGI_ES_API_KEY)
+    username: ""                            # (env: TAMAGI_ES_USERNAME)
+    password: ""                            # (env: TAMAGI_ES_PASSWORD)
+    # Embedding model used to generate dense vectors.
+    # Must stay consistent after the index is created — changing it requires re-indexing.
+    embedding_model: "all-MiniLM-L6-v2"    # 384-dim, ~90 MB, fast
 
 
 # Guardrails & Permissions

@@ -277,3 +277,15 @@ class MemoryStore:
                 ))
 
         return entries
+
+
+def create_memory_store(config: MemoryConfig) -> "MemoryStore":
+    """Factory: return the configured memory backend.
+
+    Returns an ElasticsearchMemoryStore when config.backend == "elasticsearch",
+    otherwise returns the default ChromaDB-backed MemoryStore.
+    """
+    if config.backend == "elasticsearch":
+        from backend.core.memory_elasticsearch import ElasticsearchMemoryStore
+        return ElasticsearchMemoryStore(config.elasticsearch)  # type: ignore[return-value]
+    return MemoryStore(config)

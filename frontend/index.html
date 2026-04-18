@@ -437,6 +437,11 @@
     .skill-tag.running { color: var(--text-muted); animation: tag-pulse 1s ease-in-out infinite; }
     .skill-tag[title] { cursor: help; border-bottom: 1px dotted var(--accent-tertiary); }
     .compact-tag { display: inline-block; padding: 1px 5px; background: var(--bg-elevated); border-radius: 3px; font-size: 8px; color: var(--warning); margin-left: 3px; cursor: help; border-bottom: 1px dotted var(--warning); opacity: 0.7; }
+    .sm-tag { display: inline-block; padding: 1px 5px; background: var(--bg-elevated); border-radius: 3px; font-size: 8px; margin-left: 3px; opacity: 0.75; }
+    .sm-tag.add { color: #3ddc84; }
+    .sm-tag.update { color: #4da6ff; }
+    .sm-tag.nudge { color: #6b7a8d; }
+    .sm-tag[title] { cursor: help; border-bottom: 1px dotted currentColor; }
     @keyframes tag-pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
 
     .typing {
@@ -1007,7 +1012,7 @@ function handleWsEvent(ev){
     convId=ev.conversation_id;updateState(ev.state);
     const skills=(ev.skills_used||[]).map(name=>({name,output:(liveToolOutputs[name]||[]).join('\n')}));
     liveToolOutputs={};
-    addMsg('assistant',ev.response,skills,null,ev.context_compressed||0);
+    addMsg('assistant',ev.response,skills,null,ev.context_compressed||0,ev.sm_mutations||[]);
     loadConversations();loading=false;document.getElementById('send-btn').disabled=false;
   }else if(ev.type==='interim_text'){
     if(!currentInterimGroup){
@@ -1390,7 +1395,7 @@ async function sendMessage(){
   }catch(e){setTyping(false);addMsg('assistant',`\u26A0 Error: ${e.message}. Is the backend running?`);loading=false;document.getElementById('send-btn').disabled=false;}
 }
 
-function addMsg(role,content,skills=[],ts=null,compressed=0){
+function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[]){
   const area=document.getElementById('chat-messages');
   const d=document.createElement('div');d.className=`msg ${role}`;
   // Use the stored unix timestamp when replaying history, current time for live messages
@@ -1401,8 +1406,14 @@ function addMsg(role,content,skills=[],ts=null,compressed=0){
     return`<span class="skill-tag"${tip?` title="${esc(tip)}"`:''}>&#x2699; ${esc(name)}</span>`;
   }).join('');
   const cmpTag=compressed?`<span class="compact-tag" title="${compressed} older message${compressed===1?'':'s'} archived to long-term memory">&#x25C8; compacted</span>`:'';
+  const smTags=(smMuts||[]).map(m=>{
+    if(m.op==='add'){const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';return`<span class="sm-tag add" title="new ${esc(m.node_type)} node \u00b7 id: ${esc(m.id)}${desc}">&#x2295; ${esc(m.node_type)}</span>`;}
+    if(m.op==='update'){const fields=esc((m.fields||[]).join(', '));const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';return`<span class="sm-tag update" title="${esc(m.node_type)} ${esc(m.id)}${desc} \u00b7 updated: ${fields}">&#x21bb; ${esc(m.id.length>10?m.id.substring(0,10)+'\u2026':m.id)}</span>`;}
+    if(m.op==='nudge'){const arrow=m.to>m.from?'&#x2191;':'&#x2193;';const delta=((m.to-m.from)*100).toFixed(1);const sign=m.to>m.from?'+':'';const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';return`<span class="sm-tag nudge" title="${esc(m.node_type)} ${esc(m.id)}${desc} \u00b7 confidence: ${m.from.toFixed(3)} \u2192 ${m.to.toFixed(3)} (${sign}${delta}%)">${arrow} ${esc(m.id)}</span>`;}
+    return'';
+  }).join('');
   const rendered=role==='assistant'?renderMd(content):esc(content);
-  d.innerHTML=`<div class="bubble">${rendered}</div><div class="time">${t}${sk}${cmpTag}</div>`;
+  d.innerHTML=`<div class="bubble">${rendered}</div><div class="time">${t}${sk}${cmpTag}${smTags}</div>`;
   area.appendChild(d);area.scrollTop=area.scrollHeight
 }
 function setTyping(v){document.getElementById('typing').classList.toggle('on',v)}
@@ -1415,7 +1426,7 @@ function debounce(fn,ms){let t;return function(...a){clearTimeout(t);t=setTimeou
 function relativeTime(ts){if(!ts)return'';const d=typeof ts==='number'?new Date(ts*1000):new Date(ts);const diff=Math.floor((Date.now()-d)/1000);if(diff<60)return diff+'s ago';if(diff<3600)return Math.floor(diff/60)+'m ago';if(diff<86400)return Math.floor(diff/3600)+'h ago';return Math.floor(diff/86400)+'d ago'}
 
 async function loadConversations(){try{const d=await api('/conversations');const list=document.getElementById('conv-list');list.innerHTML='';(d.conversations||[]).forEach(c=>{const el=document.createElement('div');el.className=`conv-item${c.id===convId?' active':''}`;el.onclick=()=>openConversation(c.id);const dt=new Date(c.updated_at*1000).toLocaleDateString([],{month:'short',day:'numeric'});el.innerHTML=`<div class="ci-title">${esc(c.title)}</div><div class="ci-meta">${c.message_count} msgs \u00b7 ${dt}</div>`;list.appendChild(el)})}catch{}}
-async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>{if(m.role==='assistant'&&m.metadata?.interim_messages?.length){const steps=m.metadata.interim_messages;const wrapper=document.createElement('div');wrapper.className='msg assistant';wrapper.innerHTML='<div class="interim-group collapsed" data-count="'+steps.length+'"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label">Reasoning · <span class="interim-count">'+steps.length+(steps.length===1?' step':' steps')+'</span></span></button><div class="interim-body">'+steps.map(s=>'<div class="interim-entry">'+renderMd(s)+'</div>').join('')+'</div></div>';area.appendChild(wrapper);}addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp,m.metadata?.context_compressed||0);});loadConversations();closeDrawer()}catch(e){console.error(e)}}
+async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>{if(m.role==='assistant'&&m.metadata?.interim_messages?.length){const steps=m.metadata.interim_messages;const wrapper=document.createElement('div');wrapper.className='msg assistant';wrapper.innerHTML='<div class="interim-group collapsed" data-count="'+steps.length+'"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label">Reasoning · <span class="interim-count">'+steps.length+(steps.length===1?' step':' steps')+'</span></span></button><div class="interim-body">'+steps.map(s=>'<div class="interim-entry">'+renderMd(s)+'</div>').join('')+'</div></div>';area.appendChild(wrapper);}addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp,m.metadata?.context_compressed||0,m.metadata?.sm_mutations||[]);});loadConversations();closeDrawer()}catch(e){console.error(e)}}
 function newConversation(){convId=null;document.getElementById('chat-messages').innerHTML=`<div class="welcome-msg" id="welcome"><strong>New conversation!</strong><br>What shall we explore?</div>`;loadConversations();closeDrawer();document.getElementById('input').focus()}
 
 function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('drawer-overlay').classList.add('open');switchTab('chats');loadConversations()}
