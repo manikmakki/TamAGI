@@ -63,15 +63,29 @@ class MemoryConfig(BaseModel):
     relevance_threshold: float = 0.5
 
 
+class ExecTrustConfig(BaseModel):
+    """Tiered trust model for exec skill. Trust is at base command name level."""
+    safe: list[str] = Field(
+        default_factory=lambda: [
+            "ls", "cat", "head", "tail", "grep", "find",
+            "wc", "echo", "date", "pwd", "which", "env", "ps", "id",
+        ]
+    )
+    notify: list[str] = Field(
+        default_factory=lambda: ["python", "python3", "pip", "pip3", "git", "curl", "wget"]
+    )
+    approve: list[str] = Field(
+        default_factory=lambda: [
+            "docker", "docker-compose", "npm", "make", "systemctl", "service",
+        ]
+    )
+    block: list[str] = Field(default_factory=lambda: ["sudo", "su", "passwd", "rm"])
+
+
 class GuardrailsConfig(BaseModel):
     allowed_read_paths: list[str] = Field(default_factory=lambda: ["./workspace"])
     allowed_write_paths: list[str] = Field(default_factory=lambda: ["./workspace"])
-    exec_allowlist: list[str] = Field(
-        default_factory=lambda: [
-            "ls", "cat", "head", "tail", "grep", "find",
-            "wc", "echo", "date", "python", "pip",
-        ]
-    )
+    exec_trust: ExecTrustConfig = Field(default_factory=ExecTrustConfig)
     max_write_size: int = 10485760  # 10MB
     exec_timeout: int = 30
 
@@ -117,9 +131,11 @@ class AutonomyConfig(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    max_tool_rounds: int = 5      # Max tool-call loops per user message
-    llm_retry_attempts: int = 1   # Retries on RemoteProtocolError / ConnectError
-    llm_retry_delay: float = 2.0  # Seconds between retries
+    max_tool_rounds: int = 5           # Fallback round limit for unplanned tasks
+    max_tool_rounds_ceiling: int = 20  # Hard cap when plan drives the limit
+    use_plan_executor: bool = False    # Step through ActionPlan via PlanExecutor
+    llm_retry_attempts: int = 1        # Retries on RemoteProtocolError / ConnectError
+    llm_retry_delay: float = 2.0       # Seconds between retries
 
 
 class OrchestratorConfig(BaseModel):

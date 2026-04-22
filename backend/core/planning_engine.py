@@ -333,7 +333,6 @@ class PlanningEngine:
             step_type=ActionStepType.WEB_SEARCH.value,
             description=f"Search for information to address capability gaps: {missing_capabilities}",
             spec={"query": query, "max_results": 5},
-            required_capabilities=["c-006"],
             predicted_outcome={"search_results_obtained": True},
         )
         steps.append(search_step)
@@ -346,7 +345,6 @@ class PlanningEngine:
                 "context": goal.description,
                 "from_search_step": search_step.id,
             },
-            required_capabilities=["c-005"],
             predicted_outcome={"content_retrieved": True},
             depends_on=[search_step.id],
         )
@@ -358,7 +356,6 @@ class PlanningEngine:
                 step_type=ActionStepType.BASH.value,
                 description="Probe local environment for relevant tools",
                 spec={"command": "python3 --version && pip list --format=columns 2>/dev/null | head -20"},
-                required_capabilities=["c-004"],
                 predicted_outcome={"environment_probed": True},
                 depends_on=[fetch_step.id],
             )

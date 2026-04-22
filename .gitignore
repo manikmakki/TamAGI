@@ -10,6 +10,7 @@ venv/
 # Data (persisted locally)
 data/
 workspace/
+workspace.tar
 
 # Config with secrets
 config.yaml

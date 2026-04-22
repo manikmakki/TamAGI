@@ -418,6 +418,16 @@
     .interim-group.collapsed .interim-body { display: none; }
     .interim-entry { color: var(--text-muted); font-style: italic; font-size: 11px; line-height: 1.5; }
     .interim-entry + .interim-entry { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
+    /* Tool approval banner */
+    .approval-banner { border: 1px solid var(--warning,#f0a500); border-radius: var(--radius-md); padding: 10px 12px; margin: 6px 0; background: var(--bg-elevated); }
+    .approval-cmd { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); margin-bottom: 4px; }
+    .approval-reason { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+    .approval-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .approval-actions button { padding: 3px 10px; border-radius: 4px; border: none; cursor: pointer; font-size: 12px; }
+    .btn-allow-once { background: var(--accent,#6c63ff); color: #fff; }
+    .btn-allow-always { background: var(--success,#3dba6f); color: #fff; }
+    .btn-deny { background: var(--bg-surface); color: var(--text-muted); border: 1px solid var(--border) !important; }
+    .approval-countdown { font-size: 10px; color: var(--text-muted); margin-left: auto; }
     .msg.user .bubble { white-space: pre-wrap; }
     .msg.user .bubble {
       background: var(--accent-glow);
@@ -1031,6 +1041,8 @@ function handleWsEvent(ev){
     document.getElementById('chat-messages').scrollTop=99999;
   }else if(ev.type==='pose_change'){
     setPose(ev.pose_parts);
+  }else if(ev.type==='tool_approval_required'){
+    showApprovalBanner(ev);
   }else if(ev.type==='error'){
     setTyping(false);clearLiveTags();
     if(currentInterimGroup){currentInterimGroup.classList.add('collapsed');currentInterimGroup=null;}
@@ -1040,6 +1052,29 @@ function handleWsEvent(ev){
 }
 function clearLiveTags(){document.getElementById('live-tags').innerHTML=''}
 function toggleInterim(btn){btn.closest('.interim-group').classList.toggle('collapsed');}
+function showApprovalBanner(ev){
+  const msgs=document.getElementById('chat-messages');
+  const banner=document.createElement('div');
+  banner.className='approval-banner';
+  banner.dataset.approvalId=ev.approval_id;
+  let countdown=ev.timeout_seconds||30;
+  banner.innerHTML=`<div class="approval-cmd"><code>${ev.command}</code></div><div class="approval-reason">${ev.reason||'Approval required'}</div><div class="approval-actions"><button class="btn-allow-once" onclick="resolveApproval('${ev.approval_id}',true,false,this.closest('.approval-banner'))">Allow once</button><button class="btn-allow-always" onclick="resolveApproval('${ev.approval_id}',true,true,this.closest('.approval-banner'))">Allow always</button><button class="btn-deny" onclick="resolveApproval('${ev.approval_id}',false,false,this.closest('.approval-banner'))">Deny</button><span class="approval-countdown">(${countdown}s)</span></div>`;
+  msgs.appendChild(banner);msgs.scrollTop=99999;
+  const tick=setInterval(()=>{
+    countdown--;
+    const c=banner.querySelector('.approval-countdown');
+    if(c)c.textContent=`(${countdown}s)`;
+    if(countdown<=0){clearInterval(tick);resolveApproval(ev.approval_id,false,false,banner);}
+  },1000);
+  banner._tick=tick;
+}
+function resolveApproval(approvalId,approved,allowAlways,bannerEl){
+  if(bannerEl&&bannerEl._tick)clearInterval(bannerEl._tick);
+  if(bannerEl)bannerEl.remove();
+  if(ws&&ws.readyState===WebSocket.OPEN){
+    ws.send(JSON.stringify({type:'tool_approval_response',approval_id:approvalId,approved,allow_always:allowAlways}));
+  }
+}
 
 async function api(p,o={}){
   const r=await fetch(`${API}/api${p}`,{headers:{'Content-Type':'application/json'},...o});

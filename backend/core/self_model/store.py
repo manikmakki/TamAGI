@@ -111,6 +111,135 @@ class SelfModel:
                 nodes.append(dict(attrs))
         return nodes
 
+    def search_nodes(self, query: str, limit: int = 10) -> list[dict]:
+        """Full-text search across all node description, name, and ID fields.
+
+        Case-insensitive substring match. Returns up to `limit` results sorted
+        by how many query terms match (descending).
+        """
+        terms = [t.lower() for t in query.split() if t]
+        scored: list[tuple[int, dict]] = []
+        for _, attrs in self._graph.nodes(data=True):
+            searchable = " ".join(
+                str(attrs.get(f, "")).lower()
+                for f in ("id", "description", "name", "capability_name", "belief", "domain")
+            )
+            score = sum(1 for t in terms if t in searchable)
+            if score > 0:
+                scored.append((score, dict(attrs)))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [node for _, node in scored[:limit]]
+
+    def auto_wire_node(self, node_id: str) -> int:
+        """Stitch a newly created node into the graph via semantically appropriate edges.
+
+        Searches for related nodes by description and creates typed edges. For most
+        node types, edges are created FROM the new node TO related nodes. For
+        capabilities (which can only appear as edge targets in the schema), edges are
+        created FROM related goals/uncertainties TO the new capability node instead.
+
+        Caps at 3 new edges per call. Returns the number of edges created.
+        """
+        node = self.get_node(node_id)
+        if not node:
+            return 0
+
+        node_type = node.get("node_type", "")
+        description = (
+            node.get("description") or node.get("domain") or node.get("belief") or ""
+        )
+        if not description:
+            return 0
+
+        # Forward rules: edge FROM new node TO related node
+        _FWD_RULES: dict[tuple[str, str], str] = {
+            ("belief",      "strategy"):    EdgeType.INFORMS.value,
+            ("belief",      "goal"):        EdgeType.RELATES_TO.value,
+            ("belief",      "capability"):  EdgeType.RELATES_TO.value,
+            ("belief",      "uncertainty"): EdgeType.RELATES_TO.value,
+            ("preference",  "goal"):        EdgeType.RELATES_TO.value,
+            ("preference",  "capability"):  EdgeType.RELATES_TO.value,
+            ("signal",      "goal"):        EdgeType.RELATES_TO.value,
+            ("signal",      "belief"):      EdgeType.RELATES_TO.value,
+            ("signal",      "capability"):  EdgeType.RELATES_TO.value,
+            ("signal",      "uncertainty"): EdgeType.RELATES_TO.value,
+            ("goal",        "capability"):  EdgeType.REQUIRES.value,
+            ("uncertainty", "goal"):        EdgeType.EXPLORED_BY.value,
+        }
+
+        # Reverse rules: edge FROM related node TO new node
+        # Used for node types the schema only allows as edge targets (e.g. capability).
+        _REV_RULES: dict[tuple[str, str], str] = {
+            # (related_type, new_node_type) → edge_type  [creates: related → new_node]
+            ("goal",        "capability"):  EdgeType.REQUIRES.value,
+            ("belief",      "capability"):  EdgeType.RELATES_TO.value,
+            ("preference",  "capability"):  EdgeType.RELATES_TO.value,
+            ("signal",      "capability"):  EdgeType.RELATES_TO.value,
+            ("belief",      "strategy"):    EdgeType.INFORMS.value,
+        }
+
+        related = self.search_nodes(description, limit=8)
+        edges_created = 0
+
+        for related_node in related:
+            related_id = related_node.get("id", "")
+            if not related_id or related_id == node_id:
+                continue
+            related_type = related_node.get("node_type", "")
+
+            # Try forward rule first
+            edge_type = _FWD_RULES.get((node_type, related_type))
+            if edge_type and not self._graph.has_edge(node_id, related_id):
+                try:
+                    self._apply_add_edge(node_id, related_id, edge_type)
+                    edges_created += 1
+                except (KeyError, ValueError):
+                    pass
+            else:
+                # Try reverse rule
+                edge_type = _REV_RULES.get((related_type, node_type))
+                if edge_type and not self._graph.has_edge(related_id, node_id):
+                    try:
+                        self._apply_add_edge(related_id, node_id, edge_type)
+                        edges_created += 1
+                    except (KeyError, ValueError):
+                        pass
+
+            if edges_created >= 3:
+                break
+
+        # Fallback: user-preference beliefs wire to g-001 ("engage genuinely with humans")
+        # since knowing user context always serves that goal, even without text overlap.
+        if edges_created == 0 and node_type == "belief" and description.startswith("User preference:"):
+            g001 = self.get_node("g-001")
+            if g001 and not self._graph.has_edge(node_id, "g-001"):
+                try:
+                    self._apply_add_edge(node_id, "g-001", EdgeType.RELATES_TO.value)
+                    edges_created += 1
+                except (KeyError, ValueError):
+                    pass
+
+        if edges_created:
+            logger.debug("Auto-wired %s (%s): %d edge(s) created", node_id, node_type, edges_created)
+        return edges_created
+
+    def wire_orphaned_nodes(self) -> int:
+        """Call auto_wire_node for every node that currently has no edges.
+
+        Run once after seed or load to catch nodes that predate auto-wiring.
+        Returns the total number of edges created.
+        """
+        total = 0
+        orphans = [
+            nid for nid in self._graph.nodes
+            if self._graph.degree(nid) == 0
+        ]
+        for nid in orphans:
+            total += self.auto_wire_node(nid)
+        if total:
+            logger.info("wire_orphaned_nodes: created %d edge(s) across %d orphan(s)", total, len(orphans))
+        return total
+
     def query_capabilities(self, context: dict | None = None) -> list[CapabilityNode]:
         """Return capability nodes sorted by confidence (highest first)."""
         caps = []

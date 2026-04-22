@@ -185,6 +185,15 @@ async def websocket_chat(websocket: WebSocket):
                 user_message = msg.get("message", "")
                 conv_id = msg.get("conversation_id")
 
+                # Handle approval responses (non-chat message)
+                if msg.get("type") == "tool_approval_response":
+                    agent.resolve_approval(
+                        approval_id=msg.get("approval_id", ""),
+                        approved=bool(msg.get("approved", False)),
+                        allow_always=bool(msg.get("allow_always", False)),
+                    )
+                    continue
+
                 if not user_message:
                     await websocket.send_json({"error": "Empty message"})
                     continue

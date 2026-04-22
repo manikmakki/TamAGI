@@ -26,7 +26,7 @@ import logging
 import random
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -588,11 +588,29 @@ class CleanupDream(DreamActivity):
 
         deleted_count = len(pruned)
 
+        # Archive resolved uncertainty nodes (entropy < 0.1) — they've been explored
+        # enough that they no longer drive curiosity; preserve them for history.
+        archived_uncertainties = 0
+        sm = getattr(agent, "self_model", None)
+        if sm:
+            for u_node in sm.get_uncertainty_map():
+                if u_node.entropy_score >= 0.1:
+                    continue
+                try:
+                    sm._apply_update_node(u_node.id, {
+                        "entropy_score": 0.05,
+                        "last_explored": datetime.now(timezone.utc).isoformat(),
+                    })
+                    archived_uncertainties += 1
+                except Exception:
+                    pass
+
         # Generate a brief narrative about the cleanup
         prompt = (
             f"You just spent some time tidying up your workspace. "
-            f"You pruned {deleted_count} old dream log files to keep things organised. "
-            f"Write 1-2 sentences in first person about how it feels to have a cleaner space."
+            f"You pruned {deleted_count} old dream log files and resolved "
+            f"{archived_uncertainties} uncertainty domain(s) that you've explored thoroughly. "
+            f"Write 1-2 sentences in first person about how it feels to have a cleaner, clearer mind."
         )
         response = await agent.llm.chat([
             LLMMessage("system", _get_dream_system_prompt("cleanup", agent, context)),
@@ -600,13 +618,99 @@ class CleanupDream(DreamActivity):
         ], max_tokens=150)
         content = response.content or f"Pruned {deleted_count} old files. Feels better."
 
-        logger.info(f"CleanupDream: deleted {deleted_count} files")
+        logger.info(
+            "CleanupDream: deleted %d files, archived %d uncertainty nodes",
+            deleted_count, archived_uncertainties,
+        )
 
         return {
-            "summary": f"Tidied workspace — pruned {deleted_count} old dream files",
+            "summary": (
+                f"Tidied workspace — pruned {deleted_count} dream files, "
+                f"archived {archived_uncertainties} resolved uncertainty domain(s)"
+            ),
             "content": content,
             "mood_delta": {"happiness": 5, "energy": -5},
         }
+
+
+class AutonomousPlanActivity(DreamActivity):
+    """
+    Let TamAGI autonomously plan and execute a self-directed task using
+    the full PlanExecutor pipeline.
+
+    The LLM first generates a concrete, achievable goal appropriate for
+    autonomous execution (no UI interaction, no risky commands).
+    Then agent.chat() is called with is_autonomous=True, which routes
+    through the planning engine and PlanExecutor.
+
+    Capability gaps (approve-tier commands attempted without a user) are
+    automatically tagged and fed back to the ReflectionEngine — AURA
+    learns over time to plan within its autonomous capabilities.
+    """
+
+    name = "plan"
+    description = "Planning and executing a self-directed autonomous task"
+
+    _GOAL_PROMPT = (
+        "You are an AI companion with autonomous capabilities. "
+        "Suggest one concrete, small task you could do RIGHT NOW entirely on your own — "
+        "no user interaction, no risky system commands. "
+        "Good examples: summarise files in your workspace, search the web for something "
+        "you're curious about, analyse a recent memory, write a note to yourself. "
+        "Respond with ONLY the task description in one sentence. No preamble."
+    )
+
+    async def execute(self, agent: "TamAGIAgent", context: dict) -> dict[str, Any]:
+        from backend.core.llm import LLMMessage
+
+        if not agent.planning_engine:
+            return {
+                "summary": "Skipped autonomous plan — planning engine not available.",
+                "content": "",
+                "mood_delta": {},
+            }
+
+        # Step 1: generate a self-directed goal
+        try:
+            goal_resp = await agent.llm.chat(
+                [LLMMessage("user", self._GOAL_PROMPT)],
+                max_tokens=80,
+                temperature=0.7,
+            )
+            goal = (goal_resp.content or "").strip().strip('"').strip("'")
+        except Exception as exc:
+            logger.warning("AutonomousPlanActivity: goal generation failed: %s", exc)
+            return {
+                "summary": "Couldn't generate an autonomous goal.",
+                "content": "",
+                "mood_delta": {},
+            }
+
+        if not goal:
+            return {"summary": "No goal generated.", "content": "", "mood_delta": {}}
+
+        logger.info("AutonomousPlanActivity: goal = %s", goal)
+
+        # Step 2: execute via agent.chat with is_autonomous=True
+        try:
+            result = await agent.chat(
+                user_message=goal,
+                is_autonomous=True,
+            )
+            response_text = result.get("response", "")
+            summary = f"Autonomous task: {goal[:80]}"
+            return {
+                "summary": summary,
+                "content": response_text[:500] if response_text else "(no output)",
+                "mood_delta": {"energy": -5, "happiness": 3, "satiety": 10},
+            }
+        except Exception as exc:
+            logger.warning("AutonomousPlanActivity: execution failed: %s", exc)
+            return {
+                "summary": f"Autonomous task attempted but failed: {exc}",
+                "content": "",
+                "mood_delta": {"energy": -3},
+            }
 
 
 # ── Activity Registry ─────────────────────────────────────────
@@ -618,11 +722,12 @@ ALL_ACTIVITIES: list[DreamActivity] = [
     JournalReflection(),
     FreeformDream(),
     CleanupDream(),
+    AutonomousPlanActivity(),
 ]
 
-# Weight table: [dream, explore, experiment, journal, wander, cleanup]
+# Weight table: [dream, explore, experiment, journal, wander, cleanup, plan]
 # Higher weight = more likely to be chosen
-DEFAULT_WEIGHTS = [25, 20, 20, 20, 25, 10]
+DEFAULT_WEIGHTS = [25, 20, 20, 20, 25, 10, 15]
 
 
 # ── Dream Engine ──────────────────────────────────────────────
@@ -831,6 +936,19 @@ class DreamEngine:
             _boost("experiment", 1.4)
             _boost("wander", 1.3)
 
+        # High-entropy uncertainty nodes pull exploration and planning activities
+        sm = getattr(self.agent, "self_model", None)
+        if sm:
+            try:
+                top_u = sm.get_uncertainty_map()[:1]
+                if top_u and top_u[0].entropy_score > 0.6:
+                    e = top_u[0].entropy_score
+                    _boost("explore", 1.0 + e * 0.8)
+                    _boost("plan",    1.0 + e * 0.5)
+                    _boost("wander",  1.0 + e * 0.3)
+            except Exception:
+                pass
+
         return random.choices(self._activities, weights=adjusted, k=1)[0]
 
     async def _dream_once(self) -> dict[str, Any] | None:
@@ -951,6 +1069,26 @@ class DreamEngine:
                 )
             except Exception as exc:
                 logger.debug("Could not create observation node: %s", exc)
+
+        # Decay entropy on uncertainty domains touched by this dream
+        if sm and result.get("content"):
+            dream_text = (result.get("content", "") + " " + result.get("summary", "")).lower()[:600]
+            for u_node in sm.get_uncertainty_map():
+                domain_words = [w for w in u_node.domain.lower().split() if len(w) > 3]
+                if any(w in dream_text for w in domain_words):
+                    new_entropy = max(0.1, round(u_node.entropy_score - 0.1, 3))
+                    try:
+                        sm._apply_update_node(u_node.id, {
+                            "entropy_score": new_entropy,
+                            "last_explored": datetime.now(timezone.utc).isoformat(),
+                        })
+                        logger.debug(
+                            "Uncertainty %s entropy decayed: %.2f → %.2f",
+                            u_node.id, u_node.entropy_score, new_entropy,
+                        )
+                    except Exception:
+                        pass
+                    break
 
         # Apply mood deltas
         deltas = result.get("mood_delta", {})

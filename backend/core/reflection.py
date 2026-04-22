@@ -50,6 +50,9 @@ class ActualOutcome:
     detail: dict = field(default_factory=dict)
     side_effects: list = field(default_factory=list)
     step_outcomes: list = field(default_factory=list)
+    # Execution context — used by ReflectionEngine to distinguish failure causes
+    # Keys: "autonomous" (bool), "gap_count" (int), "gap_capabilities" (list[str])
+    context: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -254,11 +257,31 @@ class ReflectionEngine:
         if not isinstance(strategy, StrategyNode):
             return None
 
+        # When failures stem from capability gaps in autonomous mode, don't penalize
+        # the strategy itself — it may work fine interactively. Clamp the effective
+        # observation upward so the Bayesian update is neutral rather than negative.
+        effective_observation = outcome.success
+        gap_count = outcome.context.get("gap_count", 0)
+        is_autonomous = outcome.context.get("autonomous", False)
+        if is_autonomous and gap_count > 0:
+            # Treat the non-gap steps' success as the real signal for strategy quality
+            total_steps = len(outcome.step_outcomes) or 1
+            non_gap_success = (outcome.success * total_steps + gap_count) / total_steps
+            effective_observation = min(1.0, non_gap_success)
+
         new_weight = bayesian_update(
             prior=strategy.preference_weight,
             evidence_count=len(strategy.success_history),
-            observation=outcome.success,
+            observation=effective_observation,
         )
+
+        rationale = (
+            f"Strategy {strategy.id} used in plan {plan.id}. "
+            f"Outcome success={outcome.success:.2f}"
+        )
+        if is_autonomous and gap_count > 0:
+            rationale += f" ({gap_count} capability gap(s) in autonomous mode — softened update)"
+        rationale += f". Weight {strategy.preference_weight:.3f} → {new_weight:.3f}."
 
         return ModificationProposal(
             source_component="reflection_engine",
@@ -267,13 +290,9 @@ class ReflectionEngine:
             current_state=(("preference_weight", strategy.preference_weight),),
             proposed_state=(
                 ("preference_weight", round(new_weight, 4)),
-                ("success_history_append", outcome.success >= 0.5),
+                ("success_history_append", effective_observation >= 0.5),
             ),
-            rationale=(
-                f"Strategy {strategy.id} used in plan {plan.id}. "
-                f"Outcome success={outcome.success:.2f}. "
-                f"Weight {strategy.preference_weight:.3f} → {new_weight:.3f}."
-            ),
+            rationale=rationale,
         )
 
     def _propose_capability_update(
@@ -338,6 +357,31 @@ class ReflectionEngine:
                     f"Entropy {u_node.entropy_score:.3f} → {new_entropy:.3f}."
                 ),
             ))
+
+        # Capability gap uncertainty: when autonomous execution hits approval walls,
+        # add UncertaintyNodes for each affected capability so the motivation engine
+        # and planning engine treat those capabilities as "requires interactive context."
+        if outcome.context.get("autonomous") and outcome.context.get("gap_count", 0) > 0:
+            import uuid as _uuid
+            from datetime import datetime, timezone
+            for cap_desc in outcome.context.get("gap_capabilities", ["exec:approve-tier"]):
+                u_id = f"u-gap-{_uuid.uuid4().hex[:6]}"
+                # Add directly — proposals can only update existing nodes, so we use add
+                try:
+                    self._model._apply_add_node("uncertainty", {
+                        "id": u_id,
+                        "domain": f"autonomous_capability:{cap_desc}",
+                        "description": (
+                            f"Capability '{cap_desc}' requires interactive context — "
+                            "blocked during autonomous execution."
+                        ),
+                        "entropy_score": 0.7,
+                        "priority": 0.6,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    logger.debug("Added capability gap uncertainty node: %s", u_id)
+                except Exception as exc:
+                    logger.debug("Could not add gap uncertainty node: %s", exc)
 
         return proposals
 

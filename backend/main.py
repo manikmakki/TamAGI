@@ -41,6 +41,8 @@ from backend.skills.recall_dreams_skill import RecallDreamsSkill
 from backend.api.chat import router as chat_router, set_agent
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
+from backend.skills.recall_memory_skill import RecallMemorySkill
+from backend.skills.query_self_model_skill import QuerySelfModelSkill
 from backend.api.dreams import router as dreams_router, set_dream_engine
 from backend.api.auth import router as auth_router
 from backend.api.self_model import router as self_model_router
@@ -149,8 +151,13 @@ async def lifespan(app: FastAPI):
     else:
         workspace_path = Path(config.workspace.path)
         counts = seed_self_model(self_model, workspace_path=workspace_path)
-        self_model.save()
         logger.info(f"Self-model seeded: {counts}")
+
+    # Wire any orphaned nodes — catches seed nodes and nodes that predate auto-wiring
+    wired = self_model.wire_orphaned_nodes()
+    if wired:
+        logger.info(f"Wired {wired} edge(s) for previously orphaned self-model nodes")
+    self_model.save()
 
     # ── Brain engines ──────────────────────────────────────────
     motivation_engine = MotivationEngine(
@@ -202,7 +209,9 @@ async def lifespan(app: FastAPI):
         dream_engine=dream_engine,
         dreams_dir=Path(config.workspace.path) / "dreams",
     ))
-    logger.info("Dream engine linked to agent — recall_dreams skill registered")
+    skills.register(RecallMemorySkill(agent=agent))
+    skills.register(QuerySelfModelSkill(agent=agent))
+    logger.info("Dream engine linked to agent — recall_dreams, recall_memory, query_self_model skills registered")
     dream_engine.start()
 
     logger.info(f"═══ TamAGI is awake! ═══")

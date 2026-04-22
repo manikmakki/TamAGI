@@ -50,12 +50,7 @@ SEED_GOALS = [
 
 SEED_CAPABILITIES = [
     {"id": "c-001", "description": "Natural language communication", "confidence": 0.3},
-    {"id": "c-002", "description": "Code generation (Python)", "confidence": 0.3},
     {"id": "c-003", "description": "Self-reflection and analysis", "confidence": 0.2},
-    {"id": "c-004", "description": "Bash/shell command execution", "confidence": 0.1},
-    {"id": "c-005", "description": "Web content retrieval (fetch)", "confidence": 0.1},
-    {"id": "c-006", "description": "Web search", "confidence": 0.1},
-    {"id": "c-007", "description": "Tool creation and registration", "confidence": 0.1},
 ]
 
 SEED_BELIEFS = [
@@ -75,7 +70,6 @@ SEED_UNCERTAINTIES = [
 SEED_EDGES = [
     # Goals require capabilities
     ("g-001", "c-001", EdgeType.REQUIRES.value),
-    ("g-001", "c-002", EdgeType.REQUIRES.value),
     ("g-003", "c-003", EdgeType.REQUIRES.value),
     # Uncertainties are explored by goals
     ("u-001", "g-002", EdgeType.EXPLORED_BY.value),
@@ -104,17 +98,23 @@ def _parse_identity_files(workspace_path: Path) -> dict:
     identity_path = workspace_path / "IDENTITY.md"
     if identity_path.exists():
         text = identity_path.read_text(errors="replace")
-        # name: first heading or "Name: ..." line
-        m = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
+        # Bold bullet format: - **Name**: Value  (used by onboarding)
+        m = re.search(r"(?i)\*\*name\*\*\s*:\s*(.+)$", text, re.MULTILINE)
         if m:
             result["name"] = m.group(1).strip()
-        m = re.search(r"(?i)^name[:\s]+(.+)$", text, re.MULTILINE)
-        if m:
-            result["name"] = m.group(1).strip()
-        # creature/form
-        m = re.search(r"(?i)(?:creature|form|species|body)[:\s]+(.+)$", text, re.MULTILINE)
+        # Fallback: plain "Name: ..." line
+        if not result["name"]:
+            m = re.search(r"(?i)^name[:\s]+(.+)$", text, re.MULTILINE)
+            if m:
+                result["name"] = m.group(1).strip()
+        # creature/form — bold bullet or plain key
+        m = re.search(r"(?i)\*\*(?:creature|form|species|body)\*\*\s*:\s*(.+)$", text, re.MULTILINE)
         if m:
             result["creature"] = m.group(1).strip()
+        if not result["creature"]:
+            m = re.search(r"(?i)(?:creature|form|species|body)[:\s]+(.+)$", text, re.MULTILINE)
+            if m:
+                result["creature"] = m.group(1).strip()
 
     # ── SOUL.md ──
     soul_path = workspace_path / "SOUL.md"
@@ -152,6 +152,8 @@ def _parse_identity_files(workspace_path: Path) -> dict:
             stripped = line.strip()
             if stripped.startswith(("-", "*", "•")) and len(stripped) > 2:
                 item = re.sub(r"^[-*•]\s*", "", stripped).strip()
+                # Normalize bold-key format: **Key**: Value → Key: Value
+                item = re.sub(r"\*\*([^*]+)\*\*\s*:\s*", r"\1: ", item).strip()
                 if item:
                     result["user_prefs"].append(item)
 

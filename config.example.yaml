@@ -61,19 +61,11 @@ guardrails:
   allowed_write_paths:                      # Paths TamAGI can write to
     - "/workspace"
     - "/workspace/**"
-  exec_allowlist:                           # Shell commands TamAGI is allowed to execute
-    - "ls"
-    - "cat"
-    - "head"
-    - "tail"
-    - "grep"
-    - "find"
-    - "wc"
-    - "echo"
-    - "date"
-    - "python"
-    - "pip"
-    - "sed"
+  exec_trust:                               # Tiered trust model (base command name level)
+    safe:    ["ls","cat","head","tail","grep","find","wc","echo","date","pwd","which","env","ps","id","sed","awk"]
+    notify:  ["python","python3","pip","pip3","git","curl","wget"]    # run + show in reasoning
+    approve: ["docker","docker-compose","npm","make","systemctl","service"]  # inline banner
+    block:   ["sudo","su","passwd","rm"]   # always blocked
 
   # Maximum file size TamAGI can write (bytes)
   max_write_size: 10485760  # 10MB
@@ -116,12 +108,11 @@ web_search:
 
 # ── Agent / Tool-Call Behavior ───────────────
 agent:
-  # Max tool-call loops per user message (fewer = less context growth = fewer timeouts)
-  max_tool_rounds: 3
-  # Retries on server disconnect (RemoteProtocolError / ConnectError)
-  llm_retry_attempts: 1
-  # Seconds to wait between retries
-  llm_retry_delay: 2.0
+  max_tool_rounds: 3           # Fallback round limit for unplanned tasks
+  max_tool_rounds_ceiling: 20  # Hard cap when AURA plan drives the limit (estimated_steps * 1.5)
+  use_plan_executor: false     # Set true to step through ActionPlan via PlanExecutor (requires WS)
+  llm_retry_attempts: 1        # Retries on server disconnect (RemoteProtocolError / ConnectError)
+  llm_retry_delay: 2.0         # Seconds between retries
 
 # ── Autonomy / Dream Engine ──────────────────
 # While idle, TamAGI dreams, explores, experiments, and journals.
@@ -145,6 +136,7 @@ autonomy:
   #   journal    — Write a private diary entry reflecting on growth
   #   wander     — Fully freeform: no category, no template — follow any thread
   #   cleanup    — Prune old dream logs when workspace cleanliness is low
+  #   plan       — Autonomous plan+execute via PlanExecutor; capability gaps teach AURA
   activities:
     - dream
     - explore
@@ -152,13 +144,14 @@ autonomy:
     - journal
     - cleanup
     - wander
+    - plan
 
   # Relative weights for activity selection (higher = more likely)
   # Must match the order of activities above.
   # Weights are further nudged at runtime based on current mood/stats:
   #   low satiety → explore/wander boosted  |  low happiness → journal/wander boosted
   #   high energy → experiment/wander boosted
-  weights: [25, 20, 20, 20, 10, 25]
+  weights: [25, 20, 20, 20, 10, 25, 15]
 
 # ── Multi-Agent Orchestration ─────────────────
 # When TamAGI encounters a complex multi-step task, it can spawn specialized
