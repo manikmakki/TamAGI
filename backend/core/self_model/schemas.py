@@ -238,6 +238,9 @@ class UncertaintyNode:
     id: str
     node_type: str = field(default=NodeType.UNCERTAINTY.value, init=False)
     domain: str = ""
+    # "" = unclassified (will be lazily classified by QAPipeline on first gate-check)
+    # Classified values: "domain" | "preference" | "capability" | "consequence"
+    subtype: str = ""
     entropy_score: float = 1.0     # 0.0–1.0 (1.0 = maximally uncertain)
     last_explored: str | None = None
     created_at: str = field(
@@ -249,6 +252,7 @@ class UncertaintyNode:
             "id": self.id,
             "node_type": self.node_type,
             "domain": self.domain,
+            "subtype": self.subtype,
             "entropy_score": self.entropy_score,
             "last_explored": self.last_explored,
             "created_at": self.created_at,
@@ -263,6 +267,7 @@ class UncertaintyNode:
             created_at=data.get("created_at", datetime.now(timezone.utc).isoformat()),
         )
         node.last_explored = data.get("last_explored")
+        node.subtype = data.get("subtype", "")
         return node
 
 

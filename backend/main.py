@@ -46,6 +46,8 @@ from backend.skills.query_self_model_skill import QuerySelfModelSkill
 from backend.api.dreams import router as dreams_router, set_dream_engine
 from backend.api.auth import router as auth_router
 from backend.api.self_model import router as self_model_router
+from backend.api.monologue import router as monologue_router, set_monologue_log, set_motivation_engine as set_monologue_motivation
+from backend.core.monologue import MonologueLog
 
 # ── Logging ───────────────────────────────────────────────────
 
@@ -169,6 +171,28 @@ async def lifespan(app: FastAPI):
     reflection_engine = ReflectionEngine(model=self_model)
     logger.info("Brain engines initialized (motivation, planning, reflection)")
 
+    # ── Monologue log + goal persistence ──────────────────────
+    monologue_log = MonologueLog(log_path="data/monologue.jsonl")
+    goals_path = "data/goals.json"
+    loaded = motivation_engine.load_goals(goals_path)
+    if loaded:
+        logger.info(f"Restored {loaded} pending goal(s) from disk")
+    set_monologue_log(monologue_log)
+    set_monologue_motivation(motivation_engine)
+
+    # ── Q&A belief pipeline ────────────────────────────────────
+    from backend.core.qa_pipeline import QAPipeline
+    qa_pipeline = QAPipeline(
+        llm=llm,
+        self_model=self_model,
+        monologue_log=monologue_log,
+        data_path="data/qa_pending.json",
+        entropy_threshold=config.agent.qa_entropy_threshold,
+        enabled=config.agent.qa_enabled,
+    )
+    qa_pipeline.load()
+    logger.info("Q&A belief pipeline initialized (threshold=%.2f)", config.agent.qa_entropy_threshold)
+
     # ── Create the agent ───────────────────────────────────────
     agent = TamAGIAgent(
         config=config,
@@ -181,6 +205,8 @@ async def lifespan(app: FastAPI):
         motivation_engine=motivation_engine,
         planning_engine=planning_engine,
         reflection_engine=reflection_engine,
+        monologue_log=monologue_log,
+        qa_pipeline=qa_pipeline,
     )
     set_agent(agent)
 
@@ -202,6 +228,9 @@ async def lifespan(app: FastAPI):
         activities=config.autonomy.activities,
         weights=config.autonomy.weights,
         motivation_engine=motivation_engine,
+        monologue_log=monologue_log,
+        goals_path=goals_path,
+        agentic_priority_min=config.autonomy.agentic_priority_min,
     )
     set_dream_engine(dream_engine)
     agent.set_dream_engine(dream_engine)
@@ -315,6 +344,7 @@ app.include_router(skills_router)
 app.include_router(onboarding_router)
 app.include_router(dreams_router)
 app.include_router(self_model_router)
+app.include_router(monologue_router)
 
 # Serve frontend static files
 frontend_path = Path(__file__).parent.parent / "frontend"

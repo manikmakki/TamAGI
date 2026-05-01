@@ -100,7 +100,7 @@ class SubAgent:
                     result = await self.skills.execute(name=tc.name, **tc.arguments)
                     messages.append(LLMMessage(
                         "tool",
-                        json.dumps(result.to_dict()),
+                        json.dumps(result.to_dict() if hasattr(result, "to_dict") else result),
                         name=tc.name,
                     ))
 

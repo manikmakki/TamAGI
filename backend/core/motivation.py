@@ -24,11 +24,13 @@ Temperature schedule:
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import random
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .self_model.schemas import (
@@ -134,6 +136,7 @@ class MotivationEngine:
         self._total_actions = 0
         self._total_ticks = 0
         self._generated_goals: list[ExplorationGoal] = []
+        self._pending_goals: list[ExplorationGoal] = []  # queued for next execution cycle
         self._domain_cooldowns: dict[str, int] = {}
         self._domain_failure_streaks: dict[str, int] = {}
         self._rng = random.Random(seed)
@@ -288,6 +291,7 @@ class MotivationEngine:
                 goal = self._generate_exploration_goal(u_node, priority, voi)
                 goals_this_tick.append(goal)
                 self._generated_goals.append(goal)
+                self._pending_goals.append(goal)
                 logger.info(
                     "Generated exploration goal: %s (domain=%s, voi=%.3f)",
                     goal.id, goal.domain, voi,
@@ -330,6 +334,66 @@ class MotivationEngine:
     @property
     def generated_goals(self) -> list[ExplorationGoal]:
         return list(self._generated_goals)
+
+    # ── Goal queue (pending goals for next execution cycle) ───
+
+    def peek_next_goal(self) -> ExplorationGoal | None:
+        """Return the highest-priority pending goal without removing it."""
+        if not self._pending_goals:
+            return None
+        return max(self._pending_goals, key=lambda g: g.priority)
+
+    def consume_goal(self, goal_id: str) -> None:
+        """Remove a goal from the pending queue after execution."""
+        self._pending_goals = [g for g in self._pending_goals if g.id != goal_id]
+
+    @property
+    def pending_goals(self) -> list[ExplorationGoal]:
+        return list(self._pending_goals)
+
+    def save_goals(self, path: str | Path) -> None:
+        """Persist the pending goal queue to disk for crash recovery."""
+        data = [
+            {
+                "id": g.id,
+                "uncertainty_id": g.uncertainty_id,
+                "domain": g.domain,
+                "description": g.description,
+                "priority": g.priority,
+                "estimated_voi": g.estimated_voi,
+                "timestamp": g.timestamp,
+            }
+            for g in self._pending_goals
+        ]
+        try:
+            Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except OSError as exc:
+            logger.warning("Could not save goals to %s: %s", path, exc)
+
+    def load_goals(self, path: str | Path) -> int:
+        """Restore the pending goal queue from disk. Returns number loaded."""
+        p = Path(path)
+        if not p.exists():
+            return 0
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            loaded = 0
+            for d in data:
+                g = ExplorationGoal.__new__(ExplorationGoal)
+                g.id = d["id"]
+                g.uncertainty_id = d.get("uncertainty_id", "")
+                g.domain = d.get("domain", "")
+                g.description = d.get("description", "")
+                g.priority = d.get("priority", 0.5)
+                g.estimated_voi = d.get("estimated_voi", 0.5)
+                g.timestamp = d.get("timestamp", datetime.now(timezone.utc).isoformat())
+                self._pending_goals.append(g)
+                loaded += 1
+            logger.info("Loaded %d pending goal(s) from %s", loaded, path)
+            return loaded
+        except Exception as exc:
+            logger.warning("Could not load goals from %s: %s", path, exc)
+            return 0
 
     # ══════════════════════════════════════════════════════════
     # Deduplication

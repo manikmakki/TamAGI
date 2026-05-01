@@ -420,6 +420,8 @@
     .interim-entry + .interim-entry { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
     /* Tool approval banner */
     .approval-banner { border: 1px solid var(--warning,#f0a500); border-radius: var(--radius-md); padding: 10px 12px; margin: 6px 0; background: var(--bg-elevated); }
+    .clarification-msg .bubble { border-left: 2px solid var(--warning,#f0a500); padding-left: 10px; }
+    .clarification-badge { display: inline-block; font-size: 8px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; color: var(--warning,#f0a500); margin-bottom: 4px; }
     .approval-cmd { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); margin-bottom: 4px; }
     .approval-reason { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
     .approval-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -642,6 +644,25 @@
     .approval-btn.reject:hover { background: rgba(255,68,102,0.08); }
     .approval-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
+    /* ═══ MIND PANEL ═══ */
+    .mind-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 6px; }
+    .mind-status { font-size: 9px; color: var(--text-muted); flex: 1; }
+    .mind-entries { flex: 1; overflow-y: auto; padding: 6px 8px; }
+    .mind-entries::-webkit-scrollbar { width: 4px; }
+    .mind-entries::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .mind-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; margin-bottom: 6px; transition: border-color 0.15s; }
+    .mind-card:hover { border-color: var(--border-bright); }
+    .mind-card-header { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+    .mind-type-icon { font-size: 12px; line-height: 1; flex-shrink: 0; }
+    .mind-source-badge { font-size: 8px; padding: 1px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; flex-shrink: 0; }
+    .mind-source-badge[data-source="user"]       { background: rgba(107,138,255,0.15); color: var(--accent-tertiary); }
+    .mind-source-badge[data-source="self"]       { background: rgba(0,255,157,0.12);   color: var(--accent); }
+    .mind-source-badge[data-source="autonomous"] { background: rgba(255,107,157,0.12); color: var(--accent-secondary); }
+    .mind-time { margin-left: auto; font-size: 8px; color: var(--text-muted); white-space: nowrap; }
+    .mind-title { font-size: 10px; color: var(--text-primary); line-height: 1.4; margin-bottom: 3px; font-weight: 500; }
+    .mind-content { font-size: 9px; color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
+    .mind-type-label { font-size: 8px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
+
     /* ═══ ONBOARDING ═══ */
     .onboarding-overlay { position: fixed; inset: 0; background: var(--bg-deep); z-index: 200; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 16px; }
     .onboarding-overlay.hidden { display: none; }
@@ -859,7 +880,7 @@
 
   <div class="drawer-tabs">
     <button class="drawer-tab active" id="tab-chats"     onclick="switchTab('chats')">Chats</button>
-    <button class="drawer-tab"        id="tab-dreams"    onclick="switchTab('dreams')">Dreams</button>
+    <button class="drawer-tab"        id="tab-mind"      onclick="switchTab('mind')">Mind</button>
     <button class="drawer-tab"        id="tab-memories"  onclick="switchTab('memories')">Memories</button>
     <button class="drawer-tab"        id="tab-approvals" onclick="switchTab('approvals')">Apprvls</button>
   </div>
@@ -870,14 +891,14 @@
     <div class="conv-list" id="conv-list"></div>
   </div>
 
-  <!-- Dreams panel (new) -->
-  <div class="drawer-panel hidden" id="panel-dreams">
-    <div class="dream-panel-header">
-      <div class="dream-status" id="dream-status-row"></div>
+  <!-- Mind panel — TamAGI's inner monologue: goals, actions, reflections -->
+  <div class="drawer-panel hidden" id="panel-mind">
+    <div class="mind-panel-header">
+      <div class="mind-status" id="mind-status-row"></div>
       <button class="dream-trigger-btn" id="dream-trigger-btn" onclick="triggerDream()">&#x2728; Dream Now</button>
     </div>
-    <div class="dream-entries" id="dream-entries">
-      <div class="drawer-empty">No dreams yet &mdash; trigger one!</div>
+    <div class="mind-entries" id="mind-entries">
+      <div class="drawer-empty">No inner monologue yet.</div>
     </div>
   </div>
 
@@ -1023,6 +1044,7 @@ function handleWsEvent(ev){
     const skills=(ev.skills_used||[]).map(name=>({name,output:(liveToolOutputs[name]||[]).join('\n')}));
     liveToolOutputs={};
     addMsg('assistant',ev.response,skills,null,ev.context_compressed||0,ev.sm_mutations||[]);
+    if(ev.clarification_question){const msgs=document.getElementById('chat-messages');const last=msgs.querySelector('.msg.assistant:last-child');if(last){last.classList.add('clarification-msg');const badge=document.createElement('div');badge.className='clarification-badge';badge.textContent='Clarifying';last.querySelector('.bubble').prepend(badge);}}
     loadConversations();loading=false;document.getElementById('send-btn').disabled=false;
   }else if(ev.type==='interim_text'){
     if(!currentInterimGroup){
@@ -1467,31 +1489,53 @@ function newConversation(){convId=null;document.getElementById('chat-messages').
 function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('drawer-overlay').classList.add('open');switchTab('chats');loadConversations()}
 function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('drawer-overlay').classList.remove('open')}
 
-// ═══ DREAM ENGINE UI ═══
-async function loadDreamsPanel(){
-  const statusRow=document.getElementById('dream-status-row');
-  const entries=document.getElementById('dream-entries');
+// ═══ MIND PANEL (merged dream log + inner monologue) ═══
+const MIND_ICONS={
+  goal_added:'&#x1F3AF;',
+  goal_completed:'&#x2705;',
+  goal_abandoned:'&#x274C;',
+  action_started:'&#x26A1;',
+  action_completed:'&#x2728;',
+  reflection:'&#x1F4AD;',
+  user_task:'&#x1F4AC;',
+  clarification_asked:'&#x2753;',
+  belief_updated:'&#x1F4A1;',
+};
+async function loadMindPanel(){
+  const statusRow=document.getElementById('mind-status-row');
+  const entries=document.getElementById('mind-entries');
   try{
-    const [logData,stateData]=await Promise.all([api('/dreams/log?limit=20'),api('/dreams/state')]);
+    const [data,stateData]=await Promise.all([api('/monologue/log?limit=60'),api('/dreams/state')]);
     const ind=document.getElementById('dream-ind');
     if(ind)ind.classList.toggle('on',!!stateData?.dreaming);
+    const total=data.total||0;
     if(stateData?.dreaming){
       statusRow.innerHTML='<span class="dream-active-badge">&#x2728; dreaming now...</span>';
     }else{
-      const count=(logData.dreams||[]).length;
-      statusRow.textContent=count?count+' dream'+(count===1?'':'s'):'';
+      statusRow.textContent=total?total+' event'+(total===1?'':'s')+' recorded':'';
     }
-    const dreams=logData.dreams||[];
-    if(!dreams.length){entries.innerHTML='<div class="drawer-empty">No dreams yet &mdash; trigger one!</div>';return}
-    const ICONS={dream:'&#x1F4AD;',explore:'&#x1F30D;',experiment:'&#x1F9EA;',journal:'&#x1F4D3;',cleanup:'&#x1F9F9;'};
-    entries.innerHTML=dreams.map(dr=>{
-      const icon=ICONS[dr.type]||'&#x1F4AD;';
-      const moodHtml=dr.mood_delta
-        ?Object.entries(dr.mood_delta).filter(([,v])=>v!==0).map(([k,v])=>`<span class="dream-mood-chip ${v>0?'pos':'neg'}">${v>0?'+':''}${v} ${esc(k)}</span>`).join('')
-        :'';
-      return`<div class="dream-card"><div class="dream-card-header"><span class="dream-type-icon">${icon}</span><span class="dream-type-label">${esc(dr.type||'dream')}</span><span class="dream-time">${relativeTime(dr.timestamp)}</span></div><div class="dream-summary">${esc((dr.summary||'').substring(0,160))}</div>${moodHtml?`<div class="dream-mood-chips">${moodHtml}</div>`:''}</div>`;
+    const events=(data.events||[]).slice().reverse();
+    if(!events.length){entries.innerHTML='<div class="drawer-empty">No inner monologue yet &mdash; trigger a dream!</div>';return;}
+    entries.innerHTML=events.map(ev=>{
+      const icon=MIND_ICONS[ev.type]||'&#x25CB;';
+      const src=ev.source||'autonomous';
+      const content=(ev.content||'').substring(0,180);
+      const mood=ev.metadata?.mood_delta||{};
+      const moodHtml=Object.entries(mood).filter(([,v])=>v!==0)
+        .map(([k,v])=>`<span class="dream-mood-chip ${v>0?'pos':'neg'}">${v>0?'+':''}${v} ${esc(k)}</span>`).join('');
+      return`<div class="mind-card">
+        <div class="mind-card-header">
+          <span class="mind-type-icon">${icon}</span>
+          <span class="mind-source-badge" data-source="${esc(src)}">${esc(src)}</span>
+          <span class="mind-type-label">${esc((ev.type||'').replace(/_/g,' '))}</span>
+          <span class="mind-time">${relativeTime(ev.timestamp)}</span>
+        </div>
+        <div class="mind-title">${esc(ev.title||'')}</div>
+        ${content?`<div class="mind-content">${esc(content)}</div>`:''}
+        ${moodHtml?`<div class="dream-mood-chips">${moodHtml}</div>`:''}
+      </div>`;
     }).join('');
-  }catch(err){console.error('loadDreamsPanel',err);entries.innerHTML='<div class="drawer-empty">Failed to load dreams.</div>'}
+  }catch(err){console.error('loadMindPanel',err);entries.innerHTML='<div class="drawer-empty">Failed to load monologue.</div>';}
 }
 async function triggerDream(){
   const btn=document.querySelector('.dream-trigger-btn');
@@ -1499,9 +1543,9 @@ async function triggerDream(){
   try{
     const r=await api('/dreams/trigger',{method:'POST'});
     if(r.summary)addMsg('assistant',`\u{1F4AD} *${r.summary}*\n\n${r.content||''}`);
-    await loadDreamsPanel();await loadState()
-  }catch(e){console.error(e)}
-  btn.textContent='\u2728 Dream Now';btn.disabled=false
+    await loadMindPanel();await loadState();
+  }catch(e){console.error(e);}
+  btn.textContent='\u2728 Dream Now';btn.disabled=false;
 }
 
 // ═══ TAB NAVIGATION ═══
@@ -1509,9 +1553,9 @@ function switchTab(name){
   activeTab=name;
   document.querySelectorAll('.drawer-tab').forEach(b=>b.classList.toggle('active',b.id==='tab-'+name));
   document.querySelectorAll('.drawer-panel').forEach(p=>p.classList.toggle('hidden',p.id!=='panel-'+name));
-  const titles={chats:'Conversations',dreams:'Dream Log',memories:'Memories',approvals:'Approvals'};
+  const titles={chats:'Conversations',mind:'Inner Monologue',memories:'Memories',approvals:'Approvals'};
   document.getElementById('drawer-title').textContent=titles[name]||name;
-  if(name==='dreams')loadDreamsPanel();
+  if(name==='mind')loadMindPanel();
   if(name==='memories'){loadMemTotalCount();document.getElementById('mem-search').focus();}
   if(name==='approvals')loadApprovalsPanel();
 }

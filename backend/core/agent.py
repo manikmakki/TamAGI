@@ -39,6 +39,8 @@ from backend.core.plan_executor import PlanExecutor
 
 if TYPE_CHECKING:
     from backend.core.dreamer import DreamEngine
+    from backend.core.monologue import MonologueLog
+    from backend.core.qa_pipeline import QAPipeline
 
 logger = logging.getLogger("tamagi.agent")
 
@@ -159,6 +161,8 @@ class TamAGIAgent:
         motivation_engine: MotivationEngine | None = None,
         planning_engine: PlanningEngine | None = None,
         reflection_engine: ReflectionEngine | None = None,
+        monologue_log: "MonologueLog | None" = None,
+        qa_pipeline: "QAPipeline | None" = None,
     ):
         self.config = config
         self.llm = llm
@@ -170,6 +174,8 @@ class TamAGIAgent:
         self.motivation_engine = motivation_engine
         self.planning_engine = planning_engine
         self.reflection_engine = reflection_engine
+        self.monologue_log = monologue_log
+        self.qa_pipeline = qa_pipeline
         self._interaction_count = 0
         self.conversations: dict[str, Conversation] = {}
         self._history_dir = Path(config.history.persist_path)
@@ -283,6 +289,41 @@ class TamAGIAgent:
         if self.self_model:
             self._detect_conversation_signals(user_message)
 
+        # Q&A belief gate — earned agenticity through clarification.
+        # High-entropy uncertainty nodes gate action until the user's answers reduce entropy.
+        _qa_context_hint: str | None = None
+        if not is_autonomous and self.qa_pipeline:
+            _pending_qa = self.qa_pipeline.get_pending(conv.id)
+            if _pending_qa is not None:
+                # User just answered a clarification question — extract beliefs + reduce entropy
+                _qa_context_hint = await self.qa_pipeline.process_answer(_pending_qa, user_message)
+                self.qa_pipeline.close_pending(conv.id)
+                if self.self_model:
+                    self.self_model.save()
+                logger.info("Q&A gate: processed answer for %s", _pending_qa.id)
+            else:
+                _clarification = await self.qa_pipeline.check_gate(conv.id, user_message)
+                if _clarification is not None:
+                    # Return the question as TamAGI's response; next turn processes the answer
+                    conv.messages.append(Message(role="assistant", content=_clarification.question))
+                    self._save_conversation(conv)
+                    if event_callback:
+                        await event_callback({
+                            "type": "clarification_question",
+                            "question": _clarification.question,
+                            "uncertainty_subtype": _clarification.uncertainty_subtype,
+                        })
+                    return {
+                        "response": _clarification.question,
+                        "conversation_id": conv.id,
+                        "state": self.personality.state.to_dict(),
+                        "skills_used": [],
+                        "memories_recalled": 0,
+                        "context_compressed": 0,
+                        "sm_mutations": [],
+                        "clarification_question": True,
+                    }
+
         # Memory retrieval is intentionally not injected automatically — TamAGI
         # uses the recall_memory skill to pull context on-demand. Auto-injection
         # caused self-referential noise and redundant recall calls.
@@ -295,6 +336,13 @@ class TamAGIAgent:
         system_prompt += f"\n\nCurrent date and time: {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}."
         if identity_context:
             system_prompt += "\n\n" + identity_context
+
+        # If the user just answered a clarification question, remind the LLM of the original task
+        if _qa_context_hint:
+            system_prompt += (
+                f"\n\n[Context: The user just answered a clarification question. "
+                f"{_qa_context_hint} Please continue with the original task now.]"
+            )
 
         # Inject recent dream activity so TamAGI is passively aware of its idle life.
         # This is a lightweight summary — the agent can call recall_dreams for depth.
@@ -538,7 +586,7 @@ class TamAGIAgent:
                     await event_callback({
                         "type": "tool_result",
                         "name": tc.name,
-                        "output": str(result.output)[:500] if hasattr(result, "output") else str(result.to_dict())[:500],
+                        "output": str(result.output)[:500] if hasattr(result, "output") else str(result)[:500],
                     })
 
                 # Check if energy dropped critically low; trigger dream recovery if needed
@@ -548,7 +596,7 @@ class TamAGIAgent:
                 # Append the tool result so the LLM sees what the skill returned
                 llm_messages.append(LLMMessage(
                     "tool",
-                    json.dumps(result.to_dict()),
+                    json.dumps(result.to_dict() if hasattr(result, "to_dict") else result),
                     name=tc.name,
                 ))
 
@@ -831,6 +879,17 @@ class TamAGIAgent:
                     "entities": [],
                 })
                 self.self_model.auto_wire_node(sig_id)
+                if trigger_type == "goal" and self.monologue_log is not None:
+                    self.monologue_log.append(
+                        type="user_task",
+                        source="user",
+                        title=f"User goal signal: {user_message[:60]}",
+                        content=user_message[:200],
+                        metadata={
+                            "signal_node_id": sig_id,
+                            "trigger_type": trigger_type,
+                        },
+                    )
         except Exception as exc:
             logger.debug("Signal detection failed: %s", exc)
 

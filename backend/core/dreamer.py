@@ -35,6 +35,7 @@ from backend.core.self_model.schemas import EdgeType
 if TYPE_CHECKING:
     from backend.core.agent import TamAGIAgent
     from backend.core.motivation import MotivationEngine, ExplorationGoal
+    from backend.core.monologue import MonologueLog
 
 logger = logging.getLogger("tamagi.dreamer")
 
@@ -751,6 +752,9 @@ class DreamEngine:
         weights: list[int] | None = None,
         journal_dir: str = "dreams",
         motivation_engine: "MotivationEngine | None" = None,
+        monologue_log: "MonologueLog | None" = None,
+        goals_path: str | None = None,
+        agentic_priority_min: float = 0.4,
     ):
         self.agent = agent
         self.enabled = enabled
@@ -758,6 +762,9 @@ class DreamEngine:
         self.inactive_start, self.inactive_end = inactive_hours
         self.journal_dir = journal_dir
         self.motivation_engine = motivation_engine
+        self.monologue_log = monologue_log
+        self._goals_path = goals_path
+        self._agentic_priority_min = agentic_priority_min
         self._task: asyncio.Task | None = None
         self._running = False
         self._dreaming = False
@@ -875,48 +882,30 @@ class DreamEngine:
             self._dreaming = False
             logger.info("Dream engine loop exited")
 
-    def _select_activity(self) -> DreamActivity:
-        """Select the next dream activity.
+    def _map_goal_to_activity(self, goal: "ExplorationGoal") -> DreamActivity:
+        """Map an exploration goal's domain to the best matching activity.
 
-        If the motivation engine is wired in, tick it first and map any
-        returned exploration goals to the most relevant activity type.
-        Falls back to mood-weighted random selection.
+        Falls back to wander (freeform) when no specific activity fits,
+        and to random selection when wander itself is unavailable.
         """
-        active_goal: "ExplorationGoal | None" = None
+        domain = goal.domain.lower()
+        if any(w in domain for w in ("web", "search", "internet", "explore")):
+            matched = next((a for a in self._activities if a.name == "explore"), None)
+        elif any(w in domain for w in ("code", "python", "tool", "create", "program")):
+            matched = next((a for a in self._activities if a.name == "experiment"), None)
+        elif any(w in domain for w in ("memory", "reflect", "journal", "self")):
+            matched = next((a for a in self._activities if a.name == "journal"), None)
+        elif any(w in domain for w in ("plan", "reason", "think", "goal")):
+            matched = next((a for a in self._activities if a.name == "plan"), None)
+        else:
+            matched = next((a for a in self._activities if a.name == "wander"), None)
 
-        if self.motivation_engine:
-            try:
-                goals = self.motivation_engine.tick()
-                if goals:
-                    goal = goals[0]
-                    active_goal = goal
-                    domain = goal.domain.lower()
-                    if any(w in domain for w in ("web", "search", "internet", "explore")):
-                        matched = next((a for a in self._activities if a.name == "explore"), None)
-                    elif any(w in domain for w in ("code", "python", "tool", "create", "program")):
-                        matched = next((a for a in self._activities if a.name == "experiment"), None)
-                    elif any(w in domain for w in ("memory", "reflect", "journal", "self")):
-                        matched = next((a for a in self._activities if a.name == "journal"), None)
-                    elif any(w in domain for w in ("plan", "reason", "think")):
-                        matched = next((a for a in self._activities if a.name == "wander"), None)
-                    else:
-                        # No specific activity mapped — let wander explore it freely
-                        matched = next(
-                            (a for a in self._activities if a.name == "wander"), None
-                        )
+        if matched is not None:
+            return matched
+        return self._select_random_activity()
 
-                    if matched is not None:
-                        logger.info(
-                            "Motivation-driven activity: '%s' (goal=%s, domain=%s)",
-                            matched.name, goal.id, goal.domain,
-                        )
-                        self._active_goal = active_goal
-                        return matched
-            except Exception as exc:
-                logger.debug("Motivation engine tick failed: %s", exc)
-
-        # Fallback: mood-weighted random selection
-        self._active_goal = None
+    def _select_random_activity(self) -> DreamActivity:
+        """Mood-weighted random activity selection (no goal driving it)."""
         state = self.agent.personality.state
         adjusted = list(self._weights)
         names = [a.name for a in self._activities]
@@ -936,7 +925,6 @@ class DreamEngine:
             _boost("experiment", 1.4)
             _boost("wander", 1.3)
 
-        # High-entropy uncertainty nodes pull exploration and planning activities
         sm = getattr(self.agent, "self_model", None)
         if sm:
             try:
@@ -952,16 +940,75 @@ class DreamEngine:
         return random.choices(self._activities, weights=adjusted, k=1)[0]
 
     async def _dream_once(self) -> dict[str, Any] | None:
-        """Execute a single dream activity."""
+        """Execute one cognitive cycle: Phase 1 (execute) → Phase 2 (reflect + plan)."""
         if not self._activities:
             return None
 
+        # ── Phase 1: Execute ──────────────────────────────────────────
+        # Peek at the highest-priority queued goal. If one exists, drive
+        # this cycle toward it. Otherwise fall back to mood-weighted random.
         self._active_goal = None
-        activity = self._select_activity()
+        if self.motivation_engine:
+            self._active_goal = self.motivation_engine.peek_next_goal()
 
-        logger.info(f"Dream engine: starting '{activity.name}' — {activity.description}")
+        if self._active_goal is not None:
+            if self._active_goal.priority >= self._agentic_priority_min:
+                activity = self._map_goal_to_activity(self._active_goal)
+                logger.info(
+                    "Goal-driven cycle: '%s' (goal=%s domain=%s priority=%.2f)",
+                    activity.name, self._active_goal.id,
+                    self._active_goal.domain, self._active_goal.priority,
+                )
+            else:
+                # Priority below threshold — defer to wander; do NOT consume the goal.
+                activity = next(
+                    (a for a in self._activities if a.name == "wander"),
+                    self._select_random_activity(),
+                )
+                logger.info(
+                    "Goal deferred (priority=%.2f < threshold=%.2f): '%s' → wander",
+                    self._active_goal.priority, self._agentic_priority_min,
+                    self._active_goal.id,
+                )
+                if self.monologue_log is not None:
+                    self.monologue_log.append(
+                        type="reflection",
+                        source="autonomous",
+                        title=f"Deferred low-priority goal: {self._active_goal.domain}",
+                        content=(
+                            f"Goal '{self._active_goal.id}' (domain={self._active_goal.domain}, "
+                            f"priority={self._active_goal.priority:.2f}) is below the agentic "
+                            f"threshold ({self._agentic_priority_min}). Deferring to wander; "
+                            f"goal remains queued."
+                        ),
+                        metadata={
+                            "goal_id": self._active_goal.id,
+                            "goal_domain": self._active_goal.domain,
+                            "goal_priority": self._active_goal.priority,
+                            "agentic_priority_min": self._agentic_priority_min,
+                        },
+                    )
+                self._active_goal = None  # treat as goal-free; prevents consume/entropy update
+        else:
+            activity = self._select_random_activity()
+            logger.info("Free cycle: '%s' — %s", activity.name, activity.description)
+
+        # Log action start to monologue
+        if self.monologue_log is not None:
+            goal_desc = self._active_goal.description if self._active_goal else ""
+            self.monologue_log.append(
+                type="action_started",
+                source="autonomous",
+                title=f"{activity.name}: {activity.description}",
+                content=goal_desc,
+                metadata={
+                    "activity": activity.name,
+                    "goal_id": self._active_goal.id if self._active_goal else None,
+                    "goal_domain": self._active_goal.domain if self._active_goal else None,
+                },
+            )
+
         self._dreaming = True
-
         context = {
             "timestamp": time.time(),
             "state": self.agent.personality.state.to_dict(),
@@ -980,23 +1027,39 @@ class DreamEngine:
         finally:
             self._dreaming = False
 
-        # Compute success score from mood delta — used by motivation engine and reflection
+        # Compute success score from mood delta
         _happiness_delta = result.get("mood_delta", {}).get("happiness", 0)
         success_score = 0.8 if _happiness_delta >= 0 else 0.2
 
-        # Report outcome back to motivation engine if a goal drove this activity
+        # Log action completion to monologue
+        if self.monologue_log is not None:
+            self.monologue_log.append(
+                type="action_completed",
+                source="autonomous",
+                title=result.get("summary", activity.name),
+                content=(result.get("content") or "")[:400],
+                metadata={
+                    "activity": activity.name,
+                    "success": success_score,
+                    "mood_delta": result.get("mood_delta", {}),
+                    "goal_id": self._active_goal.id if self._active_goal else None,
+                },
+            )
+
+        # Report outcome and consume the goal that drove this cycle
         if self.motivation_engine and self._active_goal is not None:
             try:
-                self.motivation_engine.record_exploration_outcome(self._active_goal.id, success_score)
-                logger.debug(
-                    "Reported outcome to motivation engine: goal=%s success=%.2f",
+                self.motivation_engine.record_exploration_outcome(
                     self._active_goal.id, success_score,
                 )
+                self.motivation_engine.consume_goal(self._active_goal.id)
+                logger.debug(
+                    "Goal consumed: %s (success=%.2f)", self._active_goal.id, success_score,
+                )
             except Exception as exc:
-                logger.debug("Could not report outcome to motivation engine: %s", exc)
+                logger.debug("Could not report/consume goal: %s", exc)
 
-        # Post-dream reflection: AURA observes the outcome and updates the self-model.
-        # Runs regardless of activity type — this is the "no wasted watts" guarantee.
+        # Post-execution reflection: update self-model with observation node
         sm = self.agent.self_model
         refl_engine = self.agent.reflection_engine
         dream_domain = self._active_goal.domain if self._active_goal else None
@@ -1017,11 +1080,19 @@ class DreamEngine:
                         sm._apply_update_node(proposal.target, updates)
                     except Exception as exc:
                         logger.debug("Dream reflection proposal skipped: %s", exc)
+                # Log reflection to monologue if it produced content
+                if self.monologue_log is not None and refl.summary:
+                    self.monologue_log.append(
+                        type="reflection",
+                        source="self",
+                        title="Post-cycle reflection",
+                        content=refl.summary[:400],
+                        metadata={"activity": activity.name, "domain": dream_domain},
+                    )
             except Exception as exc:
                 logger.debug("Dream reflection failed: %s", exc)
 
-        # Guarantee: every dream leaves a belief node in the self-model with
-        # at least one edge — the tangible "gain" from autonomous activity.
+        # Guarantee: every dream leaves a belief node with at least one edge
         if sm:
             try:
                 obs_id = f"obs-{uuid.uuid4().hex[:8]}"
@@ -1033,7 +1104,6 @@ class DreamEngine:
                     "evidence_count": 1,
                 })
                 linked = False
-                # 1. Uncertainty node matching the active motivation goal domain
                 if dream_domain:
                     for u in sm.get_uncertainty_map():
                         if (dream_domain.lower() in u.domain.lower()
@@ -1044,7 +1114,6 @@ class DreamEngine:
                             except Exception:
                                 pass
                             break
-                # 2. Any non-transient active goal
                 if not linked:
                     for g in sm.get_goals(status="active"):
                         if not g.id.startswith("tg-"):
@@ -1054,7 +1123,6 @@ class DreamEngine:
                             except Exception:
                                 pass
                             break
-                # 3. Highest-entropy uncertainty (always exists after seeding)
                 if not linked:
                     for u in sm.get_uncertainty_map():
                         try:
@@ -1070,8 +1138,51 @@ class DreamEngine:
             except Exception as exc:
                 logger.debug("Could not create observation node: %s", exc)
 
-        # Decay entropy on uncertainty domains touched by this dream
-        if sm and result.get("content"):
+        # Entropy update: explicit for goal-driven cycles, implicit for random.
+        # For goal-driven cycles, use the direct uncertainty_id link from the goal
+        # rather than fuzzy domain-text matching. Deferral sets _active_goal=None so
+        # deferred goals are handled by the implicit path (no explicit closure needed).
+        _cycle_goal = self._active_goal
+        if sm and _cycle_goal is not None and _cycle_goal.uncertainty_id:
+            try:
+                u_node_dict = sm.get_node(_cycle_goal.uncertainty_id)
+                if u_node_dict is not None:
+                    entropy_before = float(u_node_dict.get("entropy_score", 1.0))
+                    if success_score >= 0.5:
+                        entropy_after = max(0.05, round(entropy_before - 0.1, 3))
+                    else:
+                        entropy_after = min(1.0, round(entropy_before + 0.05, 3))
+                    sm._apply_update_node(_cycle_goal.uncertainty_id, {
+                        "entropy_score": entropy_after,
+                        "last_explored": datetime.now(timezone.utc).isoformat(),
+                    })
+                    logger.debug(
+                        "Explicit entropy update: %s %.3f → %.3f (goal=%s success=%.2f)",
+                        _cycle_goal.uncertainty_id, entropy_before,
+                        entropy_after, _cycle_goal.id, success_score,
+                    )
+                    if self.monologue_log is not None:
+                        self.monologue_log.append(
+                            type="reflection",
+                            source="autonomous",
+                            title=f"Belief updated: {_cycle_goal.domain}",
+                            content=(
+                                f"Completed goal '{_cycle_goal.id}' (domain={_cycle_goal.domain}). "
+                                f"Entropy {'reduced' if success_score >= 0.5 else 'increased'}: "
+                                f"{entropy_before:.3f} → {entropy_after:.3f}."
+                            ),
+                            metadata={
+                                "goal_id": _cycle_goal.id,
+                                "uncertainty_id": _cycle_goal.uncertainty_id,
+                                "entropy_before": entropy_before,
+                                "entropy_after": entropy_after,
+                                "success_score": success_score,
+                            },
+                        )
+            except Exception as exc:
+                logger.debug("Explicit entropy update failed: %s", exc)
+        elif sm and result.get("content"):
+            # Random (goal-free) cycle: keep existing implicit domain-based decay.
             dream_text = (result.get("content", "") + " " + result.get("summary", "")).lower()[:600]
             for u_node in sm.get_uncertainty_map():
                 domain_words = [w for w in u_node.domain.lower().split() if len(w) > 3]
@@ -1101,25 +1212,21 @@ class DreamEngine:
             state.satiety = max(0, min(100, state.satiety + deltas["satiety"]))
             state.last_satiety_update = time.time()
 
-        # Grant XP for autonomous activity
         state.experience += 2
         self.agent.personality.save_state()
 
-        # Store dream in memory
+        # Store in memory
         try:
             from backend.core.memory import MemoryEntry, MemoryType
             await self.agent.memory.store(MemoryEntry(
-                content=f"[{activity.name.upper()}] {result.get('summary', '')}. {result.get('content', '')}", # TODO: Add variable for max content length to store in memory
+                content=f"[{activity.name.upper()}] {result.get('summary', '')}. {result.get('content', '')}",
                 memory_type=MemoryType.KNOWLEDGE,
-                metadata={
-                    "dream_type": activity.name,
-                    "timestamp": time.time(),
-                },
+                metadata={"dream_type": activity.name, "timestamp": time.time()},
             ))
         except Exception as e:
             logger.debug(f"Couldn't store dream in memory: {e}")
 
-        # Log the dream
+        # Append to in-memory dream log
         entry = {
             "type": activity.name,
             "summary": result.get("summary", ""),
@@ -1127,14 +1234,43 @@ class DreamEngine:
             "mood_delta": deltas,
         }
         self._dream_log.append(entry)
-
-        # Keep log bounded
         if len(self._dream_log) > 100:
             self._dream_log = self._dream_log[-50:]
 
-        logger.info(
-            f"Dream complete: [{activity.name}] {result.get('summary', '')[:80]}"
-        )
+        logger.info(f"Phase 1 complete: [{activity.name}] {result.get('summary', '')[:80]}")
+
+        # ── Phase 2: Reflect + Plan ───────────────────────────────────
+        # Generate new goals from the updated self-model. These go into the
+        # motivation engine's pending queue and will drive the next cycle.
+        if self.motivation_engine:
+            try:
+                new_goals = self.motivation_engine.tick()
+                for goal in new_goals:
+                    logger.info(
+                        "Phase 2: new goal queued — %s (domain=%s priority=%.2f)",
+                        goal.id, goal.domain, goal.priority,
+                    )
+                    if self.monologue_log is not None:
+                        self.monologue_log.append(
+                            type="goal_added",
+                            source="self",
+                            title=goal.domain,
+                            content=goal.description,
+                            metadata={
+                                "goal_id": goal.id,
+                                "priority": goal.priority,
+                                "voi": goal.estimated_voi,
+                            },
+                        )
+                # Persist pending queue so a crash doesn't lose goals
+                if self._goals_path:
+                    try:
+                        self.motivation_engine.save_goals(self._goals_path)
+                    except Exception as exc:
+                        logger.debug("Could not persist goals: %s", exc)
+                self.motivation_engine.record_action()
+            except Exception as exc:
+                logger.debug("Phase 2 motivation tick failed: %s", exc)
 
         return result
 

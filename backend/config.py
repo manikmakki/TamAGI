@@ -120,14 +120,19 @@ class AutonomyConfig(BaseModel):
     interval_minutes: int = 30  # How often TamAGI dreams (0 = disabled)
     inactive_hours_start: int = 23   # Don't dream before this hour
     inactive_hours_end: int = 6    # Don't dream after this hour
-    # Which activities are enabled: dream, explore, experiment, journal
+    # Which activities are enabled (cleanup self-triggers; excluded from random pool)
     activities: list[str] = Field(
-        default_factory=lambda: ["dream", "explore", "experiment", "journal"]
+        default_factory=lambda: ["dream", "explore", "experiment", "journal", "wander", "plan"]
     )
-    # Relative weights for activity selection (higher = more likely)
+    # Relative weights — journal and wander are dominant to favour self-reflection
+    # and open-ended exploration. plan enables goal-directed autonomous execution.
     weights: list[int] = Field(
-        default_factory=lambda: [30, 25, 25, 20]
+        default_factory=lambda: [15, 12, 12, 35, 30, 20]
     )
+    # Goals below this priority threshold are deferred to wander (reflective) rather
+    # than routed to plan (agentic execution). The goal stays queued; priority rises
+    # naturally as entropy recovers between cycles.
+    agentic_priority_min: float = 0.4
 
 
 class AgentConfig(BaseModel):
@@ -136,6 +141,8 @@ class AgentConfig(BaseModel):
     use_plan_executor: bool = False    # Step through ActionPlan via PlanExecutor
     llm_retry_attempts: int = 1        # Retries on RemoteProtocolError / ConnectError
     llm_retry_delay: float = 2.0       # Seconds between retries
+    qa_enabled: bool = True            # Enable Q&A belief pipeline (clarification gate)
+    qa_entropy_threshold: float = 0.7  # Uncertainty entropy above this triggers clarification
 
 
 class OrchestratorConfig(BaseModel):
