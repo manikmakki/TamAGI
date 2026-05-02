@@ -4,6 +4,7 @@ Chat API — REST and WebSocket endpoints for TamAGI conversations.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -176,34 +177,59 @@ async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
     agent = get_agent()
 
-    try:
-        while True:
-            data = await websocket.receive_text()
-            conv_id: str | None = None
-            try:
-                msg = json.loads(data)
-                user_message = msg.get("message", "")
-                conv_id = msg.get("conversation_id")
+    # Incoming chat messages are queued here; None is the disconnect sentinel.
+    message_queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
-                # Handle approval responses (non-chat message)
+    async def _receiver() -> None:
+        """
+        Pump every incoming WS frame concurrently with agent.chat().
+        Approval responses are resolved immediately so the awaiting future
+        in ExecSkill is unblocked without waiting for the main loop to
+        call receive_text() again.
+        """
+        try:
+            while True:
+                data = await websocket.receive_text()
+                try:
+                    msg = json.loads(data)
+                except json.JSONDecodeError:
+                    await websocket.send_json({"error": "Invalid JSON"})
+                    continue
                 if msg.get("type") == "tool_approval_response":
                     agent.resolve_approval(
                         approval_id=msg.get("approval_id", ""),
                         approved=bool(msg.get("approved", False)),
                         allow_always=bool(msg.get("allow_always", False)),
                     )
-                    continue
+                else:
+                    await message_queue.put(msg)
+        except WebSocketDisconnect:
+            await message_queue.put(None)
+        except Exception:
+            await message_queue.put(None)
 
-                if not user_message:
-                    await websocket.send_json({"error": "Empty message"})
-                    continue
+    receiver_task = asyncio.create_task(_receiver())
 
-                # Send typing indicator
-                await websocket.send_json({"type": "typing", "status": True})
+    try:
+        while True:
+            msg = await message_queue.get()
+            if msg is None:
+                break  # disconnected
 
-                async def send_event(event: dict) -> None:
-                    await websocket.send_json(event)
+            conv_id: str | None = msg.get("conversation_id")
+            user_message = msg.get("message", "")
 
+            if not user_message:
+                await websocket.send_json({"error": "Empty message"})
+                continue
+
+            # Send typing indicator
+            await websocket.send_json({"type": "typing", "status": True})
+
+            async def send_event(event: dict) -> None:
+                await websocket.send_json(event)
+
+            try:
                 result = await agent.chat(
                     user_message=user_message,
                     conversation_id=conv_id,
@@ -221,8 +247,6 @@ async def websocket_chat(websocket: WebSocket):
                     **result,
                 })
 
-            except json.JSONDecodeError:
-                await websocket.send_json({"error": "Invalid JSON"})
             except Exception as exc:
                 logger.exception("Unhandled error in chat handler: %s", exc)
                 try:
@@ -238,5 +262,10 @@ async def websocket_chat(websocket: WebSocket):
                 except Exception:
                     pass  # WS may already be closing
 
-    except WebSocketDisconnect:
+    finally:
+        receiver_task.cancel()
+        try:
+            await receiver_task
+        except (asyncio.CancelledError, Exception):
+            pass
         logger.info("WebSocket client disconnected")

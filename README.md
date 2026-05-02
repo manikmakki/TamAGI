@@ -77,6 +77,47 @@ Open `http://localhost:7741` in your browser. That's it!
 docker compose up -d
 ```
 
+### Running as a systemd service (bare metal)
+
+This keeps TamAGI running after you log out and brings it back up automatically after a reboot.
+
+**1. Create a dedicated system user**
+
+```bash
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin tamagi
+sudo chown -R tamagi:tamagi /opt/TamAGI
+```
+
+**2. Install the unit file**
+
+```bash
+sudo cp /opt/TamAGI/tamagi.service /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
+**3. Enable and start**
+
+```bash
+sudo systemctl enable --now tamagi
+```
+
+`enable` makes it start on every boot; `--now` also starts it immediately so you don't need a separate `start` command.
+
+**4. Verify it's running**
+
+```bash
+sudo systemctl status tamagi
+```
+
+**Useful day-to-day commands**
+
+| What | Command |
+|------|---------|
+| Follow logs live | `journalctl -u tamagi -f` |
+| Restart after a config change | `sudo systemctl restart tamagi` |
+| Stop | `sudo systemctl stop tamagi` |
+| Disable autostart | `sudo systemctl disable tamagi` |
+
 ## Configuration
 
 Edit `config.yaml`:

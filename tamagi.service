@@ -1,0 +1,22 @@
+[Unit]
+Description=TamAGI — Local-first AI companion
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tamagi
+Group=tamagi
+WorkingDirectory=/opt/TamAGI
+Environment=TAMAGI_CONFIG=/opt/TamAGI/config.yaml
+ExecStart=/usr/bin/python3 -m backend.main
+Restart=on-failure
+RestartSec=5s
+
+# Give the process access to a PTY so log output is line-buffered
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tamagi
+
+[Install]
+WantedBy=multi-user.target

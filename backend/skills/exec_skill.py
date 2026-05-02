@@ -201,7 +201,7 @@ class ExecSkill(Skill):
             return False, False
 
         approval_id = str(uuid4())
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
         pending_approvals[approval_id] = future
 
         await event_callback({

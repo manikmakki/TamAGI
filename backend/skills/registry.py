@@ -3,7 +3,7 @@ Skill Registry — Discovery, registration, and management of skills.
 
 Auto-discovers skills from:
   1. Built-in skills (read, write, exec)
-  2. Custom skills in /workspace/skills/
+  2. Custom skills in <workspace>/skills/
   3. Dynamically registered skills
 """
 
@@ -15,6 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from backend.config import get_config
 from backend.skills.base import Skill, SkillResult
 
 logger = logging.getLogger("tamagi.skills.registry")
@@ -89,7 +90,7 @@ class SkillRegistry:
         """
         if custom_dir is not None:
             self._custom_dir = Path(custom_dir)
-        custom_path = self._custom_dir or Path("/workspace/skills")
+        custom_path = self._custom_dir or Path(get_config().workspace.path) / "skills"
         if not custom_path.exists():
             custom_path.mkdir(parents=True, exist_ok=True)
             return 0
