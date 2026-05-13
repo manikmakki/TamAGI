@@ -278,7 +278,10 @@ class QAPipeline:
                     "confidence": b["confidence"],
                     "evidence_count": 1,
                 })
-                self._self_model.auto_wire_node(bid)
+                if not self._self_model.auto_wire_node(bid):
+                    self._self_model._apply_remove_node(bid)
+                    logger.debug("Q&A pipeline: belief discarded (could not be wired): %s", b["description"][:60])
+                    continue
                 created_belief_ids.append(bid)
             except Exception as exc:
                 logger.debug("Q&A pipeline: failed to add belief node: %s", exc)

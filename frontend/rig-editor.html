@@ -448,7 +448,7 @@ function renderFrame(canvas, bones, manifest, activeVariants, showDebug, showLab
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  ctx.save(); ctx.translate(W/2, H/2+30); const scale = 2.5; ctx.scale(scale, scale);
+  ctx.save(); ctx.translate(W/2, H/2+50); const scale = 2.5; ctx.scale(scale, scale);
   ctx.imageSmoothingEnabled = false;
   const wt = solveWorldTransforms(bones);
   const drawOrder = Object.entries(manifest)

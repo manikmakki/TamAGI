@@ -1000,7 +1000,10 @@ class TamAGIAgent:
                 "priority": 0.8,
                 "status": "active",
             })
-            self.self_model.auto_wire_node(goal_id)
+            if not self.self_model.auto_wire_node(goal_id):
+                self.self_model._apply_remove_node(goal_id)
+                logger.debug("Transient goal discarded (no matching capabilities): %s", user_message[:60])
+                return None
             return goal_id
         except Exception as exc:
             logger.debug("Could not create transient goal: %s", exc)
@@ -1095,7 +1098,11 @@ class TamAGIAgent:
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 })
-                self.self_model.auto_wire_node(belief_id)
+                if not self.self_model.auto_wire_node(belief_id):
+                    self.self_model._apply_remove_node(belief_id)
+                    self.self_model._apply_update_node(signal.id, {"status": "committed"})
+                    logger.debug("Signal %s discarded (belief could not be wired)", signal.id)
+                    continue
                 # Mark original signal as committed
                 self.self_model._apply_update_node(signal.id, {
                     "status": "committed",
@@ -1355,7 +1362,10 @@ class TamAGIAgent:
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 })
-                self.self_model.auto_wire_node(milestone_id)
+                if not self.self_model.auto_wire_node(milestone_id):
+                    self.self_model._apply_remove_node(milestone_id)
+                    logger.debug("Milestone belief discarded (could not be wired): %s", milestone_id)
+                    continue
                 mutations.append({
                     "op": "milestone",
                     "node_type": "belief",

@@ -197,9 +197,9 @@ autonomy:
 
 ## Avatar Customization
 
-TamAGI's avatar is a skeleton-rigged canvas character. You can replace any body part with your own PNG artwork using the included rig editor tool.
+TamAGI's avatar is a skeleton-rigged canvas character. Open the built-in rig editor at **`/rig-editor`** (or via the hamburger menu) to adjust bone proportions, upload custom PNG sprites, and control layer order and pivot points — no build step required.
 
-→ **[docs/sprite-customization.md](docs/sprite-customization.md)** — full guide: running the rig editor, exporting a skeleton config, and uploading custom sprites.
+→ **[docs/sprite-customization.md](docs/sprite-customization.md)** — full guide: bone properties, pivot points, sprite upload, layer order, and the paste-from-clipboard workflow.
 
 ## Skills System
 

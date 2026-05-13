@@ -102,13 +102,18 @@
       image-rendering: pixelated;
     }
 
+    .avatar-name-block {
+      margin-bottom: 4px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
     .avatar-name {
       position: relative; z-index: 1;
       font-family: var(--font-display);
       font-weight: 700;
       font-size: clamp(13px, 2.5vmin, 20px);
       color: var(--text-primary);
-      margin-top: 6px;
     }
 
     .avatar-subtitle {
@@ -120,7 +125,7 @@
       margin-top: 2px;
     }
 
-    /* Sprite + name/subtitle column — left side of avatar-content */
+    /* Sprite column — left side of avatar-content */
     .avatar-sprite-col {
       display: flex;
       flex-direction: column;
@@ -874,14 +879,16 @@
       </div>
     </div>
     <div class="avatar-content">
-      <!-- Sprite + name -->
+      <!-- Sprite column -->
       <div class="avatar-sprite-col">
         <canvas id="sprite-box" class="sprite-canvas" width="300" height="320"></canvas>
-        <div class="avatar-name" id="a-name">Tama</div>
-        <div class="avatar-subtitle" id="a-subtitle">EGG &mdash; Level 1</div>
       </div>
-      <!-- Stats — 1×4 vertical column -->
+      <!-- Stats — name/subtitle header + 1×4 vertical bars -->
       <div class="stat-row">
+        <div class="avatar-name-block">
+          <div class="avatar-name" id="a-name">Tama</div>
+          <div class="avatar-subtitle" id="a-subtitle">EGG &mdash; Level 1</div>
+        </div>
         <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Energy <span class="stat-help">&#9432;</span></span><span id="s-energy-v">80</span></div><div class="stat-bar"><div class="stat-fill energy" id="s-energy-f" style="width:80%"></div></div><div class="stat-tip">Drains over time &amp; from activity. Low energy = tired mood, skipped dreams. Recharges while idle.</div></div>
         <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F496; Happiness <span class="stat-help">&#9432;</span></span><span id="s-happy-v">70</span></div><div class="stat-bar"><div class="stat-fill happiness" id="s-happy-f" style="width:70%"></div></div><div class="stat-tip">Rises from chatting, dreaming &amp; creating. Drops when ignored. Affects mood and response tone.</div></div>
         <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F37D; Satiety <span class="stat-help">&#9432;</span></span><span id="s-satiety-v">50</span></div><div class="stat-bar"><div class="stat-fill satiety" id="s-satiety-f" style="width:50%"></div></div><div class="stat-tip">Intellectual hunger — drains over time (faster at higher stages). Satisfied by using tools, web searches &amp; being fed knowledge. Low satiety makes your TamAGI curious and inquisitive.</div></div>
@@ -1284,7 +1291,7 @@ function renderFrame(canvas,bones,manifest,activeVariants){
   const W=canvas.width,H=canvas.height;
   ctx.clearRect(0,0,W,H);
   ctx.save();
-  ctx.translate(W/2,H/2+30);
+  ctx.translate(W/2,H/2+50);
   const scale=2.5;
   ctx.scale(scale,scale);
   ctx.imageSmoothingEnabled=false;
@@ -1435,7 +1442,7 @@ function setBar(p,v){
 
   const el=document.createElement('span');
   el.className='stat-delta'+(delta<0?' down':'');
-  el.textContent=(delta>0?'+':'')+delta;
+  el.textContent=(delta>0?'+':'')+Math.round(delta*10)/10;
   el.style.color=colourMap[fillClass]||'var(--text-secondary)';
   statItem.appendChild(el);
 

@@ -300,7 +300,9 @@ class PlanExecutor:
         return StepResult(step_id=step.id, success=True, output=output or "(no matching nodes)")
 
     async def _run_modify_self(self, step: ActionStep) -> StepResult:
-        observation = step.spec.get("observation") or step.description
+        observation = step.spec.get("observation")
+        if not observation:
+            return StepResult(step_id=step.id, success=True, output="(no observation to record)")
         if not self._agent.self_model:
             return StepResult(step_id=step.id, success=False, output="", error="Self-model not available")
 
@@ -319,10 +321,15 @@ class PlanExecutor:
                 "last_updated": datetime.now(timezone.utc).isoformat(),
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
+            if not self._agent.self_model.auto_wire_node(belief_id):
+                self._agent.self_model._apply_remove_node(belief_id)
+                return StepResult(
+                    step_id=step.id,
+                    success=True,
+                    output="Self-model: observation discarded (no matching nodes to wire).",
+                )
             if hasattr(self._agent, "_detect_belief_conflicts"):
                 self._agent._detect_belief_conflicts(belief_id, observation[:200])
-            if hasattr(self._agent.self_model, "auto_wire_node"):
-                self._agent.self_model.auto_wire_node(belief_id)
             return StepResult(
                 step_id=step.id,
                 success=True,

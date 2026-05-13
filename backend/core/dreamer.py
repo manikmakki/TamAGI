@@ -1092,49 +1092,72 @@ class DreamEngine:
             except Exception as exc:
                 logger.debug("Dream reflection failed: %s", exc)
 
-        # Guarantee: every dream leaves a belief node with at least one edge
+        # Every dream may leave a belief node, but only if it has real content and can be wired.
+        _DEGENERATE_SUMMARIES = frozenset({
+            "The mind wandered somewhere wordless...",
+            "No goal generated.",
+            "Couldn't generate an autonomous goal.",
+        })
         if sm:
             try:
-                obs_id = f"obs-{uuid.uuid4().hex[:8]}"
                 summary = (result.get("summary") or "")[:200] or f"{activity.name} autonomous activity"
-                sm._apply_add_node("belief", {
-                    "id": obs_id,
-                    "description": summary,
-                    "confidence": 0.55,
-                    "evidence_count": 1,
-                })
-                linked = False
-                if dream_domain:
-                    for u in sm.get_uncertainty_map():
-                        if (dream_domain.lower() in u.domain.lower()
-                                or u.domain.lower() in dream_domain.lower()):
-                            try:
-                                sm._apply_add_edge(obs_id, u.id, EdgeType.RELATES_TO.value)
-                                linked = True
-                            except Exception:
-                                pass
-                            break
-                if not linked:
-                    for g in sm.get_goals(status="active"):
-                        if not g.id.startswith("tg-"):
-                            try:
-                                sm._apply_add_edge(obs_id, g.id, EdgeType.RELATES_TO.value)
-                                linked = True
-                            except Exception:
-                                pass
-                            break
-                if not linked:
-                    for u in sm.get_uncertainty_map():
-                        try:
-                            sm._apply_add_edge(obs_id, u.id, EdgeType.RELATES_TO.value)
-                            linked = True
-                        except Exception:
-                            pass
-                        break
-                logger.info(
-                    "Dream gain: observation node %s %s (activity=%s)",
-                    obs_id, "linked" if linked else "created", activity.name,
-                )
+                if summary in _DEGENERATE_SUMMARIES:
+                    logger.debug("Dream produced no meaningful summary; skipping observation node.")
+                else:
+                    # Dedup: bump evidence_count on an existing belief rather than creating a clone.
+                    existing = next(
+                        (n for n in sm.get_all_nodes("belief") if n.get("description") == summary),
+                        None,
+                    )
+                    if existing:
+                        sm._apply_update_node(existing["id"], {
+                            "evidence_count": existing.get("evidence_count", 0) + 1,
+                        })
+                        logger.debug("Dream dedup: bumped evidence_count on %s", existing["id"])
+                    else:
+                        obs_id = f"obs-{uuid.uuid4().hex[:8]}"
+                        sm._apply_add_node("belief", {
+                            "id": obs_id,
+                            "description": summary,
+                            "confidence": 0.55,
+                            "evidence_count": 1,
+                        })
+                        linked = False
+                        if dream_domain:
+                            for u in sm.get_uncertainty_map():
+                                if (dream_domain.lower() in u.domain.lower()
+                                        or u.domain.lower() in dream_domain.lower()):
+                                    try:
+                                        sm._apply_add_edge(obs_id, u.id, EdgeType.RELATES_TO.value)
+                                        linked = True
+                                    except Exception:
+                                        pass
+                                    break
+                        if not linked:
+                            for g in sm.get_goals(status="active"):
+                                if not g.id.startswith("tg-"):
+                                    try:
+                                        sm._apply_add_edge(obs_id, g.id, EdgeType.RELATES_TO.value)
+                                        linked = True
+                                    except Exception:
+                                        pass
+                                    break
+                        if not linked:
+                            for u in sm.get_uncertainty_map():
+                                try:
+                                    sm._apply_add_edge(obs_id, u.id, EdgeType.RELATES_TO.value)
+                                    linked = True
+                                except Exception:
+                                    pass
+                                break
+                        if not linked:
+                            sm._apply_remove_node(obs_id)
+                            logger.debug("Dream observation discarded (could not be wired, activity=%s)", activity.name)
+                        else:
+                            logger.info(
+                                "Dream gain: observation node %s linked (activity=%s)",
+                                obs_id, activity.name,
+                            )
             except Exception as exc:
                 logger.debug("Could not create observation node: %s", exc)
 
