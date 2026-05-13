@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TamAGI — Rig Editor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #0c0c10;
+      --bg2:     #14141a;
+      --bg3:     #1a1a22;
+      --border:  #222228;
+      --border-a:#3a5a3a;
+      --green:   #b8f0b0;
+      --text:    #d8d5cd;
+      --muted:   #888;
+      --dim:     #555;
+      --font:    'IBM Plex Mono','Fira Code','SF Mono',monospace;
+    }
+    body { background:var(--bg); color:var(--text); font-family:var(--font); font-size:11px; min-height:100vh; padding:14px 16px; }
+
+    /* ── Header ── */
+    .page-header { display:flex; align-items:baseline; gap:14px; margin-bottom:14px; flex-wrap:wrap; }
+    .page-header h1 { font-size:15px; font-weight:600; color:var(--green); letter-spacing:.08em; }
+    .page-header p { font-size:10px; color:var(--dim); }
+    .back-link { font-size:10px; color:var(--muted); text-decoration:none; margin-left:auto; }
+    .back-link:hover { color:var(--green); }
+
+    /* ── Layout ── */
+    .layout { display:flex; gap:14px; align-items:flex-start; }
+    .left-col { flex-shrink:0; display:flex; flex-direction:column; gap:10px; align-items:center; }
+    .right-col { flex:1; display:flex; flex-direction:column; gap:10px; min-width:0; }
+    @media(max-width:680px){ .layout{flex-direction:column;} .left-col{width:100%;} }
+
+    /* ── Canvas ── */
+    .canvas-wrap { position:relative; border:1px solid var(--border); border-radius:8px; background:var(--bg2); padding:3px; }
+    #rig-canvas { display:block; border-radius:6px; image-rendering:pixelated;
+      background:radial-gradient(ellipse at 50% 75%, #1a1a24 0%, #0c0c10 70%); }
+    .anim-label { position:absolute; top:8px; right:8px; font-size:9px; color:var(--green);
+      background:#0c0c10cc; padding:2px 8px; border-radius:3px; letter-spacing:.06em; }
+
+    /* ── Buttons ── */
+    .btn-row { display:flex; flex-wrap:wrap; gap:5px; justify-content:center; }
+    button { padding:4px 10px; font-size:10px; font-family:var(--font); background:var(--bg3);
+      color:#666; border:1px solid var(--border); border-radius:3px; cursor:pointer;
+      letter-spacing:.03em; transition:all .12s; }
+    button:hover { border-color:#444; color:#aaa; }
+    button.active { background:var(--green); color:var(--bg); border-color:var(--green); font-weight:600; }
+    button.primary { background:#1e3a1e; color:var(--green); border-color:var(--border-a); }
+    button.primary:hover { background:#2a4a2a; }
+    button.danger { background:#2a1414; color:#c07070; border-color:#5a2020; }
+    button.danger:hover { background:#3a1a1a; }
+
+    /* ── Toggle row ── */
+    .toggle-row { display:flex; gap:14px; justify-content:center; }
+    label.toggle { font-size:10px; color:var(--dim); cursor:pointer; display:flex; align-items:center; gap:4px; }
+    input[type=checkbox] { accent-color:var(--green); }
+
+    /* ── Panel ── */
+    .panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:14px; }
+    .panel-title { color:var(--green); font-weight:600; font-size:11px; margin-bottom:8px;
+      display:flex; justify-content:space-between; align-items:center; }
+    .panel-hint { font-size:9px; color:var(--dim); font-weight:400; }
+
+    /* ── Bone accordion ── */
+    .bone-header { display:flex; justify-content:space-between; align-items:center; cursor:pointer;
+      padding:6px 8px; background:var(--bg3); border-radius:4px; margin-bottom:2px;
+      border:1px solid var(--border); color:#aaa; }
+    .bone-header.open { background:#1e2a1e; border-color:var(--border-a); color:var(--green); }
+    .bone-body { padding:4px 8px 8px 8px; }
+    .slider-row { display:flex; align-items:center; gap:8px; margin-bottom:4px; padding:2px 0; }
+    .slider-label { width:60px; font-size:10px; color:var(--muted); text-align:right; flex-shrink:0; }
+    input[type=range] { flex:1; height:3px; accent-color:var(--green); cursor:pointer; }
+    .slider-val { width:40px; font-size:10px; color:#999; text-align:left; flex-shrink:0; }
+
+    /* ── Sprite grid ── */
+    .part-row { border:1px solid var(--border); border-radius:4px; padding:8px 10px; margin-bottom:6px; }
+    .part-name { font-size:10px; color:var(--green); margin-bottom:7px; }
+    .variant-list { display:flex; flex-wrap:wrap; gap:8px; }
+    .variant-slot { display:flex; flex-direction:column; align-items:center; gap:4px; font-size:9px; color:var(--muted); }
+    .v-preview { width:44px; height:44px; border:1px solid var(--border); border-radius:3px;
+      background:var(--bg3); display:flex; align-items:center; justify-content:center;
+      font-size:9px; color:var(--dim); overflow:hidden; }
+    .v-preview.uploaded { border-color:var(--border-a); }
+    .v-preview.paste-ready { border-color:#ffcc44; box-shadow:0 0 0 2px #ffcc4440; }
+    .v-preview img { max-width:100%; max-height:100%; image-rendering:pixelated; }
+    .v-btn-row { display:flex; flex-wrap:wrap; gap:3px; justify-content:center; }
+    .v-btn-row button { padding:2px 5px; font-size:8px; }
+
+    /* ── Layer order row ── */
+    .layer-row { display:flex; align-items:center; gap:7px; margin-bottom:7px; }
+    .layer-lbl { font-size:9px; color:var(--muted); width:34px; flex-shrink:0; }
+    .layer-input { width:46px; font-size:10px; font-family:var(--font); background:var(--bg3);
+      color:var(--text); border:1px solid var(--border); border-radius:3px; padding:2px 5px;
+      text-align:center; -moz-appearance:textfield; }
+    .layer-input::-webkit-outer-spin-button,
+    .layer-input::-webkit-inner-spin-button { -webkit-appearance:none; }
+    .layer-input:focus { outline:none; border-color:var(--border-a); }
+    .layer-hint { font-size:9px; color:var(--dim); }
+
+    /* ── Export / status ── */
+    .export-pre { background:var(--bg); border:1px solid var(--border); border-radius:4px;
+      padding:10px; font-size:9px; line-height:1.5; color:#8a8a7a; overflow:auto;
+      max-height:280px; font-family:var(--font); margin-top:10px; }
+    .status-msg { font-size:10px; padding:6px 10px; border-radius:4px; margin-top:8px; display:none; }
+    .status-msg.ok  { color:var(--green); background:#0f1f0f; border:1px solid var(--border-a); }
+    .status-msg.err { color:#c07070;      background:#1f0f0f; border:1px solid #5a2020; }
+
+    /* ── Hierarchy ── */
+    .hier-pre { margin:0; font-size:9px; line-height:1.6; color:#666; font-family:var(--font); }
+  </style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>▦ TamAGI Rig Editor</h1>
+  <p>Adjust bone proportions · Upload custom PNG sprites · Save to TamAGI</p>
+  <a href="/" class="back-link">← Back</a>
+</div>
+
+<div class="layout">
+  <!-- ── Left: canvas + controls ── -->
+  <div class="left-col">
+    <div class="canvas-wrap">
+      <canvas id="rig-canvas" width="300" height="320"></canvas>
+      <div class="anim-label" id="anim-label">IDLE</div>
+    </div>
+
+    <div class="btn-row" id="anim-buttons"></div>
+    <div class="btn-row" id="preset-buttons"></div>
+
+    <div class="toggle-row">
+      <label class="toggle"><input type="checkbox" id="show-debug" onchange="updateDebug()"> Bones</label>
+      <label class="toggle"><input type="checkbox" id="show-labels" onchange="updateLabels()"> Labels</label>
+    </div>
+  </div>
+
+  <!-- ── Right: bone editor + sprite uploads + save ── -->
+  <div class="right-col">
+
+    <div class="panel">
+      <div class="panel-title">
+        <span>Bone Properties</span>
+        <span class="panel-hint">click to expand</span>
+      </div>
+      <div id="bone-accordion"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">
+        <span>Custom Sprites</span>
+        <span class="panel-hint">optional PNG overrides</span>
+      </div>
+      <div id="sprite-grid"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title"><span>Save &amp; Export</span></div>
+      <div class="btn-row" style="justify-content:flex-start;gap:6px;">
+        <button class="primary" onclick="saveToTamAGI()">&#x2713; Save to TamAGI</button>
+        <button onclick="toggleExport()" id="export-toggle-btn">Show JSON</button>
+        <button onclick="resetBones()">Reset</button>
+      </div>
+      <div id="save-status" class="status-msg"></div>
+      <pre id="export-pre" class="export-pre" style="display:none"></pre>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title"><span>Bone Hierarchy</span></div>
+      <pre class="hier-pre">root (origin)
+├── body
+│   ├── neck
+│   │   └── head
+│   │       ├── eye_left    [open, closed, happy]
+│   │       ├── eye_right   [open, closed, happy]
+│   │       ├── mouth       [neutral, happy, sad, open, talking]
+│   │       └── accessory   [user-defined]
+│   ├── arm_left  └─ hand_left
+│   └── arm_right └─ hand_right
+├── leg_left  └─ foot_left
+└── leg_right └─ foot_right</pre>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+//  RIG ENGINE  (ported from scripts/skeleton_rig.jsx)
+// ══════════════════════════════════════════════════════════════
+
+function createBone(name, parent, restX, restY, pivotX, pivotY, length, zOrder = 0) {
+  return { name, parent, restX, restY, pivotX, pivotY, length, zOrder,
+           rotation: 0, scaleX: 1, scaleY: 1, translateX: 0, translateY: 0, opacity: 1,
+           displayScale: 1, pivotOffsetX: 0, pivotOffsetY: 0 };
+}
+// Apply sensible pivot defaults so limbs rotate from shoulder/hip rather than sprite center.
+const _PIVOT_DEFAULTS = {
+  arm_left:  { pivotOffsetY: 0.5 },
+  arm_right: { pivotOffsetY: 0.5 },
+  leg_left:  { pivotOffsetY: 0.5 },
+  leg_right: { pivotOffsetY: 0.5 },
+};
+function applyPivotDefaults(bones) {
+  for (const b of bones) { if (_PIVOT_DEFAULTS[b.name]) Object.assign(b, _PIVOT_DEFAULTS[b.name]); }
+  return bones;
+}
+
+const PRESETS = {
+  default: { label: "Default", bones: () => [
+    createBone("root",       null,         0,    0,   0,   0,   0,  0),
+    createBone("body",       "root",       0,  -10,   0,  22,  44,  2),
+    createBone("neck",       "body",       0,  -22,   0,   4,  10,  4),
+    createBone("head",       "neck",       0,   -9,   0,  14,  28,  5),
+    createBone("eye_left",   "head",      -7,   -4,   0,   0,   0,  6),
+    createBone("eye_right",  "head",       7,   -4,   0,   0,   0,  6),
+    createBone("mouth",      "head",       0,    6,   0,   0,   0,  7),
+    createBone("arm_left",   "body",     -20,  -18,   4,  -2,  22,  1),
+    createBone("hand_left",  "arm_left",  -1,   20,   0,  -1,   8,  1),
+    createBone("arm_right",  "body",      20,  -18,  -4,  -2,  22,  3),
+    createBone("hand_right", "arm_right",  1,   20,   0,  -1,   8,  3),
+    createBone("leg_left",   "root",      -7,   12,   0,  -1,  18,  0),
+    createBone("foot_left",  "leg_left",   0,   17,   0,  -1,   6, -1),
+    createBone("leg_right",  "root",       7,   12,   0,  -1,  18,  0),
+    createBone("foot_right", "leg_right",  0,   17,   0,  -1,   6, -1),
+    createBone("accessory",  "head",       0,  -16,   0,   4,   0,  8),
+  ]},
+  chibi: { label: "Chibi", bones: () => [
+    createBone("root",       null,         0,    0,   0,   0,   0,  0),
+    createBone("body",       "root",       0,   -6,   0,  14,  28,  2),
+    createBone("neck",       "body",       0,  -14,   0,   2,   4,  4),
+    createBone("head",       "neck",       0,   -4,   0,  18,  38,  5),
+    createBone("eye_left",   "head",     -10,   -2,   0,   0,   0,  6),
+    createBone("eye_right",  "head",      10,   -2,   0,   0,   0,  6),
+    createBone("mouth",      "head",       0,    8,   0,   0,   0,  7),
+    createBone("arm_left",   "body",     -14,  -10,   3,  -1,  14,  1),
+    createBone("hand_left",  "arm_left",  -1,   13,   0,  -1,   6,  1),
+    createBone("arm_right",  "body",      14,  -10,  -3,  -1,  14,  3),
+    createBone("hand_right", "arm_right",  1,   13,   0,  -1,   6,  3),
+    createBone("leg_left",   "root",      -6,    8,   0,  -1,  10,  0),
+    createBone("foot_left",  "leg_left",   0,   10,   0,  -1,   4, -1),
+    createBone("leg_right",  "root",       6,    8,   0,  -1,  10,  0),
+    createBone("foot_right", "leg_right",  0,   10,   0,  -1,   4, -1),
+    createBone("accessory",  "head",       0,  -20,   0,   4,   0,  8),
+  ]},
+  tall: { label: "Tall", bones: () => [
+    createBone("root",       null,         0,    0,   0,   0,   0,  0),
+    createBone("body",       "root",       0,  -14,   0,  26,  52,  2),
+    createBone("neck",       "body",       0,  -26,   0,   6,  14,  4),
+    createBone("head",       "neck",       0,  -12,   0,  12,  24,  5),
+    createBone("eye_left",   "head",      -6,   -3,   0,   0,   0,  6),
+    createBone("eye_right",  "head",       6,   -3,   0,   0,   0,  6),
+    createBone("mouth",      "head",       0,    5,   0,   0,   0,  7),
+    createBone("arm_left",   "body",     -18,  -22,   4,  -2,  28,  1),
+    createBone("hand_left",  "arm_left",  -1,   26,   0,  -1,  10,  1),
+    createBone("arm_right",  "body",      18,  -22,  -4,  -2,  28,  3),
+    createBone("hand_right", "arm_right",  1,   26,   0,  -1,  10,  3),
+    createBone("leg_left",   "root",      -7,   16,   0,  -1,  26,  0),
+    createBone("foot_left",  "leg_left",   0,   24,   0,  -1,   8, -1),
+    createBone("leg_right",  "root",       7,   16,   0,  -1,  26,  0),
+    createBone("foot_right", "leg_right",  0,   24,   0,  -1,   8, -1),
+    createBone("accessory",  "head",       0,  -14,   0,   4,   0,  8),
+  ]},
+  stocky: { label: "Stocky", bones: () => [
+    createBone("root",       null,         0,    0,   0,   0,   0,  0),
+    createBone("body",       "root",       0,   -8,   0,  20,  40,  2),
+    createBone("neck",       "body",       0,  -20,   0,   2,   5,  4),
+    createBone("head",       "neck",       0,   -5,   0,  13,  26,  5),
+    createBone("eye_left",   "head",      -7,   -3,   0,   0,   0,  6),
+    createBone("eye_right",  "head",       7,   -3,   0,   0,   0,  6),
+    createBone("mouth",      "head",       0,    5,   0,   0,   0,  7),
+    createBone("arm_left",   "body",     -24,  -16,   5,  -2,  18,  1),
+    createBone("hand_left",  "arm_left",  -2,   16,   0,  -1,   9,  1),
+    createBone("arm_right",  "body",      24,  -16,  -5,  -2,  18,  3),
+    createBone("hand_right", "arm_right",  2,   16,   0,  -1,   9,  3),
+    createBone("leg_left",   "root",      -9,   10,   0,  -1,  14,  0),
+    createBone("foot_left",  "leg_left",   0,   13,   0,  -1,   7, -1),
+    createBone("leg_right",  "root",       9,   10,   0,  -1,  14,  0),
+    createBone("foot_right", "leg_right",  0,   13,   0,  -1,   7, -1),
+    createBone("accessory",  "head",       0,  -14,   0,   4,   0,  8),
+  ]},
+};
+
+function buildManifest(bones) {
+  const defs = {
+    body:       { bone:"body",       wRatio:0.9,  hRatio:1.0,  variants:{default:null} },
+    head:       { bone:"head",       wRatio:1.3,  hRatio:1.1,  variants:{default:null} },
+    eye_left:   { bone:"eye_left",   wBase:7,     hBase:7,     variants:{open:null,closed:null,happy:null} },
+    eye_right:  { bone:"eye_right",  wBase:7,     hBase:7,     variants:{open:null,closed:null,happy:null} },
+    mouth:      { bone:"mouth",      wBase:10,    hBase:6,     variants:{neutral:null,happy:null,sad:null,open:null,talking:null} },
+    arm_left:   { bone:"arm_left",   wRatio:0.55, hRatio:1.1,  variants:{default:null} },
+    arm_right:  { bone:"arm_right",  wRatio:0.55, hRatio:1.1,  variants:{default:null} },
+    hand_left:  { bone:"hand_left",  wBase:10,    hBase:10,    variants:{default:null} },
+    hand_right: { bone:"hand_right", wBase:10,    hBase:10,    variants:{default:null} },
+    leg_left:   { bone:"leg_left",   wRatio:0.6,  hRatio:1.1,  variants:{default:null} },
+    leg_right:  { bone:"leg_right",  wRatio:0.6,  hRatio:1.1,  variants:{default:null} },
+    foot_left:  { bone:"foot_left",  wBase:14,    hBase:8,     variants:{default:null} },
+    foot_right: { bone:"foot_right", wBase:14,    hBase:8,     variants:{default:null} },
+    accessory:  { bone:"accessory",  wBase:36,    hBase:20,    variants:{default:null} },
+  };
+  const boneMap = {}; bones.forEach(b => boneMap[b.name] = b);
+  const manifest = {};
+  for (const [part, def] of Object.entries(defs)) {
+    const bone = boneMap[def.bone]; if (!bone) continue;
+    const w = def.wBase || Math.max(8, Math.round(bone.length * (def.wRatio || 0.5)));
+    const h = def.hBase || Math.max(8, Math.round(bone.length * (def.hRatio || 1.0)));
+    manifest[part] = { bone:def.bone, w, h, ox:0, oy:0, variants:def.variants };
+  }
+  return manifest;
+}
+
+function drawPlaceholder(ctx, partName, variant, w, h) {
+  const P = { skin:"#f5d6a8", skinDark:"#d4a870", body:"#5b8fb9", bodyDark:"#3d6d8f",
+               eye:"#2d2d2d", eyeWhite:"#ffffff", mouth:"#c75050", mouthDark:"#8b3030",
+               hair:"#6b4e3d", shoe:"#4a4a5a" };
+  ctx.imageSmoothingEnabled = false;
+  const fillR = (x, y, rw, rh, color, r) => {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x, y, rw, rh, r || 3); ctx.fill();
+  };
+  switch (partName) {
+    case "body":
+      fillR(2, 0, w-4, h-2, P.body, 5); fillR(4, 2, w-8, h-6, P.bodyDark, 3);
+      fillR(6, 4, w-12, h-10, P.body, 2); fillR(w*.25, 0, w*.5, 6, P.skin, 2); break;
+    case "head":
+      fillR(2, 2, w-4, h-4, P.skin, [10,10,6,6]); fillR(1, 0, w-2, h*.4, P.hair, [10,10,2,2]);
+      fillR(0, h/2-3, 4, 6, P.skinDark, 2); fillR(w-4, h/2-3, 4, 6, P.skinDark, 2); break;
+    case "eye_left": case "eye_right":
+      if (variant === "closed") {
+        ctx.fillStyle = P.eye; ctx.fillRect(1, h/2, w-2, 2);
+      } else if (variant === "happy") {
+        ctx.strokeStyle = P.eye; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(w/2, h/2+1, 2.5, Math.PI, 2*Math.PI); ctx.stroke();
+      } else {
+        fillR(0, 0, w, h, P.eyeWhite, 3); ctx.fillStyle = P.eye;
+        ctx.beginPath(); ctx.arc(w/2, h/2, 2.2, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.fillRect(w/2+1, h/2-1, 1, 1);
+      } break;
+    case "mouth":
+      if (variant === "happy") {
+        ctx.strokeStyle = P.mouth; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(w/2, h/2-1, 3.5, .2, Math.PI-.2); ctx.stroke();
+      } else if (variant === "sad") {
+        ctx.strokeStyle = P.mouthDark; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(w/2, h/2+3, 3.5, Math.PI+.3, -.3); ctx.stroke();
+      } else if (variant === "open" || variant === "talking") {
+        fillR(w/2-3, 0, 6, h, P.mouthDark, 3); fillR(w/2-2, 1, 4, h-2, P.mouth, 2);
+      } else { ctx.fillStyle = P.mouth; ctx.fillRect(w/2-3, h/2, 6, 1.5); } break;
+    case "arm_left": case "arm_right":
+      fillR(1, 0, w-2, h, P.body, 4); fillR(2, 1, w-4, h-2, P.bodyDark, 3); break;
+    case "hand_left": case "hand_right":
+      fillR(1, 1, w-2, h-2, P.skin, 3); fillR(2, 2, w-4, h-4, P.skinDark, 2); break;
+    case "leg_left": case "leg_right":
+      fillR(1, 0, w-2, h, P.bodyDark, 3); break;
+    case "foot_left": case "foot_right":
+      fillR(0, 0, w+2, h+2, P.shoe, 3); break;
+    case "accessory":
+      fillR(0, Math.round(h*0.45), w, Math.round(h*0.55), P.hair, 2);
+      fillR(Math.round(w*0.2), 0, Math.round(w*0.6), Math.round(h*0.55), P.hair, [4,4,0,0]);
+      break;
+  }
+}
+
+const ANIMATIONS = {
+  idle: (bones, t) => {
+    const m = {}; bones.forEach(b => m[b.name] = b);
+    const breathe = Math.sin(t*2)*.5;
+    m.body.translateY = breathe; m.body.rotation = Math.sin(t*1.2)*.3*(Math.PI/180);
+    if (m.neck) m.neck.rotation = Math.sin(t*.9)*1*(Math.PI/180);
+    m.head.rotation = Math.sin(t*.8)*1.5*(Math.PI/180); m.head.translateY = breathe*.3;
+    m.arm_left.rotation = Math.sin(t*1.5)*2*(Math.PI/180);
+    m.arm_right.rotation = Math.sin(t*1.5+.5)*-2*(Math.PI/180);
+    const bc = t%4;
+    return { eye_left: bc>3.7&&bc<3.9?"closed":"open", eye_right: bc>3.7&&bc<3.9?"closed":"open", mouth:"neutral" };
+  },
+  happy: (bones, t) => {
+    const m = {}; bones.forEach(b => m[b.name] = b);
+    const bounce = Math.abs(Math.sin(t*3))*3;
+    m.body.translateY = -bounce; m.body.rotation = Math.sin(t*4)*3*(Math.PI/180);
+    if (m.neck) m.neck.rotation = Math.sin(t*3)*2*(Math.PI/180);
+    m.head.rotation = Math.sin(t*2)*4*(Math.PI/180); m.head.translateY = -bounce*.5;
+    m.arm_left.rotation = Math.sin(t*3)*15*(Math.PI/180);
+    m.arm_right.rotation = Math.sin(t*3+Math.PI)*15*(Math.PI/180);
+    m.hand_left.rotation = Math.sin(t*4)*10*(Math.PI/180);
+    m.hand_right.rotation = Math.sin(t*4+Math.PI)*10*(Math.PI/180);
+    return { eye_left:"happy", eye_right:"happy", mouth:"happy" };
+  },
+  sad: (bones, t) => {
+    const m = {}; bones.forEach(b => m[b.name] = b);
+    m.body.translateY = 2+Math.sin(t*.8)*.3; m.body.rotation = Math.sin(t*.5)*.5*(Math.PI/180);
+    if (m.neck) m.neck.rotation = -3*(Math.PI/180);
+    m.head.rotation = -5*(Math.PI/180)+Math.sin(t*.6)*1*(Math.PI/180); m.head.translateY = 2;
+    m.arm_left.rotation = 8*(Math.PI/180); m.arm_right.rotation = -8*(Math.PI/180);
+    return { eye_left:"closed", eye_right:"closed", mouth:"sad" };
+  },
+  talking: (bones, t) => {
+    const m = {}; bones.forEach(b => m[b.name] = b);
+    m.body.translateY = Math.sin(t*2)*.5;
+    if (m.neck) m.neck.rotation = Math.sin(t*2.5)*1.5*(Math.PI/180);
+    m.head.rotation = Math.sin(t*3)*2*(Math.PI/180);
+    m.arm_right.rotation = (Math.sin(t*2.5)*12-5)*(Math.PI/180);
+    m.hand_right.rotation = Math.sin(t*2.5)*15*(Math.PI/180);
+    m.arm_left.rotation = 5*(Math.PI/180);
+    const mc = t%.6;
+    return { eye_left:"open", eye_right:"open", mouth: mc<.3?"open":"neutral" };
+  },
+  wave: (bones, t) => {
+    const m = {}; bones.forEach(b => m[b.name] = b);
+    m.body.translateY = Math.sin(t*2)*.5; m.body.rotation = Math.sin(t*1.5)*1*(Math.PI/180);
+    if (m.neck) m.neck.rotation = Math.sin(t*2)*2*(Math.PI/180);
+    m.head.rotation = Math.sin(t*2)*3*(Math.PI/180);
+    m.arm_right.rotation = (-90+Math.sin(t*6)*20)*(Math.PI/180);
+    m.hand_right.rotation = Math.sin(t*8)*25*(Math.PI/180);
+    m.arm_left.rotation = 3*(Math.PI/180);
+    const bc = t%3;
+    return { eye_left: bc>2.7?"closed":"happy", eye_right: bc>2.7?"closed":"happy", mouth:"happy" };
+  },
+  thinking: (bones, t) => {
+    const m = {}; bones.forEach(b => m[b.name] = b);
+    m.body.translateY = Math.sin(t*1.5)*.3;
+    if (m.neck) m.neck.rotation = 4*(Math.PI/180);
+    m.head.rotation = (8+Math.sin(t*.7)*2)*(Math.PI/180); m.head.translateY = -1;
+    m.arm_right.rotation = (-40+Math.sin(t*.5)*3)*(Math.PI/180);
+    m.hand_right.translateX = 5; m.hand_right.translateY = -15;
+    m.arm_left.rotation = 5*(Math.PI/180);
+    const lc = t%5;
+    return { eye_left: lc>4?"closed":"open", eye_right: lc>4?"closed":"open", mouth:"neutral" };
+  },
+};
+
+function solveWorldTransforms(bones) {
+  const boneMap = {}; bones.forEach(b => boneMap[b.name] = b);
+  const world = {};
+  function solve(bone) {
+    if (world[bone.name]) return world[bone.name];
+    const lx = bone.restX + bone.translateX, ly = bone.restY + bone.translateY;
+    if (!bone.parent) { world[bone.name] = {x:lx,y:ly,rotation:bone.rotation,scaleX:bone.scaleX,scaleY:bone.scaleY,opacity:bone.opacity}; return world[bone.name]; }
+    const pw = solve(boneMap[bone.parent]);
+    const cos = Math.cos(pw.rotation), sin = Math.sin(pw.rotation);
+    world[bone.name] = { x: pw.x+(lx*cos-ly*sin)*pw.scaleX, y: pw.y+(lx*sin+ly*cos)*pw.scaleY,
+      rotation: pw.rotation+bone.rotation, scaleX: pw.scaleX*bone.scaleX, scaleY: pw.scaleY*bone.scaleY, opacity: pw.opacity*bone.opacity };
+    return world[bone.name];
+  }
+  bones.forEach(b => solve(b)); return world;
+}
+
+function renderFrame(canvas, bones, manifest, activeVariants, showDebug, showLabels) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.save(); ctx.translate(W/2, H/2+30); const scale = 2.5; ctx.scale(scale, scale);
+  ctx.imageSmoothingEnabled = false;
+  const wt = solveWorldTransforms(bones);
+  const drawOrder = Object.entries(manifest)
+    .map(([pn, e]) => ({ pn, e, bone: bones.find(b => b.name === e.bone), z: (bones.find(b => b.name === e.bone)||{}).zOrder||0 }))
+    .sort((a, b) => a.z - b.z);
+  for (const { pn, e, bone } of drawOrder) {
+    if (!bone || !wt[bone.name]) continue;
+    const w = wt[bone.name];
+    ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(w.rotation); ctx.scale(w.scaleX, w.scaleY);
+    ctx.globalAlpha = w.opacity; ctx.translate(e.ox, e.oy);
+    const variant = activeVariants[pn] || Object.keys(e.variants)[0];
+    const sc = bone.displayScale || 1;
+    const sw = e.w * sc, sh = e.h * sc;
+    const pox = bone.pivotOffsetX || 0, poy = bone.pivotOffsetY || 0;
+    ctx.save(); ctx.translate(-sw/2 + pox*sw, -sh/2 + poy*sh);
+    const imgKey = `${pn}:${variant}`;
+    if (_spriteImages[imgKey]) { ctx.drawImage(_spriteImages[imgKey], 0, 0, sw, sh); }
+    else { drawPlaceholder(ctx, pn, variant, sw, sh); }
+    ctx.restore(); ctx.restore();
+  }
+  if (showDebug) {
+    ctx.globalAlpha = 0.8;
+    for (const bone of bones) {
+      if (!wt[bone.name]) continue;
+      const w = wt[bone.name];
+      ctx.save(); ctx.translate(w.x, w.y); ctx.rotate(w.rotation);
+      if (bone.parent && wt[bone.parent]) {
+        ctx.save(); ctx.rotate(-w.rotation);
+        const pw = wt[bone.parent];
+        ctx.strokeStyle = "#ff336640"; ctx.lineWidth = 0.4; ctx.setLineDash([1,1]);
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(pw.x-w.x, pw.y-w.y); ctx.stroke();
+        ctx.setLineDash([]); ctx.restore();
+      }
+      ctx.fillStyle = bone.name==="root"?"#ffaa33":"#ff3366";
+      ctx.beginPath(); ctx.arc(0, 0, bone.name==="root"?2:1.5, 0, Math.PI*2); ctx.fill();
+      if (bone.length > 0) {
+        ctx.strokeStyle = "#ff336680"; ctx.lineWidth = 0.6;
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0, bone.length*.3); ctx.stroke();
+      }
+      if (showLabels) {
+        ctx.fillStyle = "#ff9fba"; ctx.font = "2.5px monospace"; ctx.fillText(bone.name, 3, -2);
+      }
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  EDITOR STATE
+// ══════════════════════════════════════════════════════════════
+
+let _rigBones     = applyPivotDefaults(PRESETS.default.bones());
+let _boneMap      = Object.fromEntries(_rigBones.map(b => [b.name, b]));
+let _animName     = 'idle';
+let _startTime    = null;
+let _showDebug    = false;
+let _showLabels   = false;
+let _expandedBone = null;
+let _activePreset = 'default';
+let _showExport   = false;
+let _spriteImages = {}; // key: "part:variant" → loaded HTMLImageElement, drives live canvas
+let _pasteTarget  = null; // { part, variant } — set by pasteSprite(), consumed by document paste handler
+
+const SCALE_PROP   = { key:"displayScale",  label:"Scale",   min:0.25, max:3,    step:0.05, unit:'×' };
+const PIVOT_X_PROP = { key:"pivotOffsetX",  label:"Pivot X", min:-0.5, max:0.5,  step:0.05 };
+const PIVOT_Y_PROP = { key:"pivotOffsetY",  label:"Pivot Y", min:-0.5, max:0.5,  step:0.05 };
+
+const EDITABLE_BONES = [
+  { name:"body",      label:"Body",     props:[{key:"restY",label:"Offset Y",min:-40,max:0}, SCALE_PROP] },
+  { name:"neck",      label:"Neck",     props:[{key:"restY",label:"Offset Y",min:-40,max:-5}, SCALE_PROP, PIVOT_Y_PROP] },
+  { name:"head",      label:"Head",     props:[{key:"restY",label:"Offset Y",min:-20,max:0}, SCALE_PROP, PIVOT_Y_PROP] },
+  { name:"eye_left",  label:"Eye (L)",  props:[{key:"restX",label:"X",min:-18,max:0},{key:"restY",label:"Y",min:-12,max:8}, SCALE_PROP] },
+  { name:"eye_right", label:"Eye (R)",  props:[{key:"restX",label:"X",min:0,max:18},{key:"restY",label:"Y",min:-12,max:8}, SCALE_PROP] },
+  { name:"mouth",     label:"Mouth",    props:[{key:"restY",label:"Y",min:-4,max:14}, SCALE_PROP] },
+  { name:"accessory", label:"Accessory",props:[{key:"restX",label:"X",min:-20,max:20},{key:"restY",label:"Y",min:-30,max:5}, SCALE_PROP] },
+  { name:"arm_left",   label:"Arm (L)",   props:[{key:"restX",label:"X",min:-36,max:-8},{key:"restY",label:"Y",min:-30,max:0}, SCALE_PROP, PIVOT_X_PROP, PIVOT_Y_PROP] },
+  { name:"hand_left",  label:"Hand (L)",  props:[{key:"restX",label:"X",min:-8,max:8},{key:"restY",label:"Y",min:10,max:30}, SCALE_PROP, PIVOT_Y_PROP] },
+  { name:"arm_right",  label:"Arm (R)",   props:[{key:"restX",label:"X",min:8,max:36},{key:"restY",label:"Y",min:-30,max:0}, SCALE_PROP, PIVOT_X_PROP, PIVOT_Y_PROP] },
+  { name:"hand_right", label:"Hand (R)",  props:[{key:"restX",label:"X",min:-8,max:8},{key:"restY",label:"Y",min:10,max:30}, SCALE_PROP, PIVOT_Y_PROP] },
+  { name:"leg_left",   label:"Leg (L)",   props:[{key:"restX",label:"X",min:-16,max:0},{key:"restY",label:"Y",min:4,max:24}, SCALE_PROP, PIVOT_X_PROP, PIVOT_Y_PROP] },
+  { name:"foot_left",  label:"Foot (L)",  props:[{key:"restX",label:"X",min:-10,max:10},{key:"restY",label:"Y",min:8,max:28}, SCALE_PROP, PIVOT_Y_PROP] },
+  { name:"leg_right",  label:"Leg (R)",   props:[{key:"restX",label:"X",min:0,max:16},{key:"restY",label:"Y",min:4,max:24}, SCALE_PROP, PIVOT_X_PROP, PIVOT_Y_PROP] },
+  { name:"foot_right", label:"Foot (R)",  props:[{key:"restX",label:"X",min:-10,max:10},{key:"restY",label:"Y",min:8,max:28}, SCALE_PROP, PIVOT_Y_PROP] },
+];
+
+const SPRITE_SLOTS = {
+  body:       ['default'],
+  head:       ['default'],
+  eye_left:   ['open','closed','happy'],
+  eye_right:  ['open','closed','happy'],
+  mouth:      ['neutral','happy','sad','open','talking'],
+  arm_left:   ['default'],
+  arm_right:  ['default'],
+  hand_left:  ['default'],
+  hand_right: ['default'],
+  leg_left:   ['default'],
+  leg_right:  ['default'],
+  foot_left:  ['default'],
+  foot_right: ['default'],
+  accessory:  ['default'],
+};
+
+// ══════════════════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ══════════════════════════════════════════════════════════════
+
+function rigTick(ts) {
+  if (!_startTime) _startTime = ts;
+  const t = (ts - _startTime) / 1000;
+  for (const b of _rigBones) {
+    b.rotation = 0; b.scaleX = 1; b.scaleY = 1;
+    b.translateX = 0; b.translateY = 0; b.opacity = 1;
+  }
+  const animFn = ANIMATIONS[_animName] || ANIMATIONS.idle;
+  const variants = animFn(_rigBones, t) || {};
+  const manifest = buildManifest(_rigBones);
+  const canvas = document.getElementById('rig-canvas');
+  if (canvas) renderFrame(canvas, _rigBones, manifest, variants, _showDebug, _showLabels);
+  requestAnimationFrame(rigTick);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  CONTROL HANDLERS
+// ══════════════════════════════════════════════════════════════
+
+function setAnim(name) {
+  _animName = name; _startTime = null;
+  document.getElementById('anim-label').textContent = name.toUpperCase();
+  document.querySelectorAll('#anim-buttons button').forEach(b => b.classList.toggle('active', b.dataset.anim === name));
+}
+
+function loadPreset(key) {
+  _activePreset = key; _startTime = null;
+  _rigBones = applyPivotDefaults(PRESETS[key].bones());
+  _boneMap = Object.fromEntries(_rigBones.map(b => [b.name, b]));
+  document.querySelectorAll('#preset-buttons button').forEach(b => b.classList.toggle('active', b.dataset.preset === key));
+  buildAccordion();
+}
+
+function updateDebug()  { _showDebug  = document.getElementById('show-debug').checked; }
+function updateLabels() { _showLabels = document.getElementById('show-labels').checked; }
+
+function resetBones() { loadPreset(_activePreset); }
+
+// ══════════════════════════════════════════════════════════════
+//  BONE ACCORDION
+// ══════════════════════════════════════════════════════════════
+
+function buildAccordion() {
+  const container = document.getElementById('bone-accordion');
+  container.innerHTML = '';
+  for (const eb of EDITABLE_BONES) {
+    const bone = _boneMap[eb.name]; if (!bone) continue;
+    const isOpen = _expandedBone === eb.name;
+    const section = document.createElement('div');
+
+    const header = document.createElement('div');
+    header.className = 'bone-header' + (isOpen ? ' open' : '');
+    const chevron = isOpen ? '▾' : '▸';
+    header.innerHTML =
+      `<span>${chevron} ${eb.label}</span>` +
+      `<span style="font-size:9px;opacity:0.5">${bone.parent || 'root'}</span>`;
+    header.onclick = () => {
+      _expandedBone = _expandedBone === eb.name ? null : eb.name;
+      buildAccordion();
+    };
+    section.appendChild(header);
+
+    if (isOpen) {
+      const body = document.createElement('div');
+      body.className = 'bone-body';
+      for (const p of eb.props) {
+        const row = document.createElement('div');
+        row.className = 'slider-row';
+        const lbl = document.createElement('span');
+        lbl.className = 'slider-label'; lbl.textContent = p.label;
+        const slider = document.createElement('input');
+        const step = p.step || 1;
+        const fmt = (v) => step < 1 ? Number(v).toFixed(2) + (p.unit || '') : String(v);
+        slider.type = 'range'; slider.min = p.min; slider.max = p.max; slider.step = step;
+        slider.value = bone[p.key];
+        const val = document.createElement('span');
+        val.className = 'slider-val'; val.textContent = fmt(bone[p.key]);
+        slider.oninput = (e) => {
+          bone[p.key] = parseFloat(e.target.value);
+          val.textContent = fmt(e.target.value);
+        };
+        row.appendChild(lbl); row.appendChild(slider); row.appendChild(val);
+        body.appendChild(row);
+      }
+      section.appendChild(body);
+    }
+    container.appendChild(section);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  SPRITE UPLOAD GRID
+// ══════════════════════════════════════════════════════════════
+
+function buildSpriteGrid() {
+  const grid = document.getElementById('sprite-grid');
+  grid.innerHTML = '';
+  for (const [part, variants] of Object.entries(SPRITE_SLOTS)) {
+    const row = document.createElement('div');
+    row.className = 'part-row';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'part-name'; nameEl.textContent = part;
+    row.appendChild(nameEl);
+
+    // Layer order — edits bone.zOrder, which drives the render sort
+    const partBone = _boneMap[part];
+    const layerRow = document.createElement('div');
+    layerRow.className = 'layer-row';
+    const layerLbl = document.createElement('span');
+    layerLbl.className = 'layer-lbl'; layerLbl.textContent = 'Layer:';
+    const layerInput = document.createElement('input');
+    layerInput.type = 'number'; layerInput.min = '0'; layerInput.max = '99'; layerInput.step = '1';
+    layerInput.className = 'layer-input'; layerInput.id = `layer-${part}`;
+    layerInput.value = partBone ? partBone.zOrder : 0;
+    layerInput.title = 'Render layer: 0 = furthest back, 99 = in front of everything';
+    layerInput.oninput = (e) => { if (partBone) partBone.zOrder = parseInt(e.target.value) || 0; };
+    const layerHint = document.createElement('span');
+    layerHint.className = 'layer-hint'; layerHint.textContent = '0 = back · 99 = front';
+    layerRow.appendChild(layerLbl); layerRow.appendChild(layerInput); layerRow.appendChild(layerHint);
+    row.appendChild(layerRow);
+
+    const varList = document.createElement('div');
+    varList.className = 'variant-list';
+
+    for (const variant of variants) {
+      const slot = document.createElement('div');
+      slot.className = 'variant-slot';
+      slot.id = `slot-${part}-${variant}`;
+
+      const preview = document.createElement('div');
+      preview.className = 'v-preview';
+      preview.id = `preview-${part}-${variant}`;
+
+      const vLabel = document.createElement('span');
+      vLabel.textContent = variant;
+
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file'; fileInput.accept = 'image/png'; fileInput.style.display = 'none';
+      fileInput.id = `file-${part}-${variant}`;
+      fileInput.onchange = (e) => { if (e.target.files[0]) uploadSprite(part, variant, e.target.files[0]); };
+
+      const upBtn = document.createElement('button');
+      upBtn.textContent = '↑ Upload'; upBtn.title = `Upload PNG file for ${part}/${variant}`;
+      upBtn.onclick = () => document.getElementById(`file-${part}-${variant}`).click();
+
+      const pasteBtn = document.createElement('button');
+      pasteBtn.textContent = '⎘ Paste'; pasteBtn.title = `Paste image from clipboard (e.g. copied from GIMP)`;
+      pasteBtn.onclick = () => pasteSprite(part, variant);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'danger'; delBtn.textContent = '✕';
+      delBtn.title = `Remove ${part}/${variant}`; delBtn.style.display = 'none';
+      delBtn.id = `del-${part}-${variant}`;
+      delBtn.onclick = () => deleteSprite(part, variant);
+
+      const btnRow = document.createElement('div');
+      btnRow.className = 'v-btn-row';
+      btnRow.appendChild(upBtn); btnRow.appendChild(pasteBtn); btnRow.appendChild(delBtn);
+
+      slot.appendChild(preview); slot.appendChild(vLabel); slot.appendChild(fileInput); slot.appendChild(btnRow);
+      varList.appendChild(slot);
+
+      // Probe for existing upload
+      const probe = new Image();
+      probe.onload = () => markUploaded(part, variant, probe.src);
+      probe.onerror = () => { preview.textContent = variant[0].toUpperCase(); };
+      probe.src = `/sprites/${part}_${variant}.png?t=${Date.now()}`;
+    }
+
+    row.appendChild(varList);
+    grid.appendChild(row);
+  }
+}
+
+function markUploaded(part, variant, src) {
+  const preview = document.getElementById(`preview-${part}-${variant}`);
+  const delBtn  = document.getElementById(`del-${part}-${variant}`);
+  if (!preview) return;
+  // Update thumbnail
+  preview.innerHTML = '';
+  const thumb = document.createElement('img');
+  thumb.src = src; thumb.style.cssText = 'max-width:100%;max-height:100%;image-rendering:pixelated;';
+  preview.appendChild(thumb); preview.classList.add('uploaded');
+  if (delBtn) delBtn.style.display = '';
+  // Cache for live canvas rendering
+  const img = new Image();
+  img.onload = () => { _spriteImages[`${part}:${variant}`] = img; };
+  img.src = src;
+}
+
+function markRemoved(part, variant) {
+  const preview = document.getElementById(`preview-${part}-${variant}`);
+  const delBtn  = document.getElementById(`del-${part}-${variant}`);
+  if (!preview) return;
+  preview.innerHTML = ''; preview.classList.remove('uploaded');
+  preview.textContent = variant[0].toUpperCase();
+  if (delBtn) delBtn.style.display = 'none';
+  delete _spriteImages[`${part}:${variant}`];
+}
+
+async function uploadSprite(part, variant, file) {
+  const form = new FormData(); form.append('file', file);
+  const res = await fetch(`/api/sprites/upload/${part}/${variant}`, { method:'POST', body:form });
+  if (res.ok) {
+    const data = await res.json();
+    markUploaded(part, variant, data.path + '?t=' + Date.now());
+    showStatus('Uploaded ' + part + '/' + variant, 'ok');
+  } else {
+    showStatus('Upload failed: ' + (await res.text()), 'err');
+  }
+}
+
+async function deleteSprite(part, variant) {
+  const res = await fetch(`/api/sprites/upload/${part}/${variant}`, { method:'DELETE' });
+  if (res.ok) { markRemoved(part, variant); showStatus('Removed ' + part + '/' + variant, 'ok'); }
+  else { showStatus('Delete failed', 'err'); }
+}
+
+function pasteSprite(part, variant) {
+  // Clear any previously armed slot
+  if (_pasteTarget) {
+    const prev = document.getElementById(`preview-${_pasteTarget.part}-${_pasteTarget.variant}`);
+    if (prev) prev.classList.remove('paste-ready');
+  }
+  _pasteTarget = { part, variant };
+  const preview = document.getElementById(`preview-${part}-${variant}`);
+  if (preview) preview.classList.add('paste-ready');
+  showStatus(`Ready — press Ctrl+V to paste into ${part} / ${variant}`, 'ok');
+}
+// Actual paste is handled by the document-level listener registered in DOMContentLoaded.
+// Using clipboardData.items (no permission required) rather than navigator.clipboard.read().
+
+// ══════════════════════════════════════════════════════════════
+//  SAVE / EXPORT
+// ══════════════════════════════════════════════════════════════
+
+function buildExportJSON() {
+  const skeleton = _rigBones.map(b => ({
+    name:b.name, parent:b.parent, restX:b.restX, restY:b.restY,
+    pivotX:b.pivotX, pivotY:b.pivotY, length:b.length, zOrder:b.zOrder,
+    displayScale: b.displayScale || 1,
+    pivotOffsetX: b.pivotOffsetX || 0, pivotOffsetY: b.pivotOffsetY || 0,
+  }));
+  const m = buildManifest(_rigBones);
+  const sprites = {};
+  for (const [k, v] of Object.entries(m)) {
+    const sc = (_boneMap[v.bone] && _boneMap[v.bone].displayScale) || 1;
+    sprites[k] = {
+      bone:v.bone, width:Math.round(v.w * sc), height:Math.round(v.h * sc),
+      offsetX:v.ox, offsetY:v.oy,
+      variants: Object.fromEntries(Object.keys(v.variants).map(vk => [vk, `sprites/${k}_${vk}.png`]))
+    };
+  }
+  return { skeleton, sprites };
+}
+
+async function saveToTamAGI() {
+  const body = buildExportJSON();
+  const res = await fetch('/api/sprites/config', {
+    method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+  });
+  if (res.ok) {
+    showStatus('Saved! Reload TamAGI to see the new rig.', 'ok');
+  } else {
+    showStatus('Save failed: ' + (await res.text()), 'err');
+  }
+}
+
+function toggleExport() {
+  _showExport = !_showExport;
+  const pre = document.getElementById('export-pre');
+  const btn = document.getElementById('export-toggle-btn');
+  if (_showExport) {
+    pre.textContent = JSON.stringify(buildExportJSON(), null, 2);
+    pre.style.display = '';
+    btn.textContent = 'Hide JSON';
+  } else {
+    pre.style.display = 'none';
+    btn.textContent = 'Show JSON';
+  }
+}
+
+function showStatus(msg, type) {
+  const el = document.getElementById('save-status');
+  el.textContent = msg; el.className = 'status-msg ' + type; el.style.display = '';
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  LOAD EXISTING CONFIG FROM TAMAGI
+// ══════════════════════════════════════════════════════════════
+
+async function loadFromTamAGI() {
+  try {
+    const res = await fetch('/api/sprites/config');
+    if (!res.ok) return;
+    const cfg = await res.json();
+    if (cfg.skeleton && Array.isArray(cfg.skeleton) && cfg.skeleton.length > 0) {
+      for (const saved of cfg.skeleton) {
+        const bone = _boneMap[saved.name]; if (!bone) continue;
+        bone.restX = saved.restX ?? bone.restX; bone.restY = saved.restY ?? bone.restY;
+        bone.length = saved.length ?? bone.length; bone.zOrder = saved.zOrder ?? bone.zOrder;
+        bone.displayScale = saved.displayScale ?? 1;
+        bone.pivotOffsetX = saved.pivotOffsetX ?? bone.pivotOffsetX;
+        bone.pivotOffsetY = saved.pivotOffsetY ?? bone.pivotOffsetY;
+      }
+      buildAccordion();
+      // Sync layer inputs — built before loadFromTamAGI runs, so update them in-place
+      for (const b of _rigBones) {
+        const inp = document.getElementById(`layer-${b.name}`);
+        if (inp) inp.value = b.zOrder;
+      }
+    }
+  } catch (e) { /* silent — no saved config yet */ }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════════════
+
+document.addEventListener('DOMContentLoaded', async () => {
+  // Build animation buttons
+  const animRow = document.getElementById('anim-buttons');
+  for (const name of Object.keys(ANIMATIONS)) {
+    const btn = document.createElement('button');
+    btn.textContent = name; btn.dataset.anim = name;
+    if (name === 'idle') btn.classList.add('active');
+    btn.onclick = () => setAnim(name);
+    animRow.appendChild(btn);
+  }
+
+  // Build preset buttons
+  const presetRow = document.getElementById('preset-buttons');
+  for (const [key, p] of Object.entries(PRESETS)) {
+    const btn = document.createElement('button');
+    btn.textContent = p.label; btn.dataset.preset = key;
+    if (key === 'default') btn.classList.add('active');
+    btn.onclick = () => loadPreset(key);
+    presetRow.appendChild(btn);
+  }
+
+  // Build bone accordion and sprite grid
+  buildAccordion();
+  buildSpriteGrid();
+
+  // Restore any saved skeleton config
+  await loadFromTamAGI();
+
+  // Document-level paste handler: fires when user presses Ctrl+V after arming a slot via pasteSprite()
+  // Uses clipboardData.items — no browser permission required, works with GIMP and other native apps.
+  document.addEventListener('paste', async (e) => {
+    if (!_pasteTarget) return;
+    const { part, variant } = _pasteTarget;
+    // Disarm
+    const preview = document.getElementById(`preview-${part}-${variant}`);
+    if (preview) preview.classList.remove('paste-ready');
+    _pasteTarget = null;
+
+    const items = Array.from(e.clipboardData?.items || []);
+    const imageItem = items.find(i => i.kind === 'file' && i.type.startsWith('image/'));
+    if (!imageItem) { showStatus('No image in clipboard — copy a selection first', 'err'); return; }
+
+    e.preventDefault();
+    const blob = imageItem.getAsFile();
+    const file = new File([blob], `${part}_${variant}.png`, { type: 'image/png' });
+    await uploadSprite(part, variant, file);
+  });
+
+  // Clicking anywhere outside a slot cancels the armed paste target
+  document.addEventListener('click', (e) => {
+    if (!_pasteTarget) return;
+    if (e.target.closest('.variant-slot')) return; // inside a slot, keep armed
+    const preview = document.getElementById(`preview-${_pasteTarget.part}-${_pasteTarget.variant}`);
+    if (preview) preview.classList.remove('paste-ready');
+    _pasteTarget = null;
+  }, true);
+
+  // Start animation loop
+  requestAnimationFrame(rigTick);
+});
+</script>
+</body>
+</html>

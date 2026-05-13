@@ -47,6 +47,7 @@ from backend.api.dreams import router as dreams_router, set_dream_engine
 from backend.api.auth import router as auth_router
 from backend.api.self_model import router as self_model_router
 from backend.api.monologue import router as monologue_router, set_monologue_log, set_motivation_engine as set_monologue_motivation
+from backend.api.sprites import router as sprites_router
 from backend.core.monologue import MonologueLog
 
 # ── Logging ───────────────────────────────────────────────────
@@ -345,6 +346,12 @@ app.include_router(onboarding_router)
 app.include_router(dreams_router)
 app.include_router(self_model_router)
 app.include_router(monologue_router)
+app.include_router(sprites_router)
+
+# Serve user sprite PNGs — directory is created eagerly so the mount always succeeds.
+_sprites_data_dir = Path("data/sprites")
+_sprites_data_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/sprites", StaticFiles(directory=str(_sprites_data_dir)), name="sprites")
 
 # Serve frontend static files
 frontend_path = Path(__file__).parent.parent / "frontend"
@@ -362,8 +369,11 @@ if frontend_path.exists():
 
     @app.get("/login")
     async def login_page():
-        # Serve the standalone login page (exempt from auth middleware above)
         return FileResponse(frontend_path / "login.html")
+
+    @app.get("/rig-editor")
+    async def rig_editor_page():
+        return FileResponse(frontend_path / "rig-editor.html")
 
     @app.get("/self-model")
     async def self_model_page():

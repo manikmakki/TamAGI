@@ -195,6 +195,12 @@ autonomy:
   weights: [30, 25, 25, 20]
 ```
 
+## Avatar Customization
+
+TamAGI's avatar is a skeleton-rigged canvas character. You can replace any body part with your own PNG artwork using the included rig editor tool.
+
+→ **[docs/sprite-customization.md](docs/sprite-customization.md)** — full guide: running the rig editor, exporting a skeleton config, and uploading custom sprites.
+
 ## Skills System
 
 TamAGI comes with 4 built-in skills and an extensible framework for creating more:

@@ -92,101 +92,15 @@
     }
 
 
-    /* SVG pixel-art sprite */
-    .sprite-svg {
+    /* Skeleton rig canvas avatar */
+    .sprite-canvas {
+      display: block;
       position: relative;
       z-index: 1;
-      width: clamp(80px, 14vmin, 130px);
+      width: clamp(110px, 19vmin, 175px);
       height: auto;
-      display: block;
-      shape-rendering: crispEdges;
-      /* Allow filter effects (drop-shadow glow) to bleed outside the SVG boundary.
-         Without this, SVG clips its own rendering to the viewBox edge. */
-      overflow: visible;
+      image-rendering: pixelated;
     }
-
-    /* ── Per-group color-matched glows ──────────────────────────────────────────
-       Each group only contains pixels of one palette color so the drop-shadow
-       picks up that color and glows in it, replicating the terminal text-shadow
-       look where each character contributed its own color glow.              */
-
-    /* Per-group glows — keep radii small so they hug the pixels and don't bleed
-       into adjacent groups. At ~8 CSS px per SVG unit, 1px = just outside the
-       pixel edge; 3px = a tight halo. Larger values flood the whole sprite. */
-
-    /* Green glow — outline pixels (palette 1: --accent #00ff9d) */
-    #sp-head, #sp-arm-l, #sp-arm-r, #sp-torso, #sp-legs {
-      filter: drop-shadow(0 0 1px var(--accent))
-              drop-shadow(0 0 1px rgba(0,255,157,0.4));
-    }
-    /* Pink glow — face features (palette 3: --accent-secondary #ff6b9d) */
-    #sp-face {
-      filter: drop-shadow(0 0 1px var(--accent-secondary))
-              drop-shadow(0 0 1px rgba(255,107,157,0.5));
-    }
-    /* Blue glow — torso detail when showing glow/pulse (palette 4: --accent-tertiary) */
-    #sp-torso-fx[data-torso="glow"],
-    #sp-torso-fx[data-torso="pulse"] {
-      filter: drop-shadow(0 0 1px var(--accent-tertiary))
-              drop-shadow(0 0 1px rgba(107,138,255,0.5));
-    }
-    /* Dim glow — barely visible when sad/tired */
-    #sp-torso-fx[data-torso="dim"] {
-      filter: drop-shadow(0 0 1px rgba(42,42,80,0.6));
-    }
-
-    /* Arm transform origins — pivot at shoulder joint in SVG viewBox coordinates */
-    #sp-arm-l { transform-origin: 3px 9px; }
-    #sp-arm-r { transform-origin: 13px 9px; }
-
-    /* Whole-body animations apply to the SVG element itself so all parts move together.
-       Part-specific animations (arms, torso) are layered on top via child selectors. */
-
-    /* Whole-body idle breathing / bounce — translateY on the SVG root */
-    #sprite-box[data-pose="idle"]    { animation: body-breathe 3s ease-in-out infinite; }
-    #sprite-box[data-pose="happy"]   { animation: body-breathe 2.2s ease-in-out infinite; }
-    #sprite-box[data-pose="tired"]   { animation: body-breathe 5s ease-in-out infinite; }
-    #sprite-box[data-pose="excited"],
-    #sprite-box[data-pose="celebrate"] { animation: body-hop 0.4s ease-in-out infinite alternate; }
-    #sprite-box[data-pose="sad"]     { animation: body-droop 1.4s ease-out forwards; }
-
-    /* Part-specific animations layered on top of whole-body motion */
-    #sprite-box[data-pose="wave"]      #sp-arm-r { animation: arm-wave 0.7s ease-in-out infinite; }
-    #sprite-box[data-pose="thinking"]  #sp-arm-l { animation: arm-raise 0.5s ease-out forwards; }
-    #sprite-box[data-pose="celebrate"] #sp-arm-l { animation: arm-cheer 0.5s ease-in-out infinite alternate; }
-    #sprite-box[data-pose="celebrate"] #sp-arm-r { animation: arm-cheer 0.5s ease-in-out infinite alternate-reverse; }
-    #sprite-box[data-pose="working"]   #sp-torso { animation: torso-pulse 1.2s ease-in-out infinite; }
-
-    /* Pose-driven CSS animations — triggered by data-pose on the SVG root */
-    /* [data-pose="idle"]      #sp-head  { animation: head-bob 3s ease-in-out infinite; } */
-    /* [data-pose="happy"]     #sp-head  { animation: head-bob 2s ease-in-out infinite; } */
-    /* [data-pose="excited"]   #sp-head  { animation: head-bounce 0.4s ease-in-out infinite alternate; } */
-    /* [data-pose="excited"]   #sp-legs  { animation: leg-hop 0.45s ease-in-out infinite alternate; } */
-    /* [data-pose="wave"]      #sp-arm-r { animation: arm-wave 0.7s ease-in-out infinite; } */
-    /* [data-pose="thinking"]  #sp-arm-l { animation: arm-raise 0.5s ease-out forwards; } */
-    /* [data-pose="celebrate"] #sp-arm-l { animation: arm-cheer 0.5s ease-in-out infinite alternate; } */
-    /* [data-pose="celebrate"] #sp-arm-r { animation: arm-cheer 0.5s ease-in-out infinite alternate-reverse; } */
-    /* [data-pose="celebrate"] #sp-legs  { animation: leg-hop 0.4s ease-in-out infinite alternate; } */
-    /* [data-pose="sad"]       #sp-head  { animation: head-droop 1.2s ease-out forwards; } */
-    /* [data-pose="tired"]     #sp-head  { animation: head-bob 5s ease-in-out infinite; } */
-    /* [data-pose="working"]   #sp-torso { animation: torso-pulse 1.2s ease-in-out infinite; } */
-
-    /* @keyframes head-bob    { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-0.4px)} }
-    @keyframes head-bounce { from{transform:translateY(0)} to{transform:translateY(-1.5px)} }
-    @keyframes head-droop  { from{transform:translateY(0)} to{transform:translateY(0.8px) rotate(3deg)} }
-    @keyframes leg-hop     { from{transform:translateY(0)} to{transform:translateY(-1px)} }
-    @keyframes arm-wave    { 0%{transform:rotate(0deg)} 50%{transform:rotate(28deg)} 100%{transform:rotate(0deg)} }
-    @keyframes arm-raise   { from{transform:rotate(0deg)} to{transform:rotate(-45deg)} }
-    @keyframes arm-cheer   { from{transform:rotate(-25deg)} to{transform:rotate(15deg)} }
-    @keyframes torso-pulse { 0%,100%{opacity:1} 50%{opacity:0.6} } */
-
-    @keyframes body-breathe { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-1.5px)} }
-    @keyframes body-hop     { from{transform:translateY(0)} to{transform:translateY(-3px)} }
-    @keyframes body-droop   { from{transform:translateY(0)} to{transform:translateY(1.5px)} }
-    @keyframes arm-wave     { 0%{transform:rotate(0deg)} 50%{transform:rotate(28deg)} 100%{transform:rotate(0deg)} }
-    @keyframes arm-raise    { from{transform:rotate(0deg)} to{transform:rotate(-45deg)} }
-    @keyframes arm-cheer    { from{transform:rotate(-25deg)} to{transform:rotate(15deg)} }
-    @keyframes torso-pulse  { 0%,100%{opacity:1} 50%{opacity:0.6} }
 
     .avatar-name {
       position: relative; z-index: 1;
@@ -574,6 +488,9 @@
     .drawer-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
     .drawer-panel.hidden { display: none; }
     .drawer-empty { padding: 20px 12px; font-size: 10px; color: var(--text-muted); text-align: center; line-height: 1.6; }
+    .drawer-nav { border-top: 1px solid var(--border); padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+    .drawer-nav-link { display: block; padding: 6px 10px; font-size: 10px; font-family: var(--font-mono); color: var(--text-muted); text-decoration: none; border-radius: 4px; letter-spacing: 0.04em; transition: color 0.15s, background 0.15s; }
+    .drawer-nav-link:hover { color: var(--accent-primary); background: var(--bg-tertiary); }
 
     /* ═══ DREAMS PANEL ═══ */
     .dream-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 6px; }
@@ -742,7 +659,7 @@
       .msg { max-width: 65%; }
     }
     @media (min-height: 900px) {
-      .sprite-svg { width: clamp(100px, 16vmin, 160px); }
+      .sprite-canvas { width: clamp(135px, 22vmin, 215px); }
     }
 
     /* ═══ HORIZONTAL LAYOUT MODE ═══ */
@@ -931,6 +848,11 @@
       <div class="drawer-empty">Search your memories...</div>
     </div>
   </div>
+
+  <div class="drawer-nav">
+    <a href="/rig-editor" onclick="closeDrawer()" class="drawer-nav-link">▦ Rig Editor</a>
+    <a href="/self-model" onclick="closeDrawer()" class="drawer-nav-link">◈ Self-Model</a>
+  </div>
 </aside>
 
 <!-- APP -->
@@ -954,17 +876,7 @@
     <div class="avatar-content">
       <!-- Sprite + name -->
       <div class="avatar-sprite-col">
-        <!-- Pixel-art SVG sprite — parts rendered by JS from SPRITE_PARTS library -->
-        <svg id="sprite-box" class="sprite-svg" viewBox="0 0 16 26"
-             data-pose="idle" xmlns="http://www.w3.org/2000/svg">
-          <g id="sp-head"></g>        <!-- head shell: green glow -->
-          <g id="sp-face"></g>        <!-- face features: pink glow -->
-          <g id="sp-arm-l"></g>       <!-- left arm: green glow -->
-          <g id="sp-torso"></g>       <!-- torso shell: green glow -->
-          <g id="sp-torso-fx"></g>    <!-- torso detail: glow color matches content -->
-          <g id="sp-arm-r"></g>       <!-- right arm: green glow -->
-          <g id="sp-legs"></g>        <!-- legs: green glow -->
-        </svg>
+        <canvas id="sprite-box" class="sprite-canvas" width="300" height="320"></canvas>
         <div class="avatar-name" id="a-name">Tama</div>
         <div class="avatar-subtitle" id="a-subtitle">EGG &mdash; Level 1</div>
       </div>
@@ -1110,264 +1022,391 @@ async function logout(){
   window.location.replace('/login');
 }
 
-// ═══ PIXEL-ART SPRITE SYSTEM ═══════════════════════════════════════════════
-// Each part is a 2D array of palette indices. The renderer draws one SVG <rect>
-// per non-zero cell. Parts are assembled from the SPRITE_PARTS library based on
-// the pose_parts dict sent by the backend.
-//
-// Palette: 0=transparent, 1=--accent (green), 2=--bg-elevated (body fill),
-//          3=--accent-secondary (pink, face features), 4=--accent-tertiary (blue),
-//          5=--border-bright (shadow)
+// ═══ SKELETON RIG SYSTEM ════════════════════════════════════════════════════
+// Canvas-based bone animation ported from scripts/skeleton_rig.jsx.
+// Driven automatically by backend pose_change events — no UI controls exposed.
 
-// Palette index 2 is transparent so the ambient glow backdrop shows through the body interior.
-const PALETTE=['none','var(--accent)','transparent','var(--accent-secondary)','var(--accent-tertiary)','var(--border-bright)'];
+// ── Bone factory ─────────────────────────────────────────────────────────────
+function createBone(name,parent,restX,restY,pivotX,pivotY,length,zOrder=0){
+  return{name,parent,restX,restY,pivotX,pivotY,length,zOrder,
+    rotation:0,scaleX:1,scaleY:1,translateX:0,translateY:0,opacity:1,
+    displayScale:1,pivotOffsetX:0,pivotOffsetY:0};
+}
+const _PIVOT_DEFAULTS={arm_left:{pivotOffsetY:0.5},arm_right:{pivotOffsetY:0.5},leg_left:{pivotOffsetY:0.5},leg_right:{pivotOffsetY:0.5}};
+function applyPivotDefaults(bones){for(const b of bones){if(_PIVOT_DEFAULTS[b.name])Object.assign(b,_PIVOT_DEFAULTS[b.name]);}return bones;}
 
-const SPRITE_PARTS={
-  // ── Head shell (fixed outline, 16×8, rendered at offset 0,0) ──
-  head_shell:[
-    [0,0,0,0,0,4,4,4,0,4,4,4,4,0,0,0],
-    [0,0,0,4,4,4,4,4,4,4,4,4,4,0,0,0],
-    [0,0,0,4,4,4,0,4,4,0,4,4,4,0,0,0],
-    [0,0,0,4,0,0,0,0,0,0,0,0,1,0,0,0],
-    [0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0],
-    [0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0],
-    [0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0],
-    [0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0],
-  ],
-  // ── Face expressions (overlay on head, 16×8, sparse — non-zero pixels show on top) ──
-  face:{
-    neutral:[
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,3,0,0,0,3,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,3,3,3,3,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
-    happy:[
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,3,3,0,0,0,3,3,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,3,3,3,3,3,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
-    sad:[
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,3,0,0,0,3,0,0,0,0,0,0],
-      [0,0,0,0,3,0,0,0,0,0,3,0,0,0,0,0],
-      [0,0,0,0,0,3,3,3,3,0,0,0,0,0,0,0],
-      [0,0,0,0,3,0,0,0,0,3,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
-    excited:[
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,3,0,0,0,0,3,0,0,0,0,0],
-      [0,0,0,0,3,0,3,0,0,3,0,3,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,3,0,0,0,0,0,0,3,0,0,0,0],
-      [0,0,0,0,0,3,3,3,3,3,3,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
-    thinking:[
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,3,0,0,3,3,0,0,0,0,0,0],
-      [0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
-    sleepy:[
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,3,3,0,0,0,3,3,0,0,0,0,0],
-      [0,0,0,0,0,3,3,3,3,3,0,0,0,0,0,0],
-      [0,0,0,0,5,0,0,0,0,0,5,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
-    wink:[
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,3,3,0,0,0,3,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0],
-      [0,0,0,0,0,0,3,3,3,3,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
+// ── Skeleton presets ──────────────────────────────────────────────────────────
+const PRESETS={
+  default:{label:'Default',bones:()=>[
+    createBone('root',null,0,0,0,0,0,0),
+    createBone('body','root',0,-10,0,22,44,2),
+    createBone('neck','body',0,-22,0,4,10,4),
+    createBone('head','neck',0,-9,0,14,28,5),
+    createBone('eye_left','head',-7,-4,0,0,0,6),
+    createBone('eye_right','head',7,-4,0,0,0,6),
+    createBone('mouth','head',0,6,0,0,0,7),
+    createBone('arm_left','body',-20,-18,4,-2,22,1),
+    createBone('hand_left','arm_left',-1,20,0,-1,8,1),
+    createBone('arm_right','body',20,-18,-4,-2,22,3),
+    createBone('hand_right','arm_right',1,20,0,-1,8,3),
+    createBone('leg_left','root',-7,12,0,-1,18,0),
+    createBone('foot_left','leg_left',0,17,0,-1,6,-1),
+    createBone('leg_right','root',7,12,0,-1,18,0),
+    createBone('foot_right','leg_right',0,17,0,-1,6,-1),
+    createBone('accessory','head',0,-16,0,4,0,8),
+  ]},
+  chibi:{label:'Chibi',bones:()=>[
+    createBone('root',null,0,0,0,0,0,0),
+    createBone('body','root',0,-6,0,14,28,2),
+    createBone('neck','body',0,-14,0,2,4,4),
+    createBone('head','neck',0,-4,0,18,38,5),
+    createBone('eye_left','head',-10,-2,0,0,0,6),
+    createBone('eye_right','head',10,-2,0,0,0,6),
+    createBone('mouth','head',0,8,0,0,0,7),
+    createBone('arm_left','body',-14,-10,3,-1,14,1),
+    createBone('hand_left','arm_left',-1,13,0,-1,6,1),
+    createBone('arm_right','body',14,-10,-3,-1,14,3),
+    createBone('hand_right','arm_right',1,13,0,-1,6,3),
+    createBone('leg_left','root',-6,8,0,-1,10,0),
+    createBone('foot_left','leg_left',0,10,0,-1,4,-1),
+    createBone('leg_right','root',6,8,0,-1,10,0),
+    createBone('foot_right','leg_right',0,10,0,-1,4,-1),
+    createBone('accessory','head',0,-20,0,4,0,8),
+  ]},
+  tall:{label:'Tall',bones:()=>[
+    createBone('root',null,0,0,0,0,0,0),
+    createBone('body','root',0,-14,0,26,52,2),
+    createBone('neck','body',0,-26,0,6,14,4),
+    createBone('head','neck',0,-12,0,12,24,5),
+    createBone('eye_left','head',-6,-3,0,0,0,6),
+    createBone('eye_right','head',6,-3,0,0,0,6),
+    createBone('mouth','head',0,5,0,0,0,7),
+    createBone('arm_left','body',-18,-22,4,-2,28,1),
+    createBone('hand_left','arm_left',-1,26,0,-1,10,1),
+    createBone('arm_right','body',18,-22,-4,-2,28,3),
+    createBone('hand_right','arm_right',1,26,0,-1,10,3),
+    createBone('leg_left','root',-7,16,0,-1,26,0),
+    createBone('foot_left','leg_left',0,24,0,-1,8,-1),
+    createBone('leg_right','root',7,16,0,-1,26,0),
+    createBone('foot_right','leg_right',0,24,0,-1,8,-1),
+    createBone('accessory','head',0,-14,0,4,0,8),
+  ]},
+  stocky:{label:'Stocky',bones:()=>[
+    createBone('root',null,0,0,0,0,0,0),
+    createBone('body','root',0,-8,0,20,40,2),
+    createBone('neck','body',0,-20,0,2,5,4),
+    createBone('head','neck',0,-5,0,13,26,5),
+    createBone('eye_left','head',-7,-3,0,0,0,6),
+    createBone('eye_right','head',7,-3,0,0,0,6),
+    createBone('mouth','head',0,5,0,0,0,7),
+    createBone('arm_left','body',-24,-16,5,-2,18,1),
+    createBone('hand_left','arm_left',-2,16,0,-1,9,1),
+    createBone('arm_right','body',24,-16,-5,-2,18,3),
+    createBone('hand_right','arm_right',2,16,0,-1,9,3),
+    createBone('leg_left','root',-9,10,0,-1,14,0),
+    createBone('foot_left','leg_left',0,13,0,-1,7,-1),
+    createBone('leg_right','root',9,10,0,-1,14,0),
+    createBone('foot_right','leg_right',0,13,0,-1,7,-1),
+    createBone('accessory','head',0,-14,0,4,0,8),
+  ]},
+};
+
+// ── Sprite manifest ───────────────────────────────────────────────────────────
+function buildManifest(bones){
+  const defs={
+    body:      {bone:'body',      wRatio:0.9, hRatio:1.0, variants:{default:null}},
+    head:      {bone:'head',      wRatio:1.3, hRatio:1.1, variants:{default:null}},
+    eye_left:  {bone:'eye_left',  wBase:7,    hBase:7,    variants:{open:null,closed:null,happy:null}},
+    eye_right: {bone:'eye_right', wBase:7,    hBase:7,    variants:{open:null,closed:null,happy:null}},
+    mouth:     {bone:'mouth',     wBase:10,   hBase:6,    variants:{neutral:null,happy:null,sad:null,open:null,talking:null}},
+    arm_left:  {bone:'arm_left',  wRatio:0.55,hRatio:1.1, variants:{default:null}},
+    arm_right: {bone:'arm_right', wRatio:0.55,hRatio:1.1, variants:{default:null}},
+    hand_left: {bone:'hand_left', wBase:10,   hBase:10,   variants:{default:null}},
+    hand_right:{bone:'hand_right',wBase:10,   hBase:10,   variants:{default:null}},
+    leg_left:  {bone:'leg_left',  wRatio:0.6, hRatio:1.1, variants:{default:null}},
+    leg_right: {bone:'leg_right', wRatio:0.6, hRatio:1.1, variants:{default:null}},
+    foot_left: {bone:'foot_left', wBase:14,   hBase:8,    variants:{default:null}},
+    foot_right:{bone:'foot_right',wBase:14,   hBase:8,    variants:{default:null}},
+    accessory: {bone:'accessory', wBase:36,   hBase:20,   variants:{default:null}},
+  };
+  const boneMap={};bones.forEach(b=>boneMap[b.name]=b);
+  const manifest={};
+  for(const[part,def]of Object.entries(defs)){
+    const bone=boneMap[def.bone];if(!bone)continue;
+    const w=def.wBase||Math.max(8,Math.round(bone.length*(def.wRatio||0.5)));
+    const h=def.hBase||Math.max(8,Math.round(bone.length*(def.hRatio||1.0)));
+    manifest[part]={bone:def.bone,w,h,ox:0,oy:0,variants:def.variants};
+  }
+  return manifest;
+}
+
+// ── Procedural placeholder sprites ───────────────────────────────────────────
+function drawPlaceholder(ctx,partName,variant,w,h){
+  const P={
+    skin:'#f5d6a8',skinDark:'#d4a870',
+    body:'#5b8fb9',bodyDark:'#3d6d8f',
+    eye:'#2d2d2d',eyeWhite:'#ffffff',
+    mouth:'#c75050',mouthDark:'#8b3030',
+    hair:'#6b4e3d',shoe:'#4a4a5a',
+  };
+  ctx.imageSmoothingEnabled=false;
+  const fillR=(x,y,rw,rh,color,r)=>{
+    ctx.fillStyle=color;ctx.beginPath();
+    ctx.roundRect(x,y,rw,rh,r||3);ctx.fill();
+  };
+  switch(partName){
+    case'body':
+      fillR(2,0,w-4,h-2,P.body,5);fillR(4,2,w-8,h-6,P.bodyDark,3);
+      fillR(6,4,w-12,h-10,P.body,2);fillR(w*0.25,0,w*0.5,6,P.skin,2);break;
+    case'head':
+      fillR(2,2,w-4,h-4,P.skin,[10,10,6,6]);fillR(1,0,w-2,h*0.4,P.hair,[10,10,2,2]);
+      fillR(0,h/2-3,4,6,P.skinDark,2);fillR(w-4,h/2-3,4,6,P.skinDark,2);break;
+    case'eye_left':case'eye_right':
+      if(variant==='closed'){ctx.fillStyle=P.eye;ctx.fillRect(1,h/2,w-2,2);}
+      else if(variant==='happy'){ctx.strokeStyle=P.eye;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(w/2,h/2+1,2.5,Math.PI,2*Math.PI);ctx.stroke();}
+      else{fillR(0,0,w,h,P.eyeWhite,3);ctx.fillStyle=P.eye;ctx.beginPath();ctx.arc(w/2,h/2,2.2,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(w/2+1,h/2-1,1,1);}
+      break;
+    case'mouth':
+      if(variant==='happy'){ctx.strokeStyle=P.mouth;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(w/2,h/2-1,3.5,0.2,Math.PI-0.2);ctx.stroke();}
+      else if(variant==='sad'){ctx.strokeStyle=P.mouthDark;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(w/2,h/2+3,3.5,Math.PI+0.3,-0.3);ctx.stroke();}
+      else if(variant==='open'||variant==='talking'){fillR(w/2-3,0,6,h,P.mouthDark,3);fillR(w/2-2,1,4,h-2,P.mouth,2);}
+      else{ctx.fillStyle=P.mouth;ctx.fillRect(w/2-3,h/2,6,1.5);}
+      break;
+    case'arm_left':case'arm_right':
+      fillR(1,0,w-2,h,P.body,4);fillR(2,1,w-4,h-2,P.bodyDark,3);break;
+    case'hand_left':case'hand_right':
+      fillR(1,1,w-2,h-2,P.skin,3);fillR(2,2,w-4,h-4,P.skinDark,2);break;
+    case'leg_left':case'leg_right':
+      fillR(1,0,w-2,h,P.bodyDark,3);break;
+    case'foot_left':case'foot_right':
+      fillR(0,0,w+2,h+2,P.shoe,3);break;
+    case'accessory':
+      fillR(0,Math.round(h*.45),w,Math.round(h*.55),P.hair,2);
+      fillR(Math.round(w*.2),0,Math.round(w*.6),Math.round(h*.55),P.hair,[4,4,0,0]);
+      break;
+  }
+}
+
+// ── Animations ────────────────────────────────────────────────────────────────
+const ANIMATIONS={
+  idle:(bones,t)=>{
+    const m={};bones.forEach(b=>m[b.name]=b);
+    const breathe=Math.sin(t*2)*0.5;
+    m.body.translateY=breathe;m.body.rotation=Math.sin(t*1.2)*0.3*(Math.PI/180);
+    if(m.neck)m.neck.rotation=Math.sin(t*0.9)*1*(Math.PI/180);
+    m.head.rotation=Math.sin(t*0.8)*1.5*(Math.PI/180);m.head.translateY=breathe*0.3;
+    m.arm_left.rotation=Math.sin(t*1.5)*2*(Math.PI/180);
+    m.arm_right.rotation=Math.sin(t*1.5+0.5)*-2*(Math.PI/180);
+    const bc=t%4;
+    return{eye_left:bc>3.7&&bc<3.9?'closed':'open',eye_right:bc>3.7&&bc<3.9?'closed':'open',mouth:'neutral'};
   },
-  // ── Torso shell (16×8, rendered at offset 0,8) ──
-  torso_shell:[
-    [0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0],
-    [0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0],
-    [0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0],
-    [0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0],
-    [0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0],
-    [0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0],
-    [0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0],
-    [0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0],
-  ],
-  // ── Torso content overlays (16×8, sparse) ──
-  torso:{
-    normal:Array(8).fill(Array(16).fill(0)),
-    glow:[
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,3,3,0,3,3,0,0,0,0,0,0],
-      [0,0,0,0,0,3,3,3,3,3,0,0,0,0,0,0],
-      [0,0,0,0,0,0,3,3,3,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
-    pulse:[
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,4,4,4,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
-    dim:[
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,5,0,0,0,5,0,0,0,0,0,0],
-      [0,0,0,0,0,0,5,1,5,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,1,5,1,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,5,1,5,0,0,0,0,0,0,0],
-      [0,0,0,0,0,5,0,0,0,5,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
+  happy:(bones,t)=>{
+    const m={};bones.forEach(b=>m[b.name]=b);
+    const bounce=Math.abs(Math.sin(t*3))*3;
+    m.body.translateY=-bounce;m.body.rotation=Math.sin(t*4)*3*(Math.PI/180);
+    if(m.neck)m.neck.rotation=Math.sin(t*3)*2*(Math.PI/180);
+    m.head.rotation=Math.sin(t*2)*4*(Math.PI/180);m.head.translateY=-bounce*0.5;
+    m.arm_left.rotation=Math.sin(t*3)*15*(Math.PI/180);
+    m.arm_right.rotation=Math.sin(t*3+Math.PI)*15*(Math.PI/180);
+    m.hand_left.rotation=Math.sin(t*4)*10*(Math.PI/180);
+    m.hand_right.rotation=Math.sin(t*4+Math.PI)*10*(Math.PI/180);
+    return{eye_left:'happy',eye_right:'happy',mouth:'happy'};
   },
-  // ── Arms: {l, r} pairs (3×8, arm-l at xOffset=0, arm-r at xOffset=13, yOffset=8) ──
-  arms:{
-    neutral:{
-      l:[[0,0,0],[0,0,1],[0,1,2],[1,2,0],[0,1,0],[0,0,0],[0,0,0],[0,0,0]],
-      r:[[0,0,0],[1,0,0],[2,1,0],[0,2,1],[0,1,0],[0,0,0],[0,0,0],[0,0,0]],
-    },
-    raised:{
-      l:[[0,1,0],[1,2,0],[0,1,0],[0,0,1],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
-      r:[[0,1,0],[0,2,1],[0,1,0],[1,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
-    },
-    wave_r:{
-      l:[[0,0,0],[0,0,1],[0,1,2],[1,2,0],[0,1,0],[0,0,0],[0,0,0],[0,0,0]],
-      r:[[0,0,1],[0,1,2],[1,2,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
-    },
-    wave_l:{
-      l:[[1,0,0],[2,1,0],[0,2,1],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
-      r:[[0,0,0],[1,0,0],[2,1,0],[0,2,1],[0,1,0],[0,0,0],[0,0,0],[0,0,0]],
-    },
-    reach:{
-      l:[[1,0,0],[2,0,0],[2,0,0],[1,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
-      r:[[0,0,1],[0,0,2],[0,0,2],[0,0,1],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],
-    },
+  sad:(bones,t)=>{
+    const m={};bones.forEach(b=>m[b.name]=b);
+    m.body.translateY=2+Math.sin(t*0.8)*0.3;m.body.rotation=Math.sin(t*0.5)*0.5*(Math.PI/180);
+    if(m.neck)m.neck.rotation=-3*(Math.PI/180);
+    m.head.rotation=-5*(Math.PI/180)+Math.sin(t*0.6)*1*(Math.PI/180);m.head.translateY=2;
+    m.arm_left.rotation=8*(Math.PI/180);m.arm_right.rotation=-8*(Math.PI/180);
+    return{eye_left:'closed',eye_right:'closed',mouth:'sad'};
   },
-  // ── Legs (16×10, rendered at offset 0,16) ──
-  legs:{
-    standing:[
-      [0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0],
-      [0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0],
-      [0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0],
-      [0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0],
-      [0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0],
-      [0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0],
-      [0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0],
-      [0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0],
-      [0,0,1,0,0,1,0,0,0,0,1,0,0,1,0,0],
-      [0,0,1,1,1,1,0,0,0,0,1,1,1,1,0,0],
-    ],
-    // CSS leg-hop animation does the visual movement
-    hop:[
-      [0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0],
-      [0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0],
-      [0,0,0,1,0,1,0,0,0,0,1,0,1,0,0,0],
-      [0,1,1,1,0,1,0,0,1,1,1,0,1,0,0,0],
-      [1,0,0,1,0,1,0,1,0,0,1,0,1,0,0,0],
-      [0,1,0,1,0,1,0,0,1,0,1,0,1,0,0,0],
-      [0,1,0,1,0,1,0,0,1,0,1,0,1,0,0,0],
-      [0,0,1,0,1,0,0,0,0,1,0,1,0,0,0,0],
-      [0,0,1,1,1,0,0,0,0,1,1,1,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    ],
+  talking:(bones,t)=>{
+    const m={};bones.forEach(b=>m[b.name]=b);
+    m.body.translateY=Math.sin(t*2)*0.5;
+    if(m.neck)m.neck.rotation=Math.sin(t*2.5)*1.5*(Math.PI/180);
+    m.head.rotation=Math.sin(t*3)*2*(Math.PI/180);
+    m.arm_right.rotation=(Math.sin(t*2.5)*12-5)*(Math.PI/180);
+    m.hand_right.rotation=Math.sin(t*2.5)*15*(Math.PI/180);
+    m.arm_left.rotation=5*(Math.PI/180);
+    const mc=t%0.6;
+    return{eye_left:'open',eye_right:'open',mouth:mc<0.3?'open':'neutral'};
+  },
+  wave:(bones,t)=>{
+    const m={};bones.forEach(b=>m[b.name]=b);
+    m.body.translateY=Math.sin(t*2)*0.5;m.body.rotation=Math.sin(t*1.5)*1*(Math.PI/180);
+    if(m.neck)m.neck.rotation=Math.sin(t*2)*2*(Math.PI/180);
+    m.head.rotation=Math.sin(t*2)*3*(Math.PI/180);
+    m.arm_right.rotation=(-90+Math.sin(t*6)*20)*(Math.PI/180);
+    m.hand_right.rotation=Math.sin(t*8)*25*(Math.PI/180);
+    m.arm_left.rotation=3*(Math.PI/180);
+    const bc=t%3;
+    return{eye_left:bc>2.7?'closed':'happy',eye_right:bc>2.7?'closed':'happy',mouth:'happy'};
+  },
+  thinking:(bones,t)=>{
+    const m={};bones.forEach(b=>m[b.name]=b);
+    m.body.translateY=Math.sin(t*1.5)*0.3;
+    if(m.neck)m.neck.rotation=4*(Math.PI/180);
+    m.head.rotation=(8+Math.sin(t*0.7)*2)*(Math.PI/180);m.head.translateY=-1;
+    m.arm_right.rotation=(-40+Math.sin(t*0.5)*3)*(Math.PI/180);
+    m.hand_right.translateX=5;m.hand_right.translateY=-15;
+    m.arm_left.rotation=5*(Math.PI/180);
+    const lc=t%5;
+    return{eye_left:lc>4?'closed':'open',eye_right:lc>4?'closed':'open',mouth:'neutral'};
   },
 };
 
-// Render a 2D pixel grid as SVG <rect> elements into a <g> group.
-// Non-zero cells are drawn; zeros are skipped (transparent).
-// Pass clear=false to overlay a sparse grid on top of an already-rendered group.
-const SVG_NS='http://www.w3.org/2000/svg';
-function renderGrid(g,grid,xOff,yOff,clear=true){
-  if(clear)g.innerHTML='';
-  grid.forEach((row,y)=>{
-    row.forEach((px,x)=>{
-      if(!px)return;
-      const r=document.createElementNS(SVG_NS,'rect');
-      r.setAttribute('x',x+xOff);r.setAttribute('y',y+yOff);
-      r.setAttribute('width',1);r.setAttribute('height',1);
-      r.setAttribute('fill',PALETTE[px]);
-      g.appendChild(r);
-    });
-  });
+// ── World transform solver ────────────────────────────────────────────────────
+function solveWorldTransforms(bones){
+  const boneMap={};bones.forEach(b=>boneMap[b.name]=b);
+  const world={};
+  function solve(bone){
+    if(world[bone.name])return world[bone.name];
+    const lx=bone.restX+bone.translateX,ly=bone.restY+bone.translateY;
+    if(!bone.parent){world[bone.name]={x:lx,y:ly,rotation:bone.rotation,scaleX:bone.scaleX,scaleY:bone.scaleY,opacity:bone.opacity};return world[bone.name];}
+    const pw=solve(boneMap[bone.parent]);
+    const cos=Math.cos(pw.rotation),sin=Math.sin(pw.rotation);
+    world[bone.name]={
+      x:pw.x+(lx*cos-ly*sin)*pw.scaleX,
+      y:pw.y+(lx*sin+ly*cos)*pw.scaleY,
+      rotation:pw.rotation+bone.rotation,
+      scaleX:pw.scaleX*bone.scaleX,scaleY:pw.scaleY*bone.scaleY,
+      opacity:pw.opacity*bone.opacity,
+    };
+    return world[bone.name];
+  }
+  bones.forEach(b=>solve(b));
+  return world;
 }
 
-// Cache last-rendered parts to avoid redundant DOM updates
-let _renderedParts={};
+// ── Renderer ─────────────────────────────────────────────────────────────────
+function renderFrame(canvas,bones,manifest,activeVariants){
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.save();
+  ctx.translate(W/2,H/2+30);
+  const scale=2.5;
+  ctx.scale(scale,scale);
+  ctx.imageSmoothingEnabled=false;
+  const wt=solveWorldTransforms(bones);
+  const drawOrder=Object.entries(manifest)
+    .map(([pn,e])=>({pn,e,bone:bones.find(b=>b.name===e.bone),z:(bones.find(b=>b.name===e.bone)||{}).zOrder||0}))
+    .sort((a,b)=>a.z-b.z);
+  for(const{pn,e,bone}of drawOrder){
+    if(!bone||!wt[bone.name])continue;
+    const w=wt[bone.name];
+    ctx.save();
+    ctx.translate(w.x,w.y);ctx.rotate(w.rotation);ctx.scale(w.scaleX,w.scaleY);
+    ctx.globalAlpha=w.opacity;ctx.translate(e.ox,e.oy);
+    const variant=activeVariants[pn]||Object.keys(e.variants)[0];
+    const sc=bone.displayScale||1;
+    const sw=e.w*sc,sh=e.h*sc;
+    const pox=bone.pivotOffsetX||0,poy=bone.pivotOffsetY||0;
+    const imgKey=`${pn}:${variant}`;
+    ctx.save();ctx.translate(-sw/2+pox*sw,-sh/2+poy*sh);
+    if(_spriteImages[imgKey]){
+      ctx.drawImage(_spriteImages[imgKey],0,0,sw,sh);
+    }else{
+      drawPlaceholder(ctx,pn,variant,sw,sh);
+    }
+    ctx.restore();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ── Sprite image cache ────────────────────────────────────────────────────────
+// Keys: "<part>:<variant>"  e.g. "head:default", "eye_left:open"
+// Values: HTMLImageElement (only present when the image loaded successfully)
+let _spriteImages={};
+let _spriteConfig=null;
+
+async function loadSpriteConfig(){
+  try{
+    const cfg=await api('/sprites/config');
+    if(!cfg||(cfg.skeleton==null&&cfg.sprites==null))return;
+    _spriteConfig=cfg;
+
+    // If the config carries a skeleton, replace the rig bones with it.
+    // This lets the rig editor's exported proportions drive the avatar directly.
+    if(cfg.skeleton&&cfg.skeleton.length){
+      _rigBones=cfg.skeleton.map(b=>Object.assign(
+        createBone(b.name,b.parent,b.restX,b.restY,b.pivotX||0,b.pivotY||0,b.length,b.zOrder||0),
+        {restX:b.restX,restY:b.restY,pivotX:b.pivotX||0,pivotY:b.pivotY||0,length:b.length,zOrder:b.zOrder||0,
+         displayScale:b.displayScale??1,pivotOffsetX:b.pivotOffsetX??0,
+         pivotOffsetY:b.pivotOffsetY??(_PIVOT_DEFAULTS[b.name]?.pivotOffsetY??0)}
+      ));
+      _rigStartTime=null; // reset animation clock
+    }
+
+    // Preload every PNG referenced in the sprite manifest.
+    if(cfg.sprites){
+      const loads=[];
+      for(const[part,def]of Object.entries(cfg.sprites)){
+        for(const[variant,path]of Object.entries(def.variants||{})){
+          if(!path)continue;
+          const key=`${part}:${variant}`;
+          const img=new Image();
+          img.src=path;
+          loads.push(new Promise(resolve=>{
+            img.onload=()=>{_spriteImages[key]=img;resolve();};
+            img.onerror=resolve; // missing PNG → silently falls back to placeholder
+          }));
+        }
+      }
+      await Promise.all(loads);
+    }
+  }catch(_){}
+}
+
+// buildManifest gives auto-computed dimensions from bone lengths.
+// buildActiveManifest overlays any explicit dimensions from the sprite config,
+// so user-provided PNGs can be a different size than the auto-computed slots.
+function buildActiveManifest(bones){
+  const manifest=buildManifest(bones);
+  if(_spriteConfig&&_spriteConfig.sprites){
+    const boneMap={};bones.forEach(b=>boneMap[b.name]=b);
+    for(const[part,cfg]of Object.entries(_spriteConfig.sprites)){
+      if(!manifest[part])continue;
+      // Saved width/height have displayScale baked in (from buildExportJSON).
+      // renderFrame also multiplies by displayScale, so we divide it back out here
+      // to avoid double-scaling.
+      const ds=(boneMap[manifest[part].bone]?.displayScale)||1;
+      if(cfg.width)  manifest[part].w=cfg.width/ds;
+      if(cfg.height) manifest[part].h=cfg.height/ds;
+      if(cfg.offsetX!=null) manifest[part].ox=cfg.offsetX;
+      if(cfg.offsetY!=null) manifest[part].oy=cfg.offsetY;
+    }
+  }
+  return manifest;
+}
+
+// ── Animation loop ────────────────────────────────────────────────────────────
+let _rigBones=null;
+let _rigAnimName='idle';
+let _rigStartTime=null;
+
+function _rigTick(ts){
+  if(!_rigStartTime)_rigStartTime=ts;
+  const t=(ts-_rigStartTime)/1000;
+  for(const b of _rigBones){b.rotation=0;b.scaleX=1;b.scaleY=1;b.translateX=0;b.translateY=0;b.opacity=1;}
+  const animFn=ANIMATIONS[_rigAnimName]||ANIMATIONS.idle;
+  const variants=animFn(_rigBones,t)||{};
+  const manifest=buildActiveManifest(_rigBones);
+  const canvas=document.getElementById('sprite-box');
+  if(canvas)renderFrame(canvas,_rigBones,manifest,variants);
+  requestAnimationFrame(_rigTick);
+}
+
+// ── Pose mapping (backend pose names → rig animation names) ──────────────────
+const POSE_TO_ANIM={
+  idle:'idle',happy:'happy',sad:'sad',excited:'happy',
+  thinking:'thinking',wave:'wave',celebrate:'happy',tired:'idle',working:'talking',
+};
 
 function setPose(parts){
   if(!parts)return;
-  const P=SPRITE_PARTS;
-  const svg=document.getElementById('sprite-box');
-  if(!svg)return;
-
-  // Face features → #sp-face (pink glow); only re-render when expression changes.
-  // Head shell stays in #sp-head (rendered once at startup, green glow).
-  if(parts.face!==_renderedParts.face){
-    renderGrid(document.getElementById('sp-face'),P.face[parts.face]||P.face.neutral,0,0,true);
-    _renderedParts.face=parts.face;
-  }
-
-  // Arms — green glow via CSS on #sp-arm-l / #sp-arm-r
-  if(parts.arms!==_renderedParts.arms){
-    const arms=P.arms[parts.arms]||P.arms.neutral;
-    renderGrid(document.getElementById('sp-arm-l'),arms.l,0,8,true);
-    renderGrid(document.getElementById('sp-arm-r'),arms.r,13,8,true);
-    _renderedParts.arms=parts.arms;
-  }
-
-  // Torso detail → #sp-torso-fx; glow color set by data-torso attribute.
-  // Torso shell stays in #sp-torso (rendered once at startup, green glow).
-  if(parts.torso!==_renderedParts.torso){
-    const fx=document.getElementById('sp-torso-fx');
-    const content=P.torso[parts.torso];
-    if(content)renderGrid(fx,content,0,8,true);else fx.innerHTML='';
-    fx.dataset.torso=parts.torso;  // drives CSS glow colour
-    _renderedParts.torso=parts.torso;
-  }
-
-  // Legs — green glow
-  if(parts.legs!==_renderedParts.legs){
-    renderGrid(document.getElementById('sp-legs'),P.legs[parts.legs]||P.legs.standing,0,16,true);
-    _renderedParts.legs=parts.legs;
-  }
-
-  // Update pose data attribute to trigger CSS animations (always update)
-  if(parts.pose!==svg.dataset.pose){
-    svg.dataset.pose=parts.pose;
-    _renderedParts.pose=parts.pose;
-  }
+  _rigAnimName=POSE_TO_ANIM[parts.pose]||'idle';
 }
 
 function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-mood',(s.mood||'').toUpperCase());setText('p-xp',s.experience||0);const mc={ecstatic:'#00ff9d',happy:'#00cc7d',content:'#6b8aff',neutral:'#8888aa',bored:'#ffaa00',sad:'#ff6b9d',tired:'#555570'};const md=document.getElementById('p-mood-dot');if(md)md.style.color=mc[s.mood]||'#8888aa';if(s.pose_parts)setPose(s.pose_parts);setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-energy',s.energy);setBar('s-happy',s.happiness);setBar('s-satiety',s.satiety);setBar('s-clean',s.cleanliness)}
@@ -1766,12 +1805,11 @@ function initResize(){
 
 // ═══ INIT ═══
 document.addEventListener('DOMContentLoaded',async()=>{initLayout();initResize();const inp=document.getElementById('input');inp.addEventListener('input',()=>autoResize(inp));inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
-// Render the static shells once — they never change with pose, only their
-// overlay groups do. Shells carry the green glow via their CSS class rules.
-renderGrid(document.getElementById('sp-head'),SPRITE_PARTS.head_shell,0,0,true);
-renderGrid(document.getElementById('sp-torso'),SPRITE_PARTS.torso_shell,0,8,true);
-// Render idle pose for all dynamic groups
-setPose({pose:'idle',face:'neutral',arms:'neutral',torso:'normal',legs:'standing'});
+// Start skeleton rig — load custom sprite config first (may override bones/dims),
+// then begin the animation loop so frame 1 already uses the right data.
+_rigBones=applyPivotDefaults(PRESETS.default.bones());
+await loadSpriteConfig();
+requestAnimationFrame(_rigTick);
 connectWS();await loadState();loadConversations();await checkOnboarding();setInterval(loadState,30000)});
 async function loadState(){
   try{
