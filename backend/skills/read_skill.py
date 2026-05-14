@@ -26,7 +26,7 @@ class ReadSkill(Skill):
     parameters = {
         "path": {
             "type": "string",
-            "description": "Path to the file to read (relative to /workspace, or absolute if in allowed paths)",
+            "description": "Path to the file to read (relative to configured workspace, or absolute if in allowed paths)",
             "required": True,
         },
         "encoding": {
@@ -40,6 +40,14 @@ class ReadSkill(Skill):
             "default": 0,
         },
     }
+
+    def to_openai_tool(self) -> dict[str, Any]:
+        tool = super().to_openai_tool()
+        workspace = get_config().workspace.path
+        tool["function"]["parameters"]["properties"]["path"]["description"] = (
+            f"Path to the file to read (relative to {workspace}, or absolute if in allowed paths)"
+        )
+        return tool
 
     async def execute(self, **kwargs: Any) -> SkillResult:
         config = get_config()
