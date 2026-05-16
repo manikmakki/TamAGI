@@ -3,11 +3,13 @@
 # ═══════════════════════════════════════════
 
 # LLM Backend Configuration
-# Supports any OpenAI-compatible v1/chat/completions API
+# Supports OpenAI-compatible APIs and Anthropic Messages API
 llm:
   base_url: "http://localhost:11434/v1"     # Ollama default
   api_key: "ollama"                         # Use "ollama" for Ollama, or your API key
   model: "ministral-3:14b"                  # Model identifier
+  # provider: "openai"                      # "openai" | "anthropic" | null (auto-detect)
+                                            # Auto-detects from URL if not set
   temperature: 0.15                         # Lower = more focused/responsive, Higher = more creative/verbose. Match Model's card on Hugging Face for best results.
   max_tokens: 2048                          # Max tokens in LLM response. Adjust based on your model's context window and needs.             
   timeout: 180                              # Request timeout in seconds
