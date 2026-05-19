@@ -17,10 +17,9 @@ class LLMConfig(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 2048
     timeout: int = 120
-    # Ollama-specific: sets the KV-cache / context window size (num_ctx).
-    # Without this, Ollama uses the model's compiled default which can vary
-    # and may silently truncate context. Set to match your model's capability.
-    # None = leave Ollama to use its default.
+    # Ollama only: sets the KV-cache / context window size per request.
+    # Has no effect on llama.cpp or other backends — for those, set --ctx-size
+    # at server startup. Leave as None to use Ollama's compiled default.
     num_ctx: int | None = None
 
 

@@ -39,7 +39,9 @@ class LLMMessage:
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"role": self.role, "content": self.content}
-        if self.name:
+        # `name` is valid on user/assistant messages only; the OpenAI spec does
+        # not define it for tool messages and strict backends (llama.cpp) may reject it.
+        if self.name and self.role != "tool":
             d["name"] = self.name
         if self.tool_calls:
             d["tool_calls"] = self.tool_calls
@@ -101,6 +103,9 @@ class LLMClient:
 
     def _build_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
+        # "ollama" is the conventional no-auth sentinel for Ollama deployments.
+        # For llama.cpp (or any other backend) set api_key to your actual token,
+        # or leave it empty to skip the Authorization header entirely.
         if self.config.api_key and self.config.api_key.lower() != "ollama":
             headers["Authorization"] = f"Bearer {self.config.api_key}"
         return headers
@@ -124,10 +129,10 @@ class LLMClient:
             payload["tools"] = tools
             payload["tool_choice"] = kwargs.get("tool_choice", "auto")
 
-        # Pass num_ctx to Ollama if configured. This tells Ollama exactly how
-        # large a KV-cache to allocate. Without it, Ollama uses the model's
-        # built-in default (often 2048 or 4096), which may silently truncate
-        # long conversations. Harmless/ignored by non-Ollama backends.
+        # Ollama-specific: tells Ollama how large a KV-cache to allocate.
+        # Without it, Ollama may silently truncate long conversations.
+        # Ignored by llama.cpp and other backends (context size is a server
+        # startup flag for those, not a per-request parameter).
         if self.config.num_ctx is not None:
             payload["num_ctx"] = self.config.num_ctx
 

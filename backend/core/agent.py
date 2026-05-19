@@ -616,7 +616,6 @@ class TamAGIAgent:
                 llm_messages.append(LLMMessage(
                     "tool",
                     json.dumps(result.to_dict() if hasattr(result, "to_dict") else result),
-                    name=tc.name,
                     tool_call_id=tc.id,
                 ))
 
