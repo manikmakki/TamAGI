@@ -79,6 +79,7 @@ def parse_text_tool_calls(content: str) -> list:
             args = json.loads(args_str)
             # Create simple object matching ToolCall interface
             tc = type('ToolCall', (), {
+                'id': f"call_{uuid.uuid4().hex[:8]}",
                 'name': tool_name,
                 'arguments': args
             })()
@@ -561,7 +562,22 @@ class TamAGIAgent:
             # is already captured in interim_messages for display — omitting it
             # from the history prevents the model from re-reading and
             # re-generating the same reasoning on the next round.
-            llm_messages.append(LLMMessage("assistant", ""))
+            #
+            # The tool_calls list must be echoed back in the assistant message so
+            # llama.cpp (and any strict OpenAI-compatible backend) can match each
+            # tool result to its originating call via tool_call_id.
+            assistant_tool_calls = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments),
+                    },
+                }
+                for tc in response.tool_calls
+            ]
+            llm_messages.append(LLMMessage("assistant", "", tool_calls=assistant_tool_calls))
 
             # Execute each tool call and append its result
             for tc in response.tool_calls:
@@ -593,11 +609,15 @@ class TamAGIAgent:
                 if self.personality.state.check_low_energy(agent=self):
                     logger.info(f"Energy critical ({self.personality.state.energy}%), dream recovery triggered")
 
-                # Append the tool result so the LLM sees what the skill returned
+                # Append the tool result so the LLM sees what the skill returned.
+                # tool_call_id must match the id in the preceding assistant message's
+                # tool_calls array — required by the OpenAI spec and llama.cpp's
+                # chat template (raises "tool_call_id must be provided!" otherwise).
                 llm_messages.append(LLMMessage(
                     "tool",
                     json.dumps(result.to_dict() if hasattr(result, "to_dict") else result),
                     name=tc.name,
+                    tool_call_id=tc.id,
                 ))
 
                 # If the skill signals it provides the complete final response,

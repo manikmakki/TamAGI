@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from typing import Any, AsyncIterator
 
 import httpx
@@ -22,15 +23,28 @@ logger = logging.getLogger("tamagi.llm")
 class LLMMessage:
     """A single message in a conversation."""
 
-    def __init__(self, role: str, content: str | list[dict], name: str | None = None):
+    def __init__(
+        self,
+        role: str,
+        content: str | list[dict],
+        name: str | None = None,
+        tool_calls: list[dict] | None = None,
+        tool_call_id: str | None = None,
+    ):
         self.role = role
         self.content = content
         self.name = name
+        self.tool_calls = tool_calls
+        self.tool_call_id = tool_call_id
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"role": self.role, "content": self.content}
         if self.name:
             d["name"] = self.name
+        if self.tool_calls:
+            d["tool_calls"] = self.tool_calls
+        if self.tool_call_id:
+            d["tool_call_id"] = self.tool_call_id
         return d
 
 
@@ -214,7 +228,7 @@ class LLMClient:
             else:
                 args = {}
             tool_calls.append(ToolCall(
-                id=tc.get("id", ""),
+                id=tc.get("id") or f"call_{uuid.uuid4().hex[:8]}",
                 name=func.get("name", ""),
                 arguments=args,
             ))

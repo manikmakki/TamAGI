@@ -92,7 +92,18 @@ class SubAgent:
                 # Append assistant message once before processing tool calls.
                 # Omit intermediate content — subagents have no display channel
                 # for it anyway, and feeding it back causes redundant generation.
-                messages.append(LLMMessage("assistant", ""))
+                assistant_tool_calls = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.arguments),
+                        },
+                    }
+                    for tc in response.tool_calls
+                ]
+                messages.append(LLMMessage("assistant", "", tool_calls=assistant_tool_calls))
 
                 for tc in response.tool_calls:
                     logger.debug(f"[{self.config.name}] tool call: {tc.name}({tc.arguments})")
@@ -102,6 +113,7 @@ class SubAgent:
                         "tool",
                         json.dumps(result.to_dict() if hasattr(result, "to_dict") else result),
                         name=tc.name,
+                        tool_call_id=tc.id,
                     ))
 
         except Exception as e:
