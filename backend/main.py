@@ -118,6 +118,11 @@ async def lifespan(app: FastAPI):
         searxng_url=config.web_search.searxng_url,
     ))
     skills.register(ExpressSkill(personality.state))
+    from backend.skills.task_skill import TaskSkill
+    skills.register(TaskSkill(
+        workspace_path=config.workspace.path,
+        done_cap=config.task_board.done_cap,
+    ))
 
     # Migrate custom skills from backend/skills/custom/ to workspace/skills/
     workspace_skills = Path(config.workspace.path) / "skills"
@@ -136,7 +141,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"Skills registered: {skills.skill_count}")
 
     # Initialize identity manager
-    identity = IdentityManager(data_dir="data", workspace_dir=config.workspace.path)
+    identity = IdentityManager(
+        data_dir="data",
+        workspace_dir=config.workspace.path,
+        done_cap=config.task_board.done_cap,
+    )
     if identity.needs_onboarding:
         logger.info("First run detected — onboarding required")
     else:

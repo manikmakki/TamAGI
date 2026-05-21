@@ -918,7 +918,7 @@ class TamAGIAgent:
             return ""
         try:
             caps = self.self_model.query_capabilities()[:5]
-            goals = self.self_model.get_goals(status="active")[:3]
+            goals = [g for g in self.self_model.get_goals(status="active") if not g.id.startswith("tg-")][:3]
             uncertainties = self.self_model.get_uncertainty_map()[:3]
             beliefs = self.self_model.get_beliefs()[:3]
 

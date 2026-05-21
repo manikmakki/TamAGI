@@ -85,6 +85,17 @@ class WriteSkill(Skill):
         # Resolve path
         resolved = self._resolve_path(file_path, config.workspace.path)
 
+        # TASKS.md is managed exclusively by the task skill — direct writes would
+        # corrupt its format and bypass Done-capping. Redirect the LLM.
+        if resolved.name == "TASKS.md":
+            return SkillResult(
+                success=False,
+                error=(
+                    "TASKS.md is managed by the task skill. "
+                    "Use task(action='add'/'start'/'complete'/'remove') to update it."
+                ),
+            )
+
         # Check if path is allowed
         if not self._is_allowed(resolved, config.guardrails.allowed_write_paths):
             return SkillResult(

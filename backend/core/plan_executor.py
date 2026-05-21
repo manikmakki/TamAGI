@@ -171,25 +171,23 @@ class PlanExecutor:
                 f"⚠ Low confidence in '{cap_desc}' ({confidence:.0%}) — proceeding carefully"
             )
 
+        _TOOL_LOOP_STEPS = {
+            ActionStepType.BASH.value,
+            ActionStepType.WEB_SEARCH.value,
+            ActionStepType.WEB_FETCH.value,
+            ActionStepType.TOOL_USE.value,
+            ActionStepType.GENERATE_CODE.value,
+            ActionStepType.EXECUTE_CODE.value,
+            ActionStepType.EXPLORE.value,
+        }
+
         try:
-            if step_type == ActionStepType.BASH.value:
-                return await self._run_bash(step, ctx)
-            elif step_type == ActionStepType.WEB_SEARCH.value:
-                return await self._run_web_search(step, ctx)
-            elif step_type == ActionStepType.WEB_FETCH.value:
-                return await self._run_web_fetch(step, ctx)
-            elif step_type == ActionStepType.TOOL_USE.value:
-                return await self._run_tool_use(step, ctx)
-            elif step_type == ActionStepType.GENERATE_CODE.value:
-                return await self._run_generate_code(step, ctx)
-            elif step_type == ActionStepType.EXECUTE_CODE.value:
-                return await self._run_execute_code(step, ctx)
+            if step_type in _TOOL_LOOP_STEPS:
+                return await self._run_with_tool_loop(step, ctx)
             elif step_type == ActionStepType.COMMUNICATE.value:
                 return await self._run_communicate(step)
             elif step_type == ActionStepType.QUERY_SELF_MODEL.value:
                 return await self._run_query_self_model(step)
-            elif step_type == ActionStepType.EXPLORE.value:
-                return await self._run_web_search(step, ctx)  # alias
             elif step_type == ActionStepType.MODIFY_SELF.value:
                 return await self._run_modify_self(step)
             elif step_type == ActionStepType.SUB_GOAL.value:
@@ -207,81 +205,39 @@ class PlanExecutor:
 
     # ── Step implementations ──────────────────────────────────
 
-    async def _run_bash(self, step: ActionStep, ctx: str) -> StepResult:
-        cmd = step.spec.get("command") or step.description
-        result = await self._skill("exec", command=cmd)
-        return StepResult(
-            step_id=step.id,
-            success=result.success,
-            output=result.output,
-            error=result.error,
-        )
+    async def _run_with_tool_loop(self, step: ActionStep, ctx: str) -> StepResult:
+        import json
+        from backend.core.llm import LLMMessage
+        from backend.core.tool_loop import run_tool_loop
 
-    async def _run_web_search(self, step: ActionStep, ctx: str) -> StepResult:
-        query = step.spec.get("query") or step.description
-        result = await self._skill("web_search", query=query)
-        return StepResult(
-            step_id=step.id,
-            success=result.success,
-            output=result.output,
-            error=result.error,
+        system = (
+            "You are executing a step in an action plan. "
+            "Use the available tools to complete the task described. "
+            "Be concise and focus on the objective."
         )
+        prompt = step.description
+        if step.spec:
+            relevant = {k: v for k, v in step.spec.items() if v}
+            if relevant:
+                prompt += f"\n\nStep parameters: {json.dumps(relevant)}"
+        if ctx:
+            prompt += f"\n\nContext from previous steps:\n{ctx}"
 
-    async def _run_web_fetch(self, step: ActionStep, ctx: str) -> StepResult:
-        url = step.spec.get("url", "")
-        if not url:
-            # Try to extract the first URL from the upstream search step's output
-            url = _extract_first_url(ctx)
-        if not url:
-            return StepResult(step_id=step.id, success=False, output="", error="No URL in spec")
-        result = await self._skill("exec", command=f"curl -s --max-time 15 {url}")
-        return StepResult(
-            step_id=step.id,
-            success=result.success,
-            output=result.output[:2000],
-            error=result.error,
-        )
-
-    async def _run_tool_use(self, step: ActionStep, ctx: str) -> StepResult:
-        skill_name = step.spec.get("skill_name", "")
-        skill_args = {k: v for k, v in step.spec.items() if k != "skill_name"}
-        if not skill_name:
-            return StepResult(step_id=step.id, success=False, output="", error="No skill_name in spec")
-        result = await self._skill(skill_name, **skill_args)
-        return StepResult(
-            step_id=step.id,
-            success=result.success,
-            output=result.output,
-            error=result.error,
-        )
-
-    async def _run_generate_code(self, step: ActionStep, ctx: str) -> StepResult:
-        prompt = f"{step.description}\n\nContext:\n{ctx}" if ctx else step.description
-        messages = [{"role": "user", "content": f"Write code for the following task. Output only the code, no explanation.\n\n{prompt}"}]
         try:
-            response = await self._agent.llm.chat(messages, temperature=0.2)
-            code = response.content.strip()
-            return StepResult(step_id=step.id, success=True, output=code)
+            content, _ = await run_tool_loop(
+                self._agent.llm,
+                self._agent.skills,
+                [
+                    LLMMessage("system", system),
+                    LLMMessage("user", prompt),
+                ],
+                event_callback=self._cb,
+                pending_approvals=self._agent._pending_approvals,
+                is_autonomous=self._is_autonomous,
+            )
+            return StepResult(step_id=step.id, success=True, output=content)
         except Exception as exc:
             return StepResult(step_id=step.id, success=False, output="", error=str(exc))
-
-    async def _run_execute_code(self, step: ActionStep, ctx: str) -> StepResult:
-        # Generate code first, then exec it
-        gen = await self._run_generate_code(step, ctx)
-        if not gen.success:
-            return gen
-        code = gen.output
-        # Strip markdown fences if present
-        if "```" in code:
-            lines = code.split("\n")
-            code = "\n".join(l for l in lines if not l.strip().startswith("```"))
-        result = await self._skill("exec", command=f"python3 -c {_shell_quote(code)}")
-        return StepResult(
-            step_id=step.id,
-            success=result.success,
-            output=result.output,
-            error=result.error,
-        )
 
     async def _run_communicate(self, step: ActionStep) -> StepResult:
         message = step.spec.get("message") or step.description
@@ -367,33 +323,14 @@ class PlanExecutor:
             return StepResult(step_id=step.id, success=False, output="", error=str(exc))
 
     async def _run_create_tool(self, step: ActionStep, ctx: str) -> StepResult:
-        skill_name = step.spec.get("skill_name", "new_skill")
-        code = step.spec.get("code", "")
-        if not code:
-            gen = await self._run_generate_code(step, ctx)
-            if not gen.success:
-                return gen
-            code = gen.output
-
-        import re
-        code = re.sub(r"^```[a-z]*\n?", "", code, flags=re.MULTILINE)
-        code = code.replace("```", "")
-
-        skill_path = f"workspace/skills/{skill_name}.py"
-        write_result = await self._skill("write", path=skill_path, content=code)
-        if write_result.success:
-            # Trigger rediscovery so the skill is available immediately
-            try:
-                from pathlib import Path
-                self._agent.skills.discover_custom_skills(Path("workspace/skills"))
-            except Exception:
-                pass
-        return StepResult(
-            step_id=step.id,
-            success=write_result.success,
-            output=f"Created skill '{skill_name}' at {skill_path}",
-            error=write_result.error,
-        )
+        result = await self._run_with_tool_loop(step, ctx)
+        # Trigger rediscovery so any newly written skill is available immediately
+        try:
+            from pathlib import Path
+            self._agent.skills.discover_custom_skills(Path("workspace/skills"))
+        except Exception:
+            pass
+        return result
 
     # ── Helpers ───────────────────────────────────────────────
 
@@ -464,13 +401,3 @@ class PlanExecutor:
         return order
 
 
-def _shell_quote(s: str) -> str:
-    """Minimal shell quoting for embedding code in a -c argument."""
-    return "'" + s.replace("'", "'\"'\"'") + "'"
-
-
-def _extract_first_url(text: str) -> str:
-    """Pull the first http(s) URL out of a block of text (e.g. search result output)."""
-    import re
-    m = re.search(r'https?://[^\s\)\]>,"\']+', text)
-    return m.group(0).rstrip(".,;") if m else ""

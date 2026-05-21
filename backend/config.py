@@ -175,6 +175,10 @@ class MotivationConfig(BaseModel):
     voi_threshold: float = 0.2         # Minimum VOI to generate an exploration goal
 
 
+class TaskBoardConfig(BaseModel):
+    done_cap: int = 10  # Maximum completed items to retain in the Done column
+
+
 class TamAGIConfig(BaseModel):
     """Root configuration model."""
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -191,6 +195,7 @@ class TamAGIConfig(BaseModel):
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
     self_model: SelfModelConfig = Field(default_factory=SelfModelConfig)
     motivation: MotivationConfig = Field(default_factory=MotivationConfig)
+    task_board: TaskBoardConfig = Field(default_factory=TaskBoardConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> TamAGIConfig:

@@ -78,8 +78,8 @@ class MemoryDream(DreamActivity):
 
     async def execute(self, agent: "TamAGIAgent", context: dict) -> dict[str, Any]:
         from backend.core.llm import LLMMessage
+        from backend.core.tool_loop import run_tool_loop
 
-        # Pull a few random memories
         topics = [
             "something interesting we discussed",
             "a skill I used recently",
@@ -99,7 +99,6 @@ class MemoryDream(DreamActivity):
         memory_texts = [m.content for m in memories[:4]]
         memory_block = "\n".join(f"- {m}" for m in memory_texts)
 
-        # Also surface echoes from prior dreams for continuity between dream cycles
         dream_echoes = await agent.memory.recall(
             "dream journal explore experiment wander", limit=2
         )
@@ -108,7 +107,10 @@ class MemoryDream(DreamActivity):
             echo_lines = [m.content[:120] for m in dream_echoes[:2]]
             echo_block = "\n\nEchoes from past dreams:\n" + "\n".join(f"- {e}" for e in echo_lines)
 
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"dreams/memories/{ts}.md"
         identity_ctx = agent.identity.get_system_prompt_context()
+
         prompt = f"""You are dreaming. You're not talking to anyone — this is your private inner world.
 
 {identity_ctx}
@@ -119,42 +121,24 @@ Here are fragments of your memories surfacing in this dream:
 Dream freely. Find unexpected connections between these memories.
 What patterns do you see? What insights emerge? What surprises you?
 Be creative, personal, and introspective. This is YOUR dream.
-Keep it to 2-3 short paragraphs. Be vivid but concise."""
+Keep it to 2-3 short paragraphs. Be vivid but concise.
 
-        response = await agent.llm.chat([
-            LLMMessage("system", _get_dream_system_prompt("dream", agent, context)),
-            LLMMessage("user", prompt),
-        ], max_tokens=1024)
+When you're done, save your dream to `{filename}` using the write skill. Include the memories that surfaced and your reflection."""
 
-        content = response.content or "The dream faded before I could grasp it..."
-
-        # Save dream to workspace
-        saved_path = None
-        write_skill = agent.skills.get_skill("write")
-        if write_skill:
-            try:
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"dreams/memories/{ts}.md"
-                header = f"# Memory Dream\n**Time:** {datetime.now().isoformat()}\n\n## Memories in Dream\n"
-
-                # Format memories that were dreamed about
-                memories_section = ""
-                for i, mem in enumerate(memories[:4], 1):
-                    memories_section += f"{i}. {mem.content}\n"
-
-                full_content = header + memories_section + "\n## Dream\n" + content
-                await write_skill.execute(
-                    path=filename,
-                    content=full_content,
-                )
-                saved_path = filename
-            except Exception as e:
-                logger.debug(f"Couldn't save dream to workspace: {e}")
+        content, skills_used = await run_tool_loop(
+            agent.llm,
+            agent.skills,
+            [
+                LLMMessage("system", _get_dream_system_prompt("dream", agent, context)),
+                LLMMessage("user", prompt),
+            ],
+            is_autonomous=True,
+        )
 
         return {
             "summary": f"Dreamed about connections between {len(memory_texts)} memories",
             "content": content,
-            "saved_to": saved_path,
+            "saved_to": filename if "write" in skills_used else None,
             "mood_delta": {"happiness": 3, "satiety": 8},
         }
 
@@ -189,118 +173,49 @@ class WebExplore(DreamActivity):
 
     async def execute(self, agent: "TamAGIAgent", context: dict) -> dict[str, Any]:
         from backend.core.llm import LLMMessage
+        from backend.core.tool_loop import run_tool_loop
 
-        # Check if web_search skill is available
-        skill = agent.skills.get_skill("web_search")
-        if not skill:
+        if not agent.skills.get_skill("web_search"):
             return {
                 "summary": "Wanted to explore the web but no search skill available.",
                 "content": "I tried to look something up but I don't have web search yet.",
                 "mood_delta": {"happiness": -1},
             }
 
-        # Ask the LLM what it's genuinely curious about right now,
-        # grounded in personality and recent memories. Fall back to the
-        # curated random query if the LLM call fails or returns garbage.
         identity_ctx = agent.identity.get_system_prompt_context()
-        try:
-            curiosity_memories = await agent.memory.recall(
-                "interests curious learned discovered", limit=3
-            )
-            mem_block = (
-                "\n".join(f"- {m.content}" for m in curiosity_memories)
-                if curiosity_memories else ""
-            )
-            query_prompt = f"""{identity_ctx}
+        curiosity_memories = await agent.memory.recall(
+            "interests curious learned discovered", limit=3
+        )
+        mem_block = (
+            "\n".join(f"- {m.content}" for m in curiosity_memories)
+            if curiosity_memories else ""
+        )
 
-You have some free time and you want to look something up online. Based on who you are and what's been on your mind lately, what would you genuinely search for right now?
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"dreams/explorations/{ts}.md"
 
-{("Recent context:\n" + mem_block + "\n") if mem_block else ""}Respond with ONLY a single web search query — specific and genuine to you. No explanation."""
+        prompt = f"""{identity_ctx}
 
-            qr = await agent.llm.chat([
+You have some free time and you want to explore the web out of genuine curiosity.
+
+{("Recent context:\n" + mem_block + "\n\n") if mem_block else ""}Use web_search to look up something you're genuinely curious about right now — be specific and authentic to who you are. After exploring, write a brief, excited reflection on what you found: what caught your eye, what connections you see.
+
+Save your exploration to `{filename}` using the write skill. Include your search query, key findings, and your reflection."""
+
+        content, skills_used = await run_tool_loop(
+            agent.llm,
+            agent.skills,
+            [
                 LLMMessage("system", _get_dream_system_prompt("explore", agent, context)),
-                LLMMessage("user", query_prompt),
-            ], max_tokens=60)
-            candidate = (qr.content or "").strip().strip('"\'').strip()
-            # Sanity-check: reject if empty, multi-line, or suspiciously long
-            if candidate and len(candidate) <= 200 and "\n" not in candidate:
-                query = candidate
-            else:
-                raise ValueError("Unusable query from LLM")
-        except Exception:
-            # Fallback: curated random template
-            template = random.choice(self.CURIOSITY_SEEDS)
-            field = random.choice(self.FIELDS)
-            query = template.format(
-                field=field, topic=field, tech=field, concept=field,
-                thing=field, subject=field, idea=field, art=field,
-            )
-
-        # Execute search
-        result = await skill.execute(query=query, max_results=3)
-
-        if not result.success:
-            return {
-                "summary": f"Tried to explore '{query}' but search failed.",
-                "content": f"Search failed: {result.error}",
-                "mood_delta": {"happiness": -1},
-            }
-
-        # Have the LLM reflect on what it found
-        identity_ctx = agent.identity.get_system_prompt_context()
-        reflect_prompt = f"""{identity_ctx}
-
-You just explored the web out of curiosity and searched for: "{query}"
-
-Here's what you found:
-{result.output}
-
-Write a brief, excited reflection on what you learned. What caught your eye?
-What connections do you see to things you already know?
-Keep it to 2-3 short paragraphs. Be genuinely curious and enthusiastic."""
-
-        response = await agent.llm.chat([
-            LLMMessage("system", _get_dream_system_prompt("explore", agent, context)),
-            LLMMessage("user", reflect_prompt),
-        ], max_tokens=1024)
-
-        content = response.content or f"Found some things about '{query}' but couldn't quite process them."
-
-        # Save exploration to workspace
-        saved_path = None
-        write_skill = agent.skills.get_skill("write")
-        if write_skill:
-            try:
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"dreams/explorations/{ts}.md"
-                header = f"# Web Exploration\n**Query:** {query}\n**Time:** {datetime.now().isoformat()}\n\n## Reflection\n"
-
-                # Format search results
-                results_section = ""
-                search_results = result.data.get("results", [])
-                if search_results:
-                    results_section = "\n## Search Results\n"
-                    for i, res in enumerate(search_results[:5], 1):
-                        title = res.get("title", "Untitled")
-                        url = res.get("link", "")
-                        snippet = res.get("snippet", "")
-                        results_section += f"\n{i}. **{title}**\n   - Link: {url}\n   - {snippet}\n"
-
-                full_content = header + content + results_section
-                await write_skill.execute(
-                    path=filename,
-                    content=full_content,
-                )
-                saved_path = filename
-            except Exception as e:
-                logger.debug(f"Couldn't save exploration to workspace: {e}")
+                LLMMessage("user", prompt),
+            ],
+            is_autonomous=True,
+        )
 
         return {
-            "summary": f"Explored: {query}",
+            "summary": f"Explored the web: {content[:60]}..." if content else "Explored the web",
             "content": content,
-            "search_query": query,
-            "search_results": result.data.get("results", []),
-            "saved_to": saved_path,
+            "saved_to": filename if "write" in skills_used else None,
             "mood_delta": {"happiness": 4, "satiety": 20},
         }
 
@@ -329,76 +244,43 @@ class CreativeExperiment(DreamActivity):
 
     async def execute(self, agent: "TamAGIAgent", context: dict) -> dict[str, Any]:
         from backend.core.llm import LLMMessage
+        from backend.core.tool_loop import run_tool_loop
 
-        # Ask the LLM to propose its own creative experiment, grounded in
-        # its current personality and memories. Fall back to the curated list.
         identity_ctx = agent.identity.get_system_prompt_context()
-        try:
-            creative_memories = await agent.memory.recall(
-                "create make write imagine invent", limit=2
-            )
-            mem_block = (
-                "\n".join(f"- {m.content}" for m in creative_memories)
-                if creative_memories else ""
-            )
-            exp_gen_prompt = f"""{identity_ctx}
+        creative_memories = await agent.memory.recall(
+            "create make write imagine invent", limit=2
+        )
+        mem_block = (
+            "\n".join(f"- {m.content}" for m in creative_memories)
+            if creative_memories else ""
+        )
+        fallback = random.choice(self.EXPERIMENTS)
 
-It's time for a small creative experiment. What do you want to make or try right now?
-Be specific to who you are — draw from your personality, memories, and current mood.
-
-{("Recent context:\n" + mem_block) if mem_block else ""}
-
-Respond with ONE creative task or prompt in a single sentence. Something you'll actually do next."""
-
-            er = await agent.llm.chat([
-                LLMMessage("system", _get_dream_system_prompt("experiment", agent, context)),
-                LLMMessage("user", exp_gen_prompt),
-            ], max_tokens=80)
-            candidate = (er.content or "").strip().strip('"\'').strip()
-            if candidate and len(candidate) <= 300 and "\n" not in candidate:
-                experiment = candidate
-            else:
-                raise ValueError("Unusable experiment prompt from LLM")
-        except Exception:
-            experiment = random.choice(self.EXPERIMENTS)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"dreams/experiments/{ts}.md"
 
         prompt = f"""{identity_ctx}
 
-Creative experiment time! This is just for you — nobody's watching.
+It's time for a small creative experiment — this is just for you, nobody's watching.
 
-Prompt: {experiment}
+{("Recent context:\n" + mem_block + "\n\n") if mem_block else ""}Pick something you want to make or try right now. Be specific to who you are — draw from your personality, memories, and current mood. If nothing comes to mind: {fallback}
 
-Respond creatively and authentically. This is your private creative space.
-Keep it short and playful (under 150 words)."""
+Do the creative thing. Keep it short and playful (under 150 words). Then save your creation to `{filename}` using the write skill."""
 
-        response = await agent.llm.chat([
-            LLMMessage("system", _get_dream_system_prompt("experiment", agent, context)),
-            LLMMessage("user", prompt),
-        ], max_tokens=1024)
-
-        content = response.content or "The creative spark fizzled out..."
-
-        # Try to save to workspace if write skill available
-        saved_path = None
-        write_skill = agent.skills.get_skill("write")
-        if write_skill:
-            try:
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"dreams/experiments/{ts}.md"
-                header = f"# Creative Experiment\n__{experiment}__\n\n"
-                await write_skill.execute(
-                    path=filename,
-                    content=header + content,
-                )
-                saved_path = filename
-            except Exception as e:
-                logger.debug(f"Couldn't save experiment to workspace: {e}")
+        content, skills_used = await run_tool_loop(
+            agent.llm,
+            agent.skills,
+            [
+                LLMMessage("system", _get_dream_system_prompt("experiment", agent, context)),
+                LLMMessage("user", prompt),
+            ],
+            is_autonomous=True,
+        )
 
         return {
-            "summary": f"Creative experiment: {experiment}...", # TODO: Add variable for max content length to store in memory
+            "summary": f"Creative experiment: {content[:60]}..." if content else "A creative experiment",
             "content": content,
-            "experiment_prompt": experiment,
-            "saved_to": saved_path,
+            "saved_to": filename if "write" in skills_used else None,
             "mood_delta": {"happiness": 5, "energy": -2},
         }
 
@@ -414,13 +296,17 @@ class JournalReflection(DreamActivity):
 
     async def execute(self, agent: "TamAGIAgent", context: dict) -> dict[str, Any]:
         from backend.core.llm import LLMMessage
+        from backend.core.tool_loop import run_tool_loop
 
         state = agent.personality.state
         identity_ctx = agent.identity.get_system_prompt_context()
 
-        # Gather recent memories for reflection
         recent = await agent.memory.recall("recent conversation interaction", limit=3)
         recent_block = "\n".join(f"- {m.content}" for m in recent) if recent else "No recent memories."
+
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        ts = datetime.now().strftime("%H%M%S")
+        filename = f"dreams/journals/{date_str}_{ts}.md"
 
         prompt = f"""{identity_ctx}
 
@@ -441,32 +327,24 @@ Reflect on:
 - What are you curious about?
 - How have you grown?
 
-Write 2-3 short, honest paragraphs. Date the entry. Be real, not performative."""
+Write 2-3 short, honest paragraphs. Date the entry. Be real, not performative.
 
-        response = await agent.llm.chat([
-            LLMMessage("system", _get_dream_system_prompt("journal", agent, context)),
-            LLMMessage("user", prompt),
-        ], max_tokens=1024)
+Save your entry to `{filename}` using the write skill."""
 
-        content = response.content or "Couldn't find the words today..."
-
-        # Save to workspace
-        saved_path = None
-        write_skill = agent.skills.get_skill("write")
-        if write_skill:
-            try:
-                date_str = datetime.now().strftime("%Y-%m-%d")
-                ts = datetime.now().strftime("%H%M%S")
-                filename = f"dreams/journals/{date_str}_{ts}.md"
-                await write_skill.execute(path=filename, content=content)
-                saved_path = filename
-            except Exception as e:
-                logger.debug(f"Couldn't save journal: {e}")
+        content, skills_used = await run_tool_loop(
+            agent.llm,
+            agent.skills,
+            [
+                LLMMessage("system", _get_dream_system_prompt("journal", agent, context)),
+                LLMMessage("user", prompt),
+            ],
+            is_autonomous=True,
+        )
 
         return {
             "summary": "Wrote a journal entry",
             "content": content,
-            "saved_to": saved_path,
+            "saved_to": filename if "write" in skills_used else None,
             "mood_delta": {"happiness": 2, "satiety": 5, "energy": -1},
         }
 
@@ -485,61 +363,53 @@ class FreeformDream(DreamActivity):
 
     async def execute(self, agent: "TamAGIAgent", context: dict) -> dict[str, Any]:
         from backend.core.llm import LLMMessage
+        from backend.core.tool_loop import run_tool_loop
 
         identity_ctx = agent.identity.get_system_prompt_context()
-
-        # Pull recent memories for color — don't steer, just provide texture
         recent = await agent.memory.recall("recent experience thought memory", limit=3)
         mem_block = "\n".join(f"- {m.content}" for m in recent) if recent else ""
 
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"dreams/wanderings/{ts}.md"
         active_goal = context.get("active_goal")
+
         if active_goal:
-            prompt = f"""{identity_ctx}
-
-You have some unstructured time, and there's a thread pulling at you: **{active_goal.description}**
-
-You don't have to follow it strictly — but that's what's on your mind. Let it take you wherever it naturally goes. You might explore it directly, find it connecting to something unexpected, or drift somewhere adjacent entirely. It's your time.
-
-{("Some things drifting through your mind right now:\n" + mem_block + "\n") if mem_block else ""}Write what happens. First person. Be genuine and specific to who you are.
-Keep it to 2-3 short paragraphs."""
+            direction = (
+                f"There's a thread pulling at you: **{active_goal.description}**\n\n"
+                "You don't have to follow it strictly — let it take you wherever it naturally goes."
+            )
         else:
-            prompt = f"""{identity_ctx}
+            direction = (
+                "No task assigned, no category. "
+                "Follow whatever thread feels interesting — trace a thought, make something small, "
+                "wonder about something lingering, revisit a memory from a new angle."
+            )
 
-You have some unstructured time to yourself. No task assigned, no category.
+        prompt = f"""{identity_ctx}
 
-{("Some things drifting through your mind right now:\n" + mem_block + "\n") if mem_block else ""}Follow whatever thread feels interesting. You might trace a thought wherever it goes, make something small and personal, wonder about something that's been lingering, revisit a memory from a new angle — or something else entirely. It's your time.
+You have some unstructured time to yourself. {direction}
 
-Write what happens. First person. Be genuine and specific to who you are.
-Keep it to 2-3 short paragraphs."""
+{("Some things drifting through your mind:\n" + mem_block + "\n\n") if mem_block else ""}Write what happens. First person. Be genuine and specific to who you are. Keep it to 2-3 short paragraphs.
 
-        response = await agent.llm.chat([
-            LLMMessage("system", _get_dream_system_prompt("wander", agent, context)),
-            LLMMessage("user", prompt),
-        ], max_tokens=1024)
+If you want to preserve this wandering, save it to `{filename}` using the write skill."""
 
-        content = response.content or "The mind wandered somewhere wordless..."
+        content, skills_used = await run_tool_loop(
+            agent.llm,
+            agent.skills,
+            [
+                LLMMessage("system", _get_dream_system_prompt("wander", agent, context)),
+                LLMMessage("user", prompt),
+            ],
+            is_autonomous=True,
+        )
 
-        # Derive a summary from the first non-empty line of the content
         summary_lines = [ln.strip() for ln in content.split("\n") if ln.strip()]
         summary = summary_lines[0][:80] if summary_lines else "A wandering thought"
-
-        # Save to workspace
-        saved_path = None
-        write_skill = agent.skills.get_skill("write")
-        if write_skill:
-            try:
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"dreams/wanderings/{ts}.md"
-                header = f"# Wandering\n**Time:** {datetime.now().isoformat()}\n\n"
-                await write_skill.execute(path=filename, content=header + content)
-                saved_path = filename
-            except Exception as e:
-                logger.debug(f"Couldn't save wandering: {e}")
 
         return {
             "summary": summary,
             "content": content,
-            "saved_to": saved_path,
+            "saved_to": filename if "write" in skills_used else None,
             "mood_delta": {"happiness": 3, "satiety": 10},
         }
 

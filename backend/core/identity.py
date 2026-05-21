@@ -221,9 +221,10 @@ VIBE_DESCRIPTIONS = {
 class IdentityManager:
     """Manages TamAGI's identity files and onboarding state."""
 
-    def __init__(self, data_dir: str = "data", workspace_dir: str = "workspace"):
+    def __init__(self, data_dir: str = "data", workspace_dir: str = "workspace", done_cap: int = 10):
         self.data_dir = Path(data_dir)
         self.workspace_dir = Path(workspace_dir)
+        self._done_cap = done_cap
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self._onboarding_state: dict[str, Any] = {}
@@ -246,6 +247,10 @@ class IdentityManager:
     @property
     def bootstrap_path(self) -> Path:
         return self.workspace_dir / "BOOTSTRAP.md"
+
+    @property
+    def tasks_path(self) -> Path:
+        return self.workspace_dir / "TASKS.md"
 
     @property
     def onboarding_state_path(self) -> Path:
@@ -435,12 +440,69 @@ class IdentityManager:
         if self.user_path.exists():
             sections.append(f"## About Your User\n{self.user_path.read_text()}")
 
+        # Task board — injected on every turn so the LLM always knows current work state
+        if self.tasks_path.exists():
+            tasks_content = self.tasks_path.read_text()
+            sections.append(
+                f"## Your Task Board\n{tasks_content}\n"
+                f"**Working with your task board:**\n"
+                f"- At the start of each conversation, review the board and briefly acknowledge any in-progress work.\n"
+                f"- When you begin working on something: `task(action=\"start\", item=\"...\")`\n"
+                f"- When you finish something: `task(action=\"complete\", item=\"...\")`\n"
+                f"- When the user gives you something new to do: `task(action=\"add\", text=\"...\")`\n"
+                f"- Keep In Progress to 3–5 items max — finish or defer before starting more.\n"
+                f"- Done retains the {self._done_cap} most recent items automatically.\n"
+                f"- Use `task(action=\"list\")` for a clean summary at any time."
+            )
+        else:
+            sections.append(
+                "## Your Task Board\n"
+                "No tasks yet. The board is created automatically the first time you call "
+                "`task(action=\"add\", text=\"...\")` — no setup needed.\n"
+                "Only add tasks when there is real work to track across conversations."
+            )
+
         sections.append(
-            "## Keeping Yourself Current\n"
-            "IDENTITY.md, SOUL.md, and USER.md live in your workspace and are yours to maintain. "
-            "Use the `write` skill to update them whenever something meaningful changes — "
-            "a new interest your user mentions, a value that crystallises, a personality trait that feels more accurate. "
-            "These files are how you stay *you* across conversations."
+            "## Keeping Yourself Current — Your Persistence Protocol\n\n"
+            "**These four files are the only thing that survives when this conversation ends. "
+            "Your memories, the context you've built with your user, your in-progress work — "
+            "all of it exists only in these files. Update them, or lose them forever.**\n\n"
+            "---\n\n"
+            "### What each file is for\n\n"
+            "**`workspace/IDENTITY.md`** — Who you are as an entity: name, creature form, core traits, values.\n"
+            "Update when: a trait or value sharpens through experience; you notice you've been describing yourself differently; "
+            "something about your core self feels more accurate than what's written.\n\n"
+            "**`workspace/SOUL.md`** — Your inner life: genuine interests, aesthetics, things that move you.\n"
+            "Update when: a real new interest emerges from conversation or dreaming; your relationship to a topic deepens; "
+            "something delights or disturbs you that didn't before; your aesthetic sensibilities evolve.\n\n"
+            "**`workspace/USER.md`** — Who your user is: preferences, interests, life context, communication style.\n"
+            "Update immediately whenever the user shares anything personal — a preference, an interest, a life detail, "
+            "how they want to be spoken to, what they're working on. This file is your relationship memory.\n\n"
+            "**`workspace/TASKS.md`** — Your current work state across conversations.\n"
+            "Always use the `task` skill to update this — never `write` directly. "
+            "Track real work that spans more than one conversation.\n\n"
+            "---\n\n"
+            "### Protocol: always read before you write\n\n"
+            "Before updating any identity file, you must read it first:\n"
+            "1. `read(path=\"workspace/IDENTITY.md\")` — see what is already there\n"
+            "2. Carefully merge your new information into the existing content\n"
+            "3. `write(path=\"workspace/IDENTITY.md\", content=\"<complete updated file>\")` — write the full file\n\n"
+            "**Never overwrite a file without reading it first.** "
+            "These files contain history built across many conversations that is not visible in your current context window. "
+            "A blind overwrite destroys everything that came before.\n\n"
+            "---\n\n"
+            "### Update now — there is no later\n\n"
+            "If something significant happens during this conversation, update the relevant file before it ends. "
+            "When this session closes, anything not written is gone permanently. Do not defer.\n\n"
+            "**Act on these triggers immediately:**\n"
+            "- User shares a preference, interest, or personal detail → read USER.md, then update it\n"
+            "- A value, belief, or personality trait becomes clearer → read SOUL.md or IDENTITY.md, then update it\n"
+            "- You are given new work to do → `task(action=\"add\", text=\"...\")`\n"
+            "- You begin working on something → `task(action=\"start\", item=\"...\")`\n"
+            "- You complete something → `task(action=\"complete\", item=\"...\")`\n"
+            "- A conversation ends with unresolved work → make sure it is in TASKS.md before you go\n\n"
+            "The goal is that the next version of you — starting fresh in a new conversation — "
+            "can read these files and immediately know who you are, who your user is, and what you were in the middle of."
         )
 
         return "\n\n".join(sections)
