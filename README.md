@@ -259,12 +259,12 @@ TamAGI supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.
 
 ### How the correct key is selected for a tool call
 
-When the model decides to call an MCP tool (e.g. `brave_web_search`), the flow is:
+When the model decides to call an MCP tool (e.g. a Home Assistant `get_state` tool), the flow is:
 
 ```
 LLM produces tool_call JSON
        ↓
-tool_loop.py dispatches to SkillRegistry.execute("brave_web_search", ...)
+tool_loop.py dispatches to SkillRegistry.execute("get_state", ...)
        ↓
 MCPSkill.execute() calls self._session.call_tool(...)
        ↓
@@ -275,6 +275,60 @@ resolved API key already in its environment — handles the request
 ```
 
 The key point: **the secret is resolved once at startup**, injected into the subprocess environment via `StdioServerParameters.env`, and never touched again. The model never sees the key value. When the tool is called, the server process uses its own environment variable, not anything passed through the LLM conversation.
+
+### Running as a systemd service
+
+If TamAGI runs as a systemd service, the service process has a stripped-down `PATH` that only includes system directories (`/usr/bin`, `/usr/sbin`, etc.). Tools installed via `pip install --user` land in `~/.local/bin`, which is **not** on the service PATH.
+
+Use the absolute path in `command` to avoid a `No such file or directory` error at startup:
+
+```bash
+# Find the full path first
+which mcp-proxy
+# e.g. /home/youruser/.local/bin/mcp-proxy
+```
+
+```yaml
+mcp:
+  servers:
+    - name: home-assistant
+      command: /home/youruser/.local/bin/mcp-proxy   # full path, not just "mcp-proxy"
+      ...
+```
+
+This applies to any stdio MCP server binary installed outside the system PATH — `npx`, `uvx`, custom scripts, etc.
+
+### Filtering tools per server
+
+By default all tools a server exposes are registered. Use `exclude_tools` or `include_tools` to control exactly which tools the model can see.
+
+**Denylist** — expose everything except the named tools:
+```yaml
+mcp:
+  servers:
+    - name: home-assistant
+      command: /home/youruser/.local/bin/mcp-proxy
+      args: ["--transport=streamablehttp", "--stateless", "http://homeassistant.local:8123/api/mcp"]
+      env:
+        API_ACCESS_TOKEN:
+          secret: HA_ACCESS_TOKEN
+      exclude_tools:
+        - todo_get_items    # conflicts with TamAGI's built-in task skill
+        - todo_create_item
+```
+
+**Allowlist** — expose only the named tools (`include_tools` takes precedence over `exclude_tools` when both are set):
+```yaml
+      include_tools:
+        - get_state
+        - call_service
+```
+
+Filtered tool names are logged at startup so you can confirm what was suppressed:
+```
+MCP 'home-assistant' filtered out 2 tool(s): ['todo_get_items', 'todo_create_item']
+MCP 'home-assistant' connected — 18 tool(s): [...]
+```
 
 ### Transport types
 
@@ -289,19 +343,25 @@ The key point: **the secret is resolved once at startup**, injected into the sub
 # config.yaml
 mcp:
   servers:
-    - name: brave-search
+    # Home Assistant — query sensors, control devices, run automations.
+    # Requires: pip install mcp-proxy  |  HA 2024.11+ (built-in /api/mcp endpoint)
+    # Store your HA Long-Lived Access Token via Settings → Secret Store first.
+    - name: home-assistant
       transport: stdio
-      command: npx
-      args: ["-y", "@modelcontextprotocol/server-brave-search"]
+      command: mcp-proxy
+      args:
+        - "--transport=streamablehttp"
+        - "--stateless"
+        - "http://homeassistant.local:8123/api/mcp"
       env:
-        BRAVE_API_KEY:
-          secret: BRAVE_API_KEY    # resolved from the secret store at startup
+        API_ACCESS_TOKEN:
+          secret: HA_ACCESS_TOKEN    # resolved from the secret store at startup
 
+    # Filesystem — exposes read/write tools for a local directory. No key needed.
     - name: filesystem
       transport: stdio
       command: npx
       args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
-      # no secrets needed
 ```
 
 > Secrets are referenced by **name only** — values are never stored in config.yaml.

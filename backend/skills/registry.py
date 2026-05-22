@@ -65,7 +65,7 @@ class SkillRegistry:
         """Get all skills as OpenAI function calling tool definitions."""
         return [s.to_openai_tool() for s in self._skills.values()]
 
-    async def execute(self, name: str, **kwargs: Any) -> SkillResult:
+    async def execute(self, name: str, /, **kwargs: Any) -> SkillResult:
         """Execute a skill by name."""
         skill = self._skills.get(name)
         if not skill:

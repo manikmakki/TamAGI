@@ -190,6 +190,12 @@ class MCPServerConfig(BaseModel):
     # the SecretStore.  Values are injected as subprocess env vars at spawn
     # time and are never written into LLM messages.
     env: dict[str, Any] = Field(default_factory=dict)
+    # Tool filtering — both lists are empty by default (expose everything).
+    # If include_tools is non-empty, ONLY those tools are registered.
+    # Otherwise, all tools are registered except those in exclude_tools.
+    # include_tools takes precedence when both are set.
+    include_tools: list[str] = Field(default_factory=list)
+    exclude_tools: list[str] = Field(default_factory=list)
 
 
 class MCPConfig(BaseModel):

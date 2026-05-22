@@ -604,7 +604,7 @@ class TamAGIAgent:
                 # Pass event callback, approval registry, and autonomy flag to all skills.
                 # Skills that don't need them simply ignore the underscore kwargs.
                 result = await self.skills.execute(
-                    name=tc.name,
+                    tc.name,
                     _event_callback=event_callback,
                     _pending_approvals=self._pending_approvals,
                     _is_autonomous=is_autonomous,

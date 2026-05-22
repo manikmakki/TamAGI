@@ -212,26 +212,55 @@ orchestrator:
 #
 mcp:
   servers: []
-  # ── Example: Brave Search (stdio via npx) ──
-  # Requires Node.js.  Set the API key first via /api/secrets.
+  # ── Example: Home Assistant (stdio via mcp-proxy) ──
+  # Exposes your Home Assistant entities and services as MCP tools so TamAGI
+  # can query sensors, control lights, etc.
   #
-  # - name: brave-search
+  # Prerequisites:
+  #   pip install mcp-proxy          (bridges stdio ↔ Streamable HTTP)
+  #   Use the full path in command: if running as a systemd service, e.g.
+  #   command: /home/<you>/.local/bin/mcp-proxy  (run `which mcp-proxy` to find it)
+  #   Home Assistant 2024.11+        (built-in MCP endpoint at /api/mcp)
+  #
+  # 1. Generate a Long-Lived Access Token in HA → Profile → Security.
+  # 2. Store it in TamAGI's secret store:
+  #      Settings UI  →  Secret Store  →  name: HA_ACCESS_TOKEN
+  #      — or via API:
+  #      curl -X POST http://localhost:7741/api/secrets/HA_ACCESS_TOKEN \
+  #           -H 'Content-Type: application/json' \
+  #           -d '{"value": "your-token-here"}'
+  # 3. Uncomment the block below and set your HA address.
+  #
+  # - name: home-assistant
   #   transport: stdio
-  #   command: npx
-  #   args: ["-y", "@modelcontextprotocol/server-brave-search"]
+  #   command: mcp-proxy
+  #   args:
+  #     - "--transport=streamablehttp"
+  #     - "--stateless"
+  #     - "http://<homeassistant.local>:8123/api/mcp"
   #   env:
-  #     BRAVE_API_KEY:
-  #       secret: BRAVE_API_KEY
+  #     API_ACCESS_TOKEN:
+  #       secret: HA_ACCESS_TOKEN    # resolved from secret store at startup
+  #   # Optional: suppress specific tools that conflict with built-in skills
+  #   # or that you simply don't want the model to use.
+  #   exclude_tools:
+  #     - todo_get_items             # conflicts with TamAGI's built-in task skill
+  #     - todo_create_item
+  #   # Alternative: only expose the tools you actually want (allowlist).
+  #   # include_tools takes precedence over exclude_tools when both are set.
+  #   # include_tools:
+  #   #   - get_state
+  #   #   - call_service
   #
   # ── Example: Filesystem access (stdio via npx) ──
-  # No API key needed.
+  # No API key needed — exposes read/write tools for a local directory.
   #
   # - name: filesystem
   #   transport: stdio
   #   command: npx
   #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
   #
-  # ── Example: Remote SSE server ──
+  # ── Example: Remote Streamable HTTP / SSE server ──
   #
   # - name: my-remote-tools
   #   transport: sse

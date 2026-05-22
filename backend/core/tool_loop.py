@@ -99,7 +99,7 @@ async def run_tool_loop(
                     pass
 
             result = await skills.execute(
-                name=tc.name,
+                tc.name,
                 _event_callback=event_callback,
                 _pending_approvals=pending,
                 _is_autonomous=is_autonomous,

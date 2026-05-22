@@ -64,8 +64,11 @@ class MCPSkill(Skill):
         self._session = session
 
     async def execute(self, **kwargs: Any) -> SkillResult:
+        # Strip TamAGI-internal control kwargs — they're functions/objects the
+        # MCP library cannot serialize and the remote server has no use for.
+        tool_args = {k: v for k, v in kwargs.items() if not k.startswith("_")}
         try:
-            result = await self._session.call_tool(self.name, arguments=kwargs)
+            result = await self._session.call_tool(self.name, arguments=tool_args)
             text = "\n".join(
                 block.text for block in result.content if hasattr(block, "text")
             )
@@ -139,7 +142,27 @@ class MCPServerAdapter:
         await self._session.initialize()
 
         tools_response = await self._session.list_tools()
-        self.skills = [MCPSkill(t, self._session) for t in tools_response.tools]
+        all_tools = tools_response.tools
+
+        if self._config.include_tools:
+            allow = set(self._config.include_tools)
+            skipped = [t.name for t in all_tools if t.name not in allow]
+            filtered = [t for t in all_tools if t.name in allow]
+        elif self._config.exclude_tools:
+            deny = set(self._config.exclude_tools)
+            skipped = [t.name for t in all_tools if t.name in deny]
+            filtered = [t for t in all_tools if t.name not in deny]
+        else:
+            skipped = []
+            filtered = all_tools
+
+        if skipped:
+            logger.info(
+                "MCP '%s' filtered out %d tool(s): %s",
+                self._config.name, len(skipped), skipped,
+            )
+
+        self.skills = [MCPSkill(t, self._session) for t in filtered]
         logger.info(
             "MCP '%s' connected — %d tool(s): %s",
             self._config.name,
