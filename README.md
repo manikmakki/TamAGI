@@ -203,7 +203,7 @@ TamAGI's avatar is a skeleton-rigged canvas character. Open the built-in rig edi
 
 ## Skills System
 
-TamAGI comes with 4 built-in skills and an extensible framework for creating more:
+TamAGI comes with built-in skills, MCP server tools, and an extensible framework for creating custom skills:
 
 | Skill | Description |
 |-------|-------------|
@@ -211,6 +211,10 @@ TamAGI comes with 4 built-in skills and an extensible framework for creating mor
 | `write` | Write files to allowed paths |
 | `exec` | Execute allowlisted shell commands |
 | `web_search` | Search the web (DuckDuckGo free, Brave, or SearXNG) |
+| `recall_memory` | Semantic search over long-term memory |
+| `recall_dreams` | Browse autonomous dream/journal logs |
+| `orchestrate_task` | Spawn and coordinate parallel subagents |
+| *(MCP tools)* | Any tool exposed by a configured MCP server |
 
 ### Web Search
 
@@ -239,6 +243,133 @@ class MySkill(Skill):
 ```
 
 TamAGI will auto-discover and register it.
+
+---
+
+## MCP Server Integration
+
+TamAGI supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) — the open standard for connecting LLMs to external tool servers. Any MCP-compliant server's tools are automatically registered as first-class TamAGI skills, indistinguishable from built-ins in the tool loop.
+
+### How it works
+
+1. You define servers in `config.yaml` under `mcp.servers`.
+2. At startup, TamAGI connects to each server, calls `initialize` + `list_tools`, and wraps every tool as a `Skill` in the registry.
+3. The model calls MCP tools exactly like any other skill — tool name, arguments, result — all via the standard OpenAI-spec tool-calling loop.
+4. Connections are held open for the application lifetime (one persistent session per server) and torn down cleanly on shutdown.
+
+### How the correct key is selected for a tool call
+
+When the model decides to call an MCP tool (e.g. `brave_web_search`), the flow is:
+
+```
+LLM produces tool_call JSON
+       ↓
+tool_loop.py dispatches to SkillRegistry.execute("brave_web_search", ...)
+       ↓
+MCPSkill.execute() calls self._session.call_tool(...)
+       ↓
+ClientSession sends JSON-RPC over the open stdio/SSE transport
+       ↓
+The MCP server subprocess — which was launched at startup with the
+resolved API key already in its environment — handles the request
+```
+
+The key point: **the secret is resolved once at startup**, injected into the subprocess environment via `StdioServerParameters.env`, and never touched again. The model never sees the key value. When the tool is called, the server process uses its own environment variable, not anything passed through the LLM conversation.
+
+### Transport types
+
+| Transport | When to use | Config |
+|-----------|-------------|--------|
+| `stdio` | Local servers started as a child process (most common — `npx`, `uvx`, Python scripts) | `command` + `args` |
+| `sse` | Remote servers over HTTP+SSE | `url` |
+
+### Configuration
+
+```yaml
+# config.yaml
+mcp:
+  servers:
+    - name: brave-search
+      transport: stdio
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-brave-search"]
+      env:
+        BRAVE_API_KEY:
+          secret: BRAVE_API_KEY    # resolved from the secret store at startup
+
+    - name: filesystem
+      transport: stdio
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+      # no secrets needed
+```
+
+> Secrets are referenced by **name only** — values are never stored in config.yaml.
+> See the [Secret Management](#secret-management) section below for how to set them.
+
+### Monitoring MCP server status
+
+- `GET /api/mcp/status` — Returns each configured server's name, transport, connection state, and registered tool names.
+- The **Settings** page (`/settings`, accessible from the hamburger menu) shows this in a live dashboard.
+
+---
+
+## Secret Management
+
+TamAGI includes a local-first secret store for API keys used by MCP servers and other integrations. Secrets are stored **encrypted**, never in `config.yaml`, never in LLM messages.
+
+### Storage backends (automatic priority order)
+
+| Priority | Backend | When used |
+|----------|---------|-----------|
+| 1st | **OS keyring** — GNOME Keyring, macOS Keychain, Windows Credential Vault | A keyring daemon is running (most desktop installs) |
+| 2nd | **Fernet-encrypted file** — `data/secrets.enc`, key at `data/.secrets.key` (both `chmod 600`) | Headless servers without a keyring daemon |
+
+You never choose the backend — TamAGI picks the best available option automatically.
+
+### Setting secrets
+
+**Via the Settings UI** (recommended):  
+Open the hamburger menu → Settings → Secret Store. Type the name and value, click SAVE.
+
+**Via the API** (scripting / CI):
+```bash
+curl -X POST http://localhost:7741/api/secrets/BRAVE_API_KEY \
+     -H 'Content-Type: application/json' \
+     -d '{"value": "your-key-here"}'
+```
+
+**List stored names** (values are never returned):
+```bash
+curl http://localhost:7741/api/secrets
+# → {"names": ["BRAVE_API_KEY", "OPENAI_API_KEY"]}
+```
+
+**Delete a secret**:
+```bash
+curl -X DELETE http://localhost:7741/api/secrets/BRAVE_API_KEY
+```
+
+### Referencing secrets in config.yaml
+
+```yaml
+mcp:
+  servers:
+    - name: my-server
+      env:
+        MY_API_KEY:
+          secret: MY_API_KEY    # ← name reference; value comes from secret store
+        PLAIN_VAR: "not-sensitive"  # ← plain strings also work
+```
+
+### What the model sees (and doesn't)
+
+The model sees tool call **results** — the output the MCP server returns. It never sees:
+- The API key value
+- The environment variables passed to the server process
+- The `env` block in config.yaml
+
+The resolved key is injected into the subprocess environment at server spawn time and lives only in that process's memory for the duration of the connection.
 
 ## Memory System
 

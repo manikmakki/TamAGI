@@ -48,6 +48,8 @@ from backend.api.auth import router as auth_router
 from backend.api.self_model import router as self_model_router
 from backend.api.monologue import router as monologue_router, set_monologue_log, set_motivation_engine as set_monologue_motivation
 from backend.api.sprites import router as sprites_router
+from backend.api.secrets import router as secrets_router
+from backend.api.mcp import router as mcp_router
 from backend.core.monologue import MonologueLog
 
 # ── Logging ───────────────────────────────────────────────────
@@ -139,6 +141,15 @@ async def lifespan(app: FastAPI):
 
     skills.discover_custom_skills(workspace_skills)
     logger.info(f"Skills registered: {skills.skill_count}")
+
+    # Connect MCP servers and register their tools
+    mcp_manager = None
+    if config.mcp.servers:
+        from backend.skills.mcp_adapter import MCPManager, set_mcp_manager
+        mcp_manager = MCPManager(config.mcp.servers)
+        n = await mcp_manager.connect_all(skills)
+        set_mcp_manager(mcp_manager)
+        logger.info(f"MCP tools registered: {n} (across {len(config.mcp.servers)} server(s))")
 
     # Initialize identity manager
     identity = IdentityManager(
@@ -267,6 +278,8 @@ async def lifespan(app: FastAPI):
         f"Self-model saved: {self_model.node_count} nodes, "
         f"{self_model.edge_count} edges"
     )
+    if mcp_manager is not None:
+        await mcp_manager.close()
     if orchestrator is not None:
         await orchestrator.close()
     await llm.close()
@@ -349,6 +362,8 @@ app.add_middleware(
 
 # API routes
 app.include_router(auth_router)
+app.include_router(secrets_router)
+app.include_router(mcp_router)
 app.include_router(chat_router)
 app.include_router(skills_router)
 app.include_router(onboarding_router)
@@ -379,6 +394,10 @@ if frontend_path.exists():
     @app.get("/login")
     async def login_page():
         return FileResponse(frontend_path / "login.html")
+
+    @app.get("/settings")
+    async def settings_page():
+        return FileResponse(frontend_path / "settings.html")
 
     @app.get("/rig-editor")
     async def rig_editor_page():

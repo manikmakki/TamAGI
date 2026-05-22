@@ -327,7 +327,7 @@
     .msg.assistant .bubble table { border-collapse: collapse; margin: 6px 0; width: 100%; font-size: 12px; }
     .msg.assistant .bubble th, .msg.assistant .bubble td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
     .msg.assistant .bubble th { background: var(--bg-elevated); color: var(--accent-tertiary); }
-    /* Interim collapsible reasoning group */
+    /* Interim collapsible reasoning/thinking group */
     .interim-group { border: 1px solid var(--border-bright); border-radius: var(--radius-md); overflow: hidden; opacity: 0.75; }
     .interim-toggle { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 10px; background: var(--bg-elevated); border: none; cursor: pointer; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; text-align: left; }
     .interim-toggle:hover { color: var(--text-primary); background: var(--bg-surface); }
@@ -337,6 +337,9 @@
     .interim-group.collapsed .interim-body { display: none; }
     .interim-entry { color: var(--text-muted); font-style: italic; font-size: 11px; line-height: 1.5; }
     .interim-entry + .interim-entry { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
+    .thinking-entry { color: var(--accent-tertiary,#8b9cff); font-style: italic; font-size: 11px; line-height: 1.5; }
+    .thinking-entry + .thinking-entry { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
+    .thinking-entry + .interim-entry, .interim-entry + .thinking-entry { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
     /* Tool approval banner */
     .approval-banner { border: 1px solid var(--warning,#f0a500); border-radius: var(--radius-md); padding: 10px 12px; margin: 6px 0; background: var(--bg-elevated); }
     .clarification-msg .bubble { border-left: 2px solid var(--warning,#f0a500); padding-left: 10px; }
@@ -857,6 +860,7 @@
   <div class="drawer-nav">
     <a href="/rig-editor" onclick="closeDrawer()" class="drawer-nav-link">▦ Rig Editor</a>
     <a href="/self-model" onclick="closeDrawer()" class="drawer-nav-link">◈ Self-Model</a>
+    <a href="/settings"   onclick="closeDrawer()" class="drawer-nav-link">⚙ Settings</a>
   </div>
 </aside>
 
@@ -965,19 +969,24 @@ function handleWsEvent(ev){
     addMsg('assistant',ev.response,skills,null,ev.context_compressed||0,ev.sm_mutations||[]);
     if(ev.clarification_question){const msgs=document.getElementById('chat-messages');const last=msgs.querySelector('.msg.assistant:last-child');if(last){last.classList.add('clarification-msg');const badge=document.createElement('div');badge.className='clarification-badge';badge.textContent='Clarifying';last.querySelector('.bubble').prepend(badge);}}
     loadConversations();loading=false;document.getElementById('send-btn').disabled=false;
-  }else if(ev.type==='interim_text'){
+  }else if(ev.type==='thinking_text'||ev.type==='interim_text'){
+    const isThinking=ev.type==='thinking_text';
     if(!currentInterimGroup){
       const wrapper=document.createElement('div');
       wrapper.className='msg assistant';
-      wrapper.innerHTML='<div class="interim-group" data-count="0"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label">Reasoning · <span class="interim-count">0 steps</span></span></button><div class="interim-body"></div></div>';
+      const label=isThinking?'Thinking':'Reasoning';
+      wrapper.innerHTML='<div class="interim-group" data-has-thinking="'+(isThinking?'1':'0')+'" data-count="0"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">'+label+'</span> · <span class="interim-count">0 steps</span></span></button><div class="interim-body"></div></div>';
       document.getElementById('chat-messages').appendChild(wrapper);
       currentInterimGroup=wrapper.querySelector('.interim-group');
+    } else if(isThinking&&currentInterimGroup.dataset.hasThinking==='0'){
+      currentInterimGroup.dataset.hasThinking='1';
+      currentInterimGroup.querySelector('.interim-kind').textContent='Thinking';
     }
     const entry=document.createElement('div');
-    entry.className='interim-entry';
+    entry.className=isThinking?'thinking-entry':'interim-entry';
     entry.innerHTML=renderMd(ev.content);
     currentInterimGroup.querySelector('.interim-body').appendChild(entry);
-    const count=currentInterimGroup.querySelectorAll('.interim-entry').length;
+    const count=currentInterimGroup.querySelectorAll('.thinking-entry,.interim-entry').length;
     currentInterimGroup.querySelector('.interim-count').textContent=count+(count===1?' step':' steps');
     document.getElementById('chat-messages').scrollTop=99999;
   }else if(ev.type==='pose_change'){
@@ -1529,7 +1538,7 @@ function debounce(fn,ms){let t;return function(...a){clearTimeout(t);t=setTimeou
 function relativeTime(ts){if(!ts)return'';const d=typeof ts==='number'?new Date(ts*1000):new Date(ts);const diff=Math.floor((Date.now()-d)/1000);if(diff<60)return diff+'s ago';if(diff<3600)return Math.floor(diff/60)+'m ago';if(diff<86400)return Math.floor(diff/3600)+'h ago';return Math.floor(diff/86400)+'d ago'}
 
 async function loadConversations(){try{const d=await api('/conversations');const list=document.getElementById('conv-list');list.innerHTML='';(d.conversations||[]).forEach(c=>{const el=document.createElement('div');el.className=`conv-item${c.id===convId?' active':''}`;el.onclick=()=>openConversation(c.id);const dt=new Date(c.updated_at*1000).toLocaleDateString([],{month:'short',day:'numeric'});el.innerHTML=`<div class="ci-title">${esc(c.title)}</div><div class="ci-meta">${c.message_count} msgs \u00b7 ${dt}</div>`;list.appendChild(el)})}catch{}}
-async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>{if(m.role==='assistant'&&m.metadata?.interim_messages?.length){const steps=m.metadata.interim_messages;const wrapper=document.createElement('div');wrapper.className='msg assistant';wrapper.innerHTML='<div class="interim-group collapsed" data-count="'+steps.length+'"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label">Reasoning · <span class="interim-count">'+steps.length+(steps.length===1?' step':' steps')+'</span></span></button><div class="interim-body">'+steps.map(s=>'<div class="interim-entry">'+renderMd(s)+'</div>').join('')+'</div></div>';area.appendChild(wrapper);}addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp,m.metadata?.context_compressed||0,m.metadata?.sm_mutations||[]);});loadConversations();closeDrawer()}catch(e){console.error(e)}}
+async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>{const thinking=m.metadata?.thinking_blocks||[];const interim=m.metadata?.interim_messages||[];if(m.role==='assistant'&&(thinking.length||interim.length)){const hasThinking=thinking.length>0;const label=hasThinking?'Thinking':'Reasoning';const totalSteps=thinking.length+interim.length;const wrapper=document.createElement('div');wrapper.className='msg assistant';wrapper.innerHTML='<div class="interim-group collapsed" data-has-thinking="'+(hasThinking?'1':'0')+'" data-count="'+totalSteps+'"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">'+label+'</span> · <span class="interim-count">'+totalSteps+(totalSteps===1?' step':' steps')+'</span></span></button><div class="interim-body">'+thinking.map(s=>'<div class="thinking-entry">'+renderMd(s)+'</div>').join('')+interim.map(s=>'<div class="interim-entry">'+renderMd(s)+'</div>').join('')+'</div></div>';area.appendChild(wrapper);}addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp,m.metadata?.context_compressed||0,m.metadata?.sm_mutations||[]);});loadConversations();closeDrawer()}catch(e){console.error(e)}}
 function newConversation(){convId=null;document.getElementById('chat-messages').innerHTML=`<div class="welcome-msg" id="welcome"><strong>New conversation!</strong><br>What shall we explore?</div>`;loadConversations();closeDrawer();document.getElementById('input').focus()}
 
 function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('drawer-overlay').classList.add('open');switchTab('chats');loadConversations()}

@@ -21,6 +21,13 @@ ddgs>=7.0.0
 # Self-model graph
 networkx>=3.0
 
+# MCP (Model Context Protocol) — tool server integration
+mcp>=1.0.0
+
+# Secret storage — OS keyring primary, Fernet-encrypted file fallback
+keyring>=25.0.0
+cryptography>=42.0.0
+
 # Utilities
 python-multipart>=0.0.12
 aiofiles>=24.1.0

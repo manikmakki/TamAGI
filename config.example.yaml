@@ -180,3 +180,59 @@ orchestrator:
   #   max_tokens: 1024
   #   timeout: 120
   #   num_ctx: 8192                 # smaller context for subagents
+
+# ── MCP Server Integrations ───────────────────
+# TamAGI can connect to any MCP-compliant tool server and expose its tools
+# as native skills.  Two transports are supported:
+#   stdio — spawn a local process (most common; works with npx, uvx, etc.)
+#   sse   — connect to a remote HTTP+SSE endpoint
+#
+# Secret management
+# -----------------
+# API keys go in the secret store, NOT here.  Use the UI or API to set them:
+#
+#   curl -X POST http://localhost:7741/api/secrets/BRAVE_API_KEY \
+#        -H 'Content-Type: application/json' \
+#        -d '{"value": "your-key-here"}'
+#
+# Secrets are stored in the OS keyring when available (GNOME Keyring,
+# macOS Keychain, Windows Credential Vault), or in an Fernet-encrypted
+# file at data/secrets.enc otherwise.  Values are injected as subprocess
+# env vars at spawn time and are never written into LLM messages.
+#
+# Reference a stored secret in env by using {secret: NAME} syntax:
+#
+#   env:
+#     BRAVE_API_KEY:
+#       secret: BRAVE_API_KEY     # resolved from secret store at startup
+#
+# For non-sensitive env vars, a plain string works too:
+#   env:
+#     SOME_FLAG: "true"
+#
+mcp:
+  servers: []
+  # ── Example: Brave Search (stdio via npx) ──
+  # Requires Node.js.  Set the API key first via /api/secrets.
+  #
+  # - name: brave-search
+  #   transport: stdio
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-brave-search"]
+  #   env:
+  #     BRAVE_API_KEY:
+  #       secret: BRAVE_API_KEY
+  #
+  # ── Example: Filesystem access (stdio via npx) ──
+  # No API key needed.
+  #
+  # - name: filesystem
+  #   transport: stdio
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+  #
+  # ── Example: Remote SSE server ──
+  #
+  # - name: my-remote-tools
+  #   transport: sse
+  #   url: "http://my-mcp-server:8080/sse"

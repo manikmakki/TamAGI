@@ -234,6 +234,8 @@ async def websocket_chat(websocket: WebSocket):
                     user_message=user_message,
                     conversation_id=conv_id,
                     event_callback=send_event,
+                    image_data=msg.get("image_data"),
+                    image_media_type=msg.get("image_media_type", "image/jpeg"),
                 )
 
                 # Fire a pose_change event immediately so the sprite animates

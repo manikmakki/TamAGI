@@ -475,6 +475,7 @@ class TamAGIAgent:
         # 5. LLM loop with tool calling
         skills_used = []
         interim_messages: list[str] = []
+        thinking_blocks: list[str] = []
         llm_error: str | None = None
         direct_response_text: str | None = None
         last_tool_round_content: str | None = None  # fallback if final round is silent
@@ -530,6 +531,19 @@ class TamAGIAgent:
                     await event_callback({"type": "error", "message": f"LLM error {e.response.status_code}"})
                 llm_error = "I hit an error processing that request. The context may be too complex — please try rephrasing or starting a new conversation."
                 break
+
+            # Emit native thinking blocks if the model produced them (e.g. DeepSeek R1,
+            # Anthropic extended thinking via proxy). This takes priority over the
+            # interim_text fallback below, which only fires when a model returns plain
+            # text alongside its tool calls without a dedicated thinking channel.
+            if response.thinking and response.thinking.strip():
+                thinking_text = response.thinking.strip()
+                thinking_blocks.append(thinking_text)
+                if event_callback:
+                    await event_callback({
+                        "type": "thinking_text",
+                        "content": thinking_text,
+                    })
 
             # Try to parse text tool calls if structured ones are missing
             if not response.has_tool_calls and response.content:
@@ -688,6 +702,8 @@ class TamAGIAgent:
 
         # 7. Record assistant message
         meta: dict[str, Any] = {"skills_used": skills_used}
+        if thinking_blocks:
+            meta["thinking_blocks"] = thinking_blocks
         if interim_messages:
             meta["interim_messages"] = interim_messages
         if archived_count:

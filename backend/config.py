@@ -179,6 +179,23 @@ class TaskBoardConfig(BaseModel):
     done_cap: int = 10  # Maximum completed items to retain in the Done column
 
 
+class MCPServerConfig(BaseModel):
+    """Configuration for a single MCP server."""
+    name: str
+    transport: str = "stdio"          # stdio | sse
+    command: str = ""                 # executable for stdio transport
+    args: list[str] = Field(default_factory=list)
+    url: str = ""                     # endpoint URL for sse transport
+    # Each value is either a plain string or {"secret": "NAME"} to pull from
+    # the SecretStore.  Values are injected as subprocess env vars at spawn
+    # time and are never written into LLM messages.
+    env: dict[str, Any] = Field(default_factory=dict)
+
+
+class MCPConfig(BaseModel):
+    servers: list[MCPServerConfig] = Field(default_factory=list)
+
+
 class TamAGIConfig(BaseModel):
     """Root configuration model."""
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -196,6 +213,7 @@ class TamAGIConfig(BaseModel):
     self_model: SelfModelConfig = Field(default_factory=SelfModelConfig)
     motivation: MotivationConfig = Field(default_factory=MotivationConfig)
     task_board: TaskBoardConfig = Field(default_factory=TaskBoardConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
 
 
 def load_config(config_path: str | Path | None = None) -> TamAGIConfig:

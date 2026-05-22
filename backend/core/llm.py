@@ -69,12 +69,14 @@ class LLMResponse:
         finish_reason: str | None = None,
         usage: dict[str, int] | None = None,
         raw: dict[str, Any] | None = None,
+        thinking: str | None = None,
     ):
         self.content = content or ""
         self.tool_calls = tool_calls or []
         self.finish_reason = finish_reason
         self.usage = usage or {}
         self.raw = raw or {}
+        self.thinking = thinking or ""
 
     @property
     def has_tool_calls(self) -> bool:
@@ -238,12 +240,35 @@ class LLMClient:
                 arguments=args,
             ))
 
+        # Extract thinking/reasoning content.
+        # Format 1: reasoning_content field (DeepSeek R1, LiteLLM proxy for Anthropic).
+        thinking: str | None = message.get("reasoning_content") or None
+
+        # Format 2: content is a list of typed blocks (raw Anthropic-compatible proxy).
+        raw_content = message.get("content")
+        text_content: str | None = None
+        if isinstance(raw_content, list):
+            thinking_parts: list[str] = []
+            text_parts: list[str] = []
+            for block in raw_content:
+                btype = block.get("type")
+                if btype == "thinking":
+                    thinking_parts.append(block.get("thinking") or block.get("text") or "")
+                elif btype == "text":
+                    text_parts.append(block.get("text") or "")
+            if thinking_parts:
+                thinking = "\n\n".join(thinking_parts)
+            text_content = "\n\n".join(text_parts) if text_parts else None
+        else:
+            text_content = raw_content
+
         return LLMResponse(
-            content=message.get("content"),
+            content=text_content,
             tool_calls=tool_calls,
             finish_reason=choice.get("finish_reason"),
             usage=data.get("usage"),
             raw=data,
+            thinking=thinking,
         )
 
     async def close(self):

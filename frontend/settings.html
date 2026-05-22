@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TamAGI — Settings</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-deep:       #06060c;
+  --bg-primary:    #0a0a14;
+  --bg-surface:    #10101f;
+  --bg-elevated:   #16162a;
+  --bg-hover:      #1c1c36;
+  --border:        #1e1e3a;
+  --border-bright: #2a2a50;
+  --text-primary:  #e0e0f0;
+  --text-secondary:#8888aa;
+  --text-muted:    #555570;
+  --accent:        #00ff9d;
+  --accent-dim:    #00cc7d;
+  --accent-glow:   rgba(0,255,157,0.12);
+  --accent-secondary: #ff6b9d;
+  --accent-tertiary:  #6b8aff;
+  --warning:       #ffaa00;
+  --error:         #ff4466;
+  --success:       #00ff9d;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --font-display: 'Space Mono', monospace;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* scanlines */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.05) 2px, rgba(0,0,0,0.05) 4px);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── Layout ────────────────────────────────── */
+.app { display: flex; flex-direction: column; min-height: 100vh; }
+
+.top-bar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 16px; height: 44px; flex-shrink: 0;
+}
+.logo {
+  font-family: var(--font-display);
+  font-size: 11px; font-weight: 700;
+  color: var(--accent); letter-spacing: 2px;
+  white-space: nowrap;
+}
+.logo span { color: var(--text-muted); font-weight: 400; }
+.bar-sep { width: 1px; height: 18px; background: var(--border); }
+.page-title {
+  font-size: 11px; color: var(--text-secondary);
+  letter-spacing: 1px; text-transform: uppercase;
+  flex: 1;
+}
+.back-link {
+  font-size: 10px; color: var(--text-muted);
+  text-decoration: none; padding: 4px 9px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  transition: color 0.15s, border-color 0.15s;
+  letter-spacing: 0.5px;
+}
+.back-link:hover { color: var(--accent); border-color: var(--accent-dim); }
+
+/* ── Main content ──────────────────────────── */
+.main {
+  max-width: 680px; width: 100%;
+  margin: 0 auto;
+  padding: 28px 16px 60px;
+  display: flex; flex-direction: column; gap: 32px;
+}
+
+/* ── Section cards ─────────────────────────── */
+.section-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.section-header {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: baseline; gap: 10px;
+}
+.section-title {
+  font-family: var(--font-display);
+  font-size: 11px; font-weight: 700;
+  color: var(--accent); letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.section-subtitle {
+  font-size: 10px; color: var(--text-muted);
+  letter-spacing: 0.3px;
+}
+.section-body { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+.help-text {
+  font-size: 11px; color: var(--text-secondary);
+  line-height: 1.7;
+}
+.help-text code {
+  font-family: var(--font-mono);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 10px;
+  color: var(--accent-tertiary);
+}
+
+/* ── Add-secret form ───────────────────────── */
+.add-form {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.add-form label {
+  font-size: 9px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 1px;
+  display: block; margin-bottom: 4px;
+}
+.field-input {
+  width: 100%;
+  padding: 8px 11px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.field-input:focus { border-color: var(--accent-dim); }
+.field-input::placeholder { color: var(--text-muted); }
+.form-row { display: flex; gap: 8px; align-items: flex-end; }
+.form-row .field-input { flex: 1; }
+.btn-save {
+  padding: 8px 16px;
+  background: var(--accent);
+  border: none; border-radius: var(--radius-sm);
+  color: var(--bg-deep);
+  font-family: var(--font-mono); font-weight: 700; font-size: 11px;
+  cursor: pointer; white-space: nowrap;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.btn-save:hover { background: var(--accent-dim); }
+.btn-save:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Secret list ───────────────────────────── */
+.secret-list {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.secret-list-label {
+  font-size: 9px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+.secret-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 11px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s;
+}
+.secret-row:hover { border-color: var(--border-bright); }
+.secret-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0;
+}
+.secret-name {
+  flex: 1; font-size: 11px; color: var(--text-primary);
+  font-family: var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.btn-delete {
+  padding: 3px 9px;
+  background: none;
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 9px;
+  cursor: pointer; letter-spacing: 0.5px;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.btn-delete:hover { color: var(--error); border-color: var(--error); }
+
+.empty-state {
+  text-align: center; padding: 20px 0;
+  font-size: 11px; color: var(--text-muted); font-style: italic;
+}
+
+/* ── MCP server cards ──────────────────────── */
+.server-cards { display: flex; flex-direction: column; gap: 8px; }
+.server-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.server-card-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.server-status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.server-status-dot.connected    { background: var(--success); box-shadow: 0 0 6px var(--accent-glow); }
+.server-status-dot.disconnected { background: var(--error); }
+.server-name {
+  flex: 1; font-size: 12px; font-weight: 600;
+  color: var(--text-primary);
+}
+.server-transport {
+  font-size: 9px; color: var(--accent-tertiary);
+  padding: 2px 6px;
+  border: 1px solid var(--accent-tertiary);
+  border-radius: 3px; letter-spacing: 0.5px;
+  text-transform: uppercase; opacity: 0.8;
+}
+.server-card-body { padding: 10px 12px; }
+.tools-label {
+  font-size: 9px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.tool-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.tool-chip {
+  font-size: 9px; color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-bright);
+  border-radius: 3px; padding: 2px 7px;
+}
+.server-card-body .empty-state {
+  padding: 8px 0; text-align: left; font-size: 10px;
+}
+
+/* ── Toast ─────────────────────────────────── */
+#toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-md);
+  padding: 9px 18px;
+  font-size: 11px; color: var(--text-primary);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+  z-index: 1000;
+  opacity: 0; transition: opacity 0.2s;
+  pointer-events: none;
+  white-space: nowrap;
+}
+#toast.show { opacity: 1; }
+#toast.ok   { border-color: var(--accent-dim); color: var(--accent); }
+#toast.err  { border-color: var(--error); color: var(--error); }
+
+/* ── Confirm overlay ───────────────────────── */
+#confirm-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); z-index: 200;
+  align-items: center; justify-content: center;
+}
+#confirm-overlay.open { display: flex; }
+.confirm-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-lg);
+  padding: 24px 28px; max-width: 340px; width: 90%;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.confirm-title { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.confirm-body  { font-size: 11px; color: var(--text-secondary); line-height: 1.6; }
+.confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.btn-cancel {
+  padding: 6px 14px; background: none;
+  border: 1px solid var(--border-bright); border-radius: var(--radius-sm);
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 11px;
+  cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.btn-cancel:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.btn-confirm-delete {
+  padding: 6px 14px; background: var(--error);
+  border: none; border-radius: var(--radius-sm);
+  color: #fff; font-family: var(--font-mono); font-weight: 700; font-size: 11px;
+  cursor: pointer; transition: opacity 0.15s;
+}
+.btn-confirm-delete:hover { opacity: 0.85; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="top-bar">
+    <div class="logo">TAMAGI<span>v0.1</span></div>
+    <div class="bar-sep"></div>
+    <div class="page-title">Settings</div>
+    <a href="/" class="back-link">← Back</a>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- ── SECRET STORE ─────────────────────── -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">&#9951; Secret Store</span>
+        <span class="section-subtitle">API keys &amp; credentials</span>
+      </div>
+      <div class="section-body">
+        <p class="help-text">
+          Secrets are stored in the OS keyring when available (GNOME Keyring,
+          macOS Keychain, Windows Credential Vault), or in a Fernet-encrypted
+          file at <code>data/secrets.enc</code> otherwise. Values are
+          <strong>never</strong> written to <code>config.yaml</code>, log
+          files, or LLM messages — they are injected as environment variables
+          only at MCP server spawn time.
+        </p>
+        <p class="help-text">
+          Reference a stored secret in <code>config.yaml</code> by name:
+          <code>BRAVE_API_KEY: {secret: BRAVE_API_KEY}</code>
+        </p>
+
+        <!-- Add / update form -->
+        <div class="add-form">
+          <div>
+            <label for="sec-name">Secret name</label>
+            <input class="field-input" id="sec-name" type="text"
+                   placeholder="e.g. BRAVE_API_KEY" autocomplete="off"
+                   spellcheck="false" />
+          </div>
+          <div>
+            <label for="sec-value">Value</label>
+            <div class="form-row">
+              <input class="field-input" id="sec-value" type="password"
+                     placeholder="Paste your key here"
+                     autocomplete="new-password" />
+              <button class="btn-save" id="btn-save-secret" onclick="saveSecret()">SAVE</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Secret list -->
+        <div>
+          <div class="secret-list-label" id="secret-list-label">Stored secrets</div>
+          <div class="secret-list" id="secret-list">
+            <div class="empty-state">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MCP SERVERS ───────────────────────── -->
+    <div class="section-card">
+      <div class="section-header">
+        <span class="section-title">&#11042; MCP Servers</span>
+        <span class="section-subtitle">Connected tool servers</span>
+      </div>
+      <div class="section-body">
+        <p class="help-text">
+          MCP servers are configured in <code>config.yaml</code> under the
+          <code>mcp.servers</code> key. Connections are opened at startup —
+          restart TamAGI after adding or removing a server. Each server's
+          tools are automatically registered as skills the model can call.
+        </p>
+        <p class="help-text">
+          For servers that require an API key, store the key here (above)
+          and reference it by name in the server's <code>env</code> block.
+          See <code>config.example.yaml</code> for annotated examples.
+        </p>
+
+        <div class="server-cards" id="server-cards">
+          <div class="empty-state">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- Confirm delete overlay -->
+<div id="confirm-overlay">
+  <div class="confirm-card">
+    <div class="confirm-title">Delete secret?</div>
+    <div class="confirm-body" id="confirm-body"></div>
+    <div class="confirm-actions">
+      <button class="btn-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="btn-confirm-delete" id="btn-confirm-delete">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const API = window.location.origin;
+let _pendingDeleteName = null;
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+let _toastTimer;
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.className = ''; }, 2800);
+}
+
+// ── API helpers ────────────────────────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+  // 204 No Content — no body to parse
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+// ── Secret list ────────────────────────────────────────────────────────────
+async function loadSecrets() {
+  try {
+    const data = await apiFetch('/api/secrets');
+    renderSecrets(data.names || []);
+  } catch (e) {
+    document.getElementById('secret-list').innerHTML =
+      `<div class="empty-state" style="color:var(--error)">Failed to load secrets: ${e.message}</div>`;
+  }
+}
+
+function renderSecrets(names) {
+  const label = document.getElementById('secret-list-label');
+  const list  = document.getElementById('secret-list');
+  label.textContent = `Stored secrets (${names.length})`;
+  if (names.length === 0) {
+    list.innerHTML = '<div class="empty-state">No secrets stored yet.</div>';
+    return;
+  }
+  list.innerHTML = names.map(name => `
+    <div class="secret-row" id="srow-${CSS.escape(name)}">
+      <div class="secret-dot"></div>
+      <span class="secret-name">${escHtml(name)}</span>
+      <button class="btn-delete" onclick="confirmDelete('${escHtml(name)}')">DEL</button>
+    </div>
+  `).join('');
+}
+
+// ── Save secret ────────────────────────────────────────────────────────────
+async function saveSecret() {
+  const nameEl  = document.getElementById('sec-name');
+  const valueEl = document.getElementById('sec-value');
+  const btn     = document.getElementById('btn-save-secret');
+
+  const name  = nameEl.value.trim();
+  const value = valueEl.value;
+
+  if (!name) { toast('Secret name is required', 'err'); nameEl.focus(); return; }
+  if (!value) { toast('Value is required', 'err'); valueEl.focus(); return; }
+
+  btn.disabled = true;
+  try {
+    await apiFetch(`/api/secrets/${encodeURIComponent(name)}`, {
+      method: 'POST',
+      body: JSON.stringify({ value }),
+    });
+    nameEl.value  = '';
+    valueEl.value = '';
+    toast(`Secret '${name}' saved`, 'ok');
+    await loadSecrets();
+  } catch (e) {
+    toast(`Save failed: ${e.message}`, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Delete secret ──────────────────────────────────────────────────────────
+function confirmDelete(name) {
+  _pendingDeleteName = name;
+  document.getElementById('confirm-body').textContent =
+    `'${name}' will be permanently removed from the secret store.`;
+  document.getElementById('confirm-overlay').classList.add('open');
+  document.getElementById('btn-confirm-delete').onclick = doDelete;
+}
+
+function closeConfirm() {
+  _pendingDeleteName = null;
+  document.getElementById('confirm-overlay').classList.remove('open');
+}
+
+async function doDelete() {
+  const name = _pendingDeleteName;
+  closeConfirm();
+  if (!name) return;
+  try {
+    await apiFetch(`/api/secrets/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    toast(`Secret '${name}' deleted`, 'ok');
+    await loadSecrets();
+  } catch (e) {
+    toast(`Delete failed: ${e.message}`, 'err');
+  }
+}
+
+// ── MCP server status ──────────────────────────────────────────────────────
+async function loadMCPStatus() {
+  const container = document.getElementById('server-cards');
+  try {
+    const data = await apiFetch('/api/mcp/status');
+    renderServers(data.servers || []);
+  } catch (e) {
+    container.innerHTML =
+      `<div class="empty-state" style="color:var(--error)">Failed to load MCP status: ${e.message}</div>`;
+  }
+}
+
+function renderServers(servers) {
+  const container = document.getElementById('server-cards');
+  if (servers.length === 0) {
+    container.innerHTML =
+      '<div class="empty-state">No MCP servers configured. See <code>config.example.yaml</code> for examples.</div>';
+    return;
+  }
+  container.innerHTML = servers.map(s => {
+    const statusClass = s.connected ? 'connected' : 'disconnected';
+    const statusLabel = s.connected ? 'connected' : 'disconnected';
+    const toolChips = s.tools.length
+      ? s.tools.map(t => `<span class="tool-chip">${escHtml(t)}</span>`).join('')
+      : '<span class="empty-state">No tools registered</span>';
+    return `
+      <div class="server-card">
+        <div class="server-card-header">
+          <div class="server-status-dot ${statusClass}" title="${statusLabel}"></div>
+          <span class="server-name">${escHtml(s.name)}</span>
+          <span class="server-transport">${escHtml(s.transport)}</span>
+        </div>
+        <div class="server-card-body">
+          <div class="tools-label">Tools (${s.tools.length})</div>
+          <div class="tool-chips">${toolChips}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Submit on Enter in the name field
+document.getElementById('sec-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('sec-value').focus();
+});
+document.getElementById('sec-value').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveSecret();
+});
+
+// Close confirm on overlay click
+document.getElementById('confirm-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeConfirm();
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────
+loadSecrets();
+loadMCPStatus();
+</script>
+</body>
+</html>
