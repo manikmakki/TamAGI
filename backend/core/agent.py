@@ -182,6 +182,8 @@ class TamAGIAgent:
         self._history_dir = Path(config.history.persist_path)
         self._dream_engine: "DreamEngine | None" = None
         self._pending_approvals: dict[str, asyncio.Future] = {}
+        # Rolling buffer for triple-storage: conv_id → (prev_user_msg, prev_assistant_response)
+        self._conv_prev_turn: dict[str, tuple[str, str]] = {}
         self._load_conversations()
 
     def set_dream_engine(self, engine: "DreamEngine") -> None:
@@ -716,18 +718,30 @@ class TamAGIAgent:
             metadata=meta,
         ))
 
-        # 8. Store conversation summary in memory (every exchange).
+        # 8. Store conversation triple in memory (state + action + feedback signal).
+        # On turn 1 we have no prior assistant response, so we only buffer.
+        # From turn 2 onward we store: prev_user + prev_assistant + current_user.
+        # This gives a complete (state, action, implicit-reward) record for each exchange.
         # Wrapped in try/except so a memory backend error never crashes the chat response.
         try:
-            summary = f"Conversation about: {conv.title}. Latest exchange: User asked '{user_message}', TamAGI responded about {final_text}"
-            await self.memory.store(MemoryEntry(
-                content=summary,
-                memory_type=MemoryType.CONVERSATION,
-                metadata={"conversation_id": conv.id},
-            ))
+            conv_id = conv.id
+            prev_turn = self._conv_prev_turn.get(conv_id)
+            if prev_turn is not None:
+                prev_user, prev_assistant = prev_turn
+                triple = (
+                    f"User: {prev_user}\n"
+                    f"TamAGI: {prev_assistant}\n"
+                    f"User: {user_message}"
+                )
+                await self.memory.store(MemoryEntry(
+                    content=triple,
+                    memory_type=MemoryType.CONVERSATION,
+                    metadata={"conversation_id": conv_id},
+                ))
+            self._conv_prev_turn[conv_id] = (user_message, final_text)
             self.personality.state.store_memory()
         except Exception as exc:
-            logger.warning("Memory store failed (chat summary): %s", exc)
+            logger.warning("Memory store failed (chat triple): %s", exc)
 
         # 9. Check for stage advancement and generate name if needed
         await self._maybe_advance_stage(prev_stage_index)
