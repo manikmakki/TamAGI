@@ -25,14 +25,20 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from .self_model.schemas import (
-    CapabilityNode,
-    EdgeType,
-    GoalNode,
-    NodeType,
-    StrategyNode,
-    UncertaintyNode,
-)
+from .self_model.schemas import EdgeType, NodeType
+
+# Compatibility stubs for removed types (planning engine pending world-native rewrite in Phase 6)
+class CapabilityNode:  # type: ignore[no-redef]
+    pass
+
+class GoalNode:  # type: ignore[no-redef]
+    pass
+
+class StrategyNode:  # type: ignore[no-redef]
+    pass
+
+class UncertaintyNode:  # type: ignore[no-redef]
+    pass
 
 if TYPE_CHECKING:
     from .self_model.store import SelfModel

@@ -33,13 +33,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .self_model.schemas import (
-    EdgeType,
-    GoalNode,
-    GoalStatus,
-    NodeType,
-    UncertaintyNode,
-)
+# Motivation engine is superseded by the World Thread (Phase 4 pivot).
+# Old node types removed — stubs keep the import chain intact until Phase 6 cleanup.
+from .self_model.schemas import EdgeType, NodeType
+
+# Compatibility stubs for removed types
+class GoalNode:  # type: ignore[no-redef]
+    pass
+
+class GoalStatus:  # type: ignore[no-redef]
+    ACTIVE = "active"
+    ABANDONED = "abandoned"
+
+class UncertaintyNode:  # type: ignore[no-redef]
+    pass
 
 if TYPE_CHECKING:
     from .self_model.store import SelfModel

@@ -27,6 +27,7 @@ from backend.core.personality import PersonalityEngine
 from backend.core.agent import TamAGIAgent
 from backend.core.identity import IdentityManager
 from backend.core.dreamer import DreamEngine
+from backend.core.world_thread import WorldThread
 from backend.core.self_model import SelfModel, seed_self_model
 from backend.core.motivation import MotivationEngine
 from backend.core.planning_engine import PlanningEngine
@@ -50,6 +51,7 @@ from backend.api.monologue import router as monologue_router, set_monologue_log,
 from backend.api.sprites import router as sprites_router
 from backend.api.secrets import router as secrets_router
 from backend.api.mcp import router as mcp_router
+from backend.api.world import router as world_router
 from backend.core.monologue import MonologueLog
 
 # ── Logging ───────────────────────────────────────────────────
@@ -165,14 +167,21 @@ async def lifespan(app: FastAPI):
     # ── Self-model: load from disk or seed from identity ──────
     self_model_path = config.self_model.data_path
     self_model = SelfModel(data_path=self_model_path)
+    workspace_path = Path(config.workspace.path)
     if Path(self_model_path).exists():
-        self_model.load()
-        logger.info(
-            f"Self-model loaded: {self_model.node_count} nodes, "
-            f"{self_model.edge_count} edges"
-        )
+        try:
+            self_model.load()
+            logger.info(
+                f"Self-model loaded: {self_model.node_count} nodes, "
+                f"{self_model.edge_count} edges"
+            )
+        except ValueError as exc:
+            # Old v1 format (pre-world-native) — wipe and re-seed
+            logger.warning("Self-model incompatible (%s) — deleting and re-seeding.", exc)
+            Path(self_model_path).unlink(missing_ok=True)
+            counts = seed_self_model(self_model, workspace_path=workspace_path)
+            logger.info(f"Self-model re-seeded: {counts}")
     else:
-        workspace_path = Path(config.workspace.path)
         counts = seed_self_model(self_model, workspace_path=workspace_path)
         logger.info(f"Self-model seeded: {counts}")
 
@@ -240,10 +249,10 @@ async def lifespan(app: FastAPI):
         skills.register(OrchestrationSkill(orchestrator=orchestrator))
         logger.info("Orchestration skill registered")
 
-    # Initialize dream engine (autonomous idle behavior)
+    # Initialize dream engine (kept for backward compatibility during transition)
     dream_engine = DreamEngine(
         agent=agent,
-        enabled=config.autonomy.enabled and config.autonomy.interval_minutes > 0,
+        enabled=False,  # Disabled — replaced by WorldThread
         interval_minutes=config.autonomy.interval_minutes,
         inactive_hours=(config.autonomy.inactive_hours_start, config.autonomy.inactive_hours_end),
         activities=config.autonomy.activities,
@@ -261,8 +270,42 @@ async def lifespan(app: FastAPI):
     ))
     skills.register(RecallMemorySkill(agent=agent))
     skills.register(QuerySelfModelSkill(agent=agent))
-    logger.info("Dream engine linked to agent — recall_dreams, recall_memory, query_self_model skills registered")
-    dream_engine.start()
+    from backend.skills.world_graph_skill import WorldGraphSkill
+    skills.register(WorldGraphSkill(agent=agent))
+
+    # Initialize the Living World thread (replaces dream + motivation engines)
+    world_thread = WorldThread(
+        agent=agent,
+        config=config.world_thread,
+        monologue_log=monologue_log,
+        autonomy_enabled=config.autonomy.enabled,
+    )
+    agent.set_world_thread(world_thread)
+
+    # First-run world seed: if no world state exists yet and onboarding is done,
+    # auto-generate a seed from identity context so the world thread has a starting point.
+    from backend.core.world_state import WorldStateStore
+    _ws_store = WorldStateStore()
+    if _ws_store.load() is None and not identity.needs_onboarding:
+        logger.info("No world state found — generating first-run world seed from identity")
+        try:
+            from backend.core.world_seed import OnboardingInput, generate_world_seed
+            from backend.core.world_state import parse_new_state, WorldState
+            from datetime import datetime, timezone
+            identity_ctx = identity.get_system_prompt_context()
+            raw = await generate_world_seed(llm, OnboardingInput(), identity_ctx)
+            ws = parse_new_state(raw)
+            if ws is None:
+                now = datetime.now(timezone.utc).isoformat()
+                ws = WorldState(timestamp=now, last_tick=now, location="", mood="",
+                                focus="", available_actions=[], raw_state_block=raw)
+            _ws_store.save(ws)
+            logger.info("World seed saved: location=%r", ws.location)
+        except Exception as exc:
+            logger.warning("Auto world seed failed: %s — frontend will prompt for seed", exc)
+
+    world_thread.start()
+    logger.info("World thread started — Living World is active")
 
     logger.info(f"═══ TamAGI is awake! ═══")
     logger.info(f"    Open http://localhost:{config.server.port} in your browser")
@@ -272,6 +315,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info(f"═══ {config.tamagi.name} is going to sleep... ═══")
     await dream_engine.stop()
+    await world_thread.stop()
     personality.save_state()
     self_model.save()
     logger.info(
@@ -371,6 +415,7 @@ app.include_router(dreams_router)
 app.include_router(self_model_router)
 app.include_router(monologue_router)
 app.include_router(sprites_router)
+app.include_router(world_router)
 
 # Serve user sprite PNGs — directory is created eagerly so the mount always succeeds.
 _sprites_data_dir = Path("data/sprites")

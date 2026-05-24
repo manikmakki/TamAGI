@@ -175,6 +175,18 @@ class MotivationConfig(BaseModel):
     voi_threshold: float = 0.2         # Minimum VOI to generate an exploration goal
 
 
+class WorldThreadConfig(BaseModel):
+    """Configuration for the Living World autonomous thread."""
+    enabled: bool = True
+    schedule: str = "*/15 * * * *"          # Cron expression — default every 15 minutes
+    resume_after_conversation: int = 15      # Minutes to wait before resuming after a user visit
+    active_hours_start: int = 8              # Don't tick before this hour
+    active_hours_end: int = 23              # Don't tick after this hour
+    thread_path: str = "data/world_thread.json"
+    state_path: str = "data/world_state.json"
+    thread_compress_threshold: int = 40000   # Characters before thread compaction
+
+
 class TaskBoardConfig(BaseModel):
     done_cap: int = 10  # Maximum completed items to retain in the Done column
 
@@ -218,6 +230,7 @@ class TamAGIConfig(BaseModel):
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
     self_model: SelfModelConfig = Field(default_factory=SelfModelConfig)
     motivation: MotivationConfig = Field(default_factory=MotivationConfig)
+    world_thread: WorldThreadConfig = Field(default_factory=WorldThreadConfig)
     task_board: TaskBoardConfig = Field(default_factory=TaskBoardConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
 

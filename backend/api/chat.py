@@ -209,6 +209,7 @@ async def websocket_chat(websocket: WebSocket):
             await message_queue.put(None)
 
     receiver_task = asyncio.create_task(_receiver())
+    last_conv_id: str | None = None
 
     try:
         while True:
@@ -244,6 +245,7 @@ async def websocket_chat(websocket: WebSocket):
                 if pose_parts:
                     await websocket.send_json({"type": "pose_change", "pose_parts": pose_parts})
 
+                last_conv_id = result.get("conversation_id") or last_conv_id
                 await websocket.send_json({
                     "type": "message",
                     **result,
@@ -270,4 +272,10 @@ async def websocket_chat(websocket: WebSocket):
             await receiver_task
         except (asyncio.CancelledError, Exception):
             pass
+        # Fire departure event so the world thread knows the visitor left.
+        if last_conv_id:
+            try:
+                await agent.on_conversation_ended(last_conv_id)
+            except Exception as exc:
+                logger.warning("on_conversation_ended error: %s", exc)
         logger.info("WebSocket client disconnected")

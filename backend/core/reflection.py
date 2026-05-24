@@ -22,14 +22,18 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .planning_engine import ActionPlan
-from .self_model.schemas import (
-    CapabilityNode,
-    EdgeType,
-    NodeType,
-    StrategyNode,
-    UncertaintyNode,
-)
+from .self_model.schemas import EdgeType, NodeType
 from .self_model.store import ModificationProposal
+
+# Compatibility stubs for removed types (reflection engine pending world-native rewrite in Phase 6)
+class CapabilityNode:  # type: ignore[no-redef]
+    pass
+
+class StrategyNode:  # type: ignore[no-redef]
+    pass
+
+class UncertaintyNode:  # type: ignore[no-redef]
+    pass
 
 if TYPE_CHECKING:
     from .self_model.store import SelfModel

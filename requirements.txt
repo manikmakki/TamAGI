@@ -28,6 +28,9 @@ mcp>=1.0.0
 keyring>=25.0.0
 cryptography>=42.0.0
 
+# Cron scheduling for world thread
+croniter>=2.0
+
 # Utilities
 python-multipart>=0.0.12
 aiofiles>=24.1.0

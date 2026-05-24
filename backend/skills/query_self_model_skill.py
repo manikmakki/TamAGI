@@ -1,12 +1,9 @@
 """
-Query Self-Model Skill — lets TamAGI actively introspect its own AURA graph.
+Query Self-Model Skill — introspect the world-native self-model graph.
 
-The self-model graph captures TamAGI's goals, capabilities, beliefs, preferences,
-strategies, uncertainties, and the typed relationships between them. A compact
-summary is injected into every system prompt, but this skill gives TamAGI the
-ability to query the graph directly when it needs deeper self-understanding:
-"What capabilities do I have?", "What am I uncertain about?", "What strategies
-have worked for goals like this?"
+Lets TamAGI query its world map: locations, quests, events, skills, perks,
+known things, mysteries, and lore. Supports depth-based graph traversal to
+see how nodes connect to their neighbourhood.
 """
 
 from __future__ import annotations
@@ -19,69 +16,62 @@ if TYPE_CHECKING:
     from backend.core.agent import TamAGIAgent
 
 
-_VALID_TYPES = {"goal", "capability", "strategy", "belief", "preference", "uncertainty", "signal"}
+_VALID_TYPES = {"location", "quest", "event", "skill", "perk", "known", "mystery", "lore"}
 
 
 class QuerySelfModelSkill(Skill):
     """
-    Query your internal AURA self-model graph to understand yourself better.
+    Query your world-native self-model graph.
 
-    The self-model is a living knowledge graph that tracks your goals, capabilities,
-    beliefs, preferences, strategies, uncertainties, and the relationships between them.
-    Use this when you want to:
-    - Check what capabilities you have and how confident you are in them
-    - See what you're currently uncertain about (high entropy = strong curiosity)
-    - Review your active goals and the strategies available for achieving them
-    - Look up a specific belief, preference, or relationship
-    - Understand how a specific node relates to the rest of your identity
+    The world graph is your living self-representation: a map of places, quests,
+    events, skills, and mysteries that grows as you explore and experience things.
 
-    You can search by text query, filter by node type, look up a specific node ID,
-    or request the edges (relationships) for a node.
+    Use this to:
+    - See what locations you know
+    - Check what quests are active or complete
+    - Review skills and their proficiency
+    - Surface mysteries and open questions
+    - Look up a specific node and its connections
+    - Traverse the graph outward from a node (depth > 0)
     """
 
     name = "query_self_model"
     description = (
-        "Query your internal AURA self-model graph — your living self-representation. "
-        "Returns goals, capabilities, beliefs, preferences, strategies, or uncertainties "
-        "that match your query. Use this to understand your own capabilities before "
-        "attempting a task, check what you're uncertain about, or review your active goals. "
-        "Optionally include relationship edges to see how nodes connect."
+        "Query your world-native self-model graph — your living self-representation. "
+        "Returns locations, quests, events, skills, perks, known things, mysteries, "
+        "or lore that match your query. Use depth > 0 to see a node's neighbourhood."
     )
     parameters = {
         "query": {
             "type": "string",
-            "description": (
-                "Text to search across node descriptions. Leave empty to retrieve all nodes "
-                "of the specified type. Examples: 'web search', 'planning', 'python code'."
-            ),
+            "description": "Text to search across node descriptions, names, and titles. Leave empty to retrieve by type.",
             "default": "",
         },
         "node_type": {
             "type": "string",
             "description": (
-                "Filter results to a specific node type. "
-                "Options: goal, capability, strategy, belief, preference, uncertainty, signal. "
-                "Leave empty to search all types."
+                "Filter to a specific type: location, quest, event, skill, perk, "
+                "known, mystery, lore. Leave empty to search all types."
             ),
             "default": "",
         },
         "node_id": {
             "type": "string",
-            "description": (
-                "Look up a specific node by its ID (e.g. 'g-001', 'cap-web-search'). "
-                "When provided, returns the node and all its edges. "
-                "Overrides query and node_type."
-            ),
+            "description": "Look up a specific node by ID. When provided, overrides query and node_type.",
             "default": "",
         },
-        "include_edges": {
-            "type": "boolean",
-            "description": "Include relationship edges in the output. Default: false.",
-            "default": False,
+        "depth": {
+            "type": "integer",
+            "description": (
+                "Graph traversal depth (0–3). 0 = just the node. "
+                "1 = node + direct neighbours. 2–3 = wider neighbourhood. "
+                "Output is a tree dump — draw your own connections."
+            ),
+            "default": 0,
         },
         "limit": {
             "type": "integer",
-            "description": "Maximum number of nodes to return (1–20). Default: 10.",
+            "description": "Maximum nodes to return for list queries (1–20). Default: 10.",
             "default": 10,
         },
     }
@@ -95,24 +85,27 @@ class QuerySelfModelSkill(Skill):
             return SkillResult(
                 success=False,
                 error="Self-model not available",
-                output="Self-model graph is not initialized.",
+                output="World graph is not initialized.",
             )
 
-        query = str(kwargs.get("query", "")).strip()
-        node_type = str(kwargs.get("node_type", "")).strip().lower()
-        node_id = str(kwargs.get("node_id", "")).strip()
-        include_edges = bool(kwargs.get("include_edges", False))
-        limit = min(max(int(kwargs.get("limit", 10)), 1), 20)
+        query    = str(kwargs.get("query", "")).strip()
+        ntype    = str(kwargs.get("node_type", "")).strip().lower()
+        node_id  = str(kwargs.get("node_id", "")).strip()
+        depth    = max(0, min(3, int(kwargs.get("depth", 0))))
+        limit    = min(max(int(kwargs.get("limit", 10)), 1), 20)
 
-        # ── Single node lookup by ID ──────────────────────────────────
+        # ── Single node lookup ────────────────────────────────
         if node_id:
             node = sm.get_node(node_id)
             if node is None:
                 return SkillResult(
                     success=False,
                     error=f"Node '{node_id}' not found",
-                    output=f"No node with ID '{node_id}' exists in the self-model.",
+                    output=f"No node with id '{node_id}' in the world graph.",
                 )
+            if depth > 0:
+                return self._traverse(sm, node_id, depth)
+
             lines = [_format_node(node)]
             edges = sm.get_edges(source=node_id) + sm.get_edges(target=node_id)
             if edges:
@@ -121,45 +114,37 @@ class QuerySelfModelSkill(Skill):
                     direction = "→" if e["source"] == node_id else "←"
                     other = e["target"] if e["source"] == node_id else e["source"]
                     other_node = sm.get_node(other) or {}
-                    other_desc = (
-                        other_node.get("description") or other_node.get("domain") or other
-                    )[:50]
-                    lines.append(f"  {direction} [{e['edge_type']}] {other} — {other_desc}")
+                    other_label = _node_label(other_node)[:50]
+                    lines.append(f"  {direction} [{e['edge_type']}] {other} — {other_label}")
             else:
-                lines.append("\nNo relationships found for this node.")
-            return SkillResult(
-                success=True,
-                output="\n".join(lines),
-                data={"node": node, "edges": edges},
-            )
+                lines.append("\nNo relationships found.")
+            return SkillResult(success=True, output="\n".join(lines), data={"node": node, "edges": edges})
 
-        # ── Type filter without query → return all of that type ───────
-        if node_type and node_type not in _VALID_TYPES:
+        # ── Type filter validation ────────────────────────────
+        if ntype and ntype not in _VALID_TYPES:
             return SkillResult(
                 success=False,
-                error=f"Unknown node_type '{node_type}'",
+                error=f"Unknown node_type '{ntype}'",
                 output=f"Valid types: {', '.join(sorted(_VALID_TYPES))}",
             )
 
-        if not query and node_type:
-            nodes = sm.get_all_nodes(node_type)[:limit]
+        # ── List query ────────────────────────────────────────
+        if not query and ntype:
+            nodes = sm.get_all_nodes(ntype)[:limit]
         elif query:
             nodes = sm.search_nodes(query, limit=limit)
-            if node_type:
-                nodes = [n for n in nodes if n.get("node_type") == node_type]
+            if ntype:
+                nodes = [n for n in nodes if n.get("node_type") == ntype]
         else:
-            # No query, no type — return a cross-section summary
-            nodes = (
-                sm.get_goals(status="active")[:3]
-                + [c.__dict__ if hasattr(c, '__dict__') else vars(c)
-                   for c in sm.query_capabilities()[:4]]
-                + sm.get_all_nodes("uncertainty")[:3]
-            )
-            # normalize — some may be dataclasses
-            nodes = [n if isinstance(n, dict) else n.to_dict() for n in nodes]
+            # Default cross-section: active quests, top skills, open mysteries, world lore
+            quests = [q.to_dict() for q in sm.get_quests(status="active")[:3]]
+            skills = [s.to_dict() for s in sm.get_skills()[:3]]
+            mysteries = [m.to_dict() for m in sm.get_mysteries()[:2]]
+            lore = [l.to_dict() for l in sm.get_lore()[:2]]
+            nodes = quests + skills + mysteries + lore
 
         if not nodes:
-            type_note = f" of type '{node_type}'" if node_type else ""
+            type_note  = f" of type '{ntype}'" if ntype else ""
             query_note = f" matching '{query}'" if query else ""
             return SkillResult(
                 success=True,
@@ -167,7 +152,7 @@ class QuerySelfModelSkill(Skill):
                 data={"nodes": [], "count": 0},
             )
 
-        lines = [f"Self-model: {len(nodes)} node(s) found\n"]
+        lines = [f"World graph: {len(nodes)} node(s)\n"]
         for node in nodes:
             if not isinstance(node, dict):
                 try:
@@ -175,13 +160,6 @@ class QuerySelfModelSkill(Skill):
                 except Exception:
                     node = vars(node)
             lines.append(_format_node(node))
-            if include_edges:
-                nid = node.get("id", "")
-                edges = sm.get_edges(source=nid) + sm.get_edges(target=nid)
-                for e in edges:
-                    direction = "→" if e["source"] == nid else "←"
-                    other = e["target"] if e["source"] == nid else e["source"]
-                    lines.append(f"    {direction} [{e['edge_type']}] {other}")
 
         return SkillResult(
             success=True,
@@ -189,34 +167,63 @@ class QuerySelfModelSkill(Skill):
             data={"nodes": nodes, "count": len(nodes)},
         )
 
+    def _traverse(self, sm, root_id: str, depth: int) -> SkillResult:
+        """Tree-dump traversal from root_id out to `depth` hops."""
+        subgraph = sm.ego_subgraph(root_id, radius=depth)
+        seen: set[str] = set()
+        lines: list[str] = []
+
+        def _walk(nid: str, indent: int) -> None:
+            if nid in seen:
+                lines.append("  " * indent + f"[{_node_label(sm.get_node(nid) or {})}] (already shown)")
+                return
+            seen.add(nid)
+            node = sm.get_node(nid) or {}
+            lines.append("  " * indent + _format_node(node))
+            for successor in subgraph.successors(nid):
+                edata = sm._graph.edges.get((nid, successor), {})
+                etype = edata.get("edge_type", "→")
+                lines.append("  " * (indent + 1) + f"─[{etype}]─>")
+                _walk(successor, indent + 2)
+
+        _walk(root_id, 0)
+        return SkillResult(
+            success=True,
+            output="\n".join(lines),
+            data={"root": root_id, "depth": depth, "nodes_visited": len(seen)},
+        )
+
+
+def _node_label(node: dict) -> str:
+    """Short human label for a node."""
+    return (
+        node.get("name")
+        or node.get("title")
+        or node.get("description", "")
+    )[:60]
+
 
 def _format_node(node: dict) -> str:
-    """Render a self-model node as a compact readable line."""
+    """Render a world graph node as a compact readable line."""
     ntype = node.get("node_type", "?")
-    nid = node.get("id", "?")
-
-    desc = (
-        node.get("description")
-        or node.get("domain")
-        or node.get("belief")
-        or node.get("raw_text", "")
-    )[:100]
+    nid   = node.get("id", "?")
+    label = _node_label(node) or nid
 
     extras: list[str] = []
+    if "proficiency" in node:
+        extras.append(f"proficiency={node['proficiency']}")
     if "confidence" in node:
         extras.append(f"confidence={node['confidence']:.0%}")
-    if "priority" in node:
-        extras.append(f"priority={node['priority']:.1f}")
     if "entropy_score" in node:
         extras.append(f"entropy={node['entropy_score']:.2f}")
-    if "preference_weight" in node:
-        extras.append(f"weight={node['preference_weight']:.2f}")
-    if "strength" in node:
-        extras.append(f"strength={node['strength']:.1f}")
-    if "status" in node and node["status"] not in ("active", "pending"):
+    if "status" in node and node["status"] != "active":
         extras.append(f"status={node['status']}")
-    if "success_rate" in node and node["success_rate"] > 0:
-        extras.append(f"success={node['success_rate']:.0%}")
+    if "usage_count" in node and node["usage_count"] > 0:
+        extras.append(f"uses={node['usage_count']}")
+    if "context" in node and node["context"]:
+        extras.append(f"ctx={node['context']}")
+    if "atmosphere" in node and node["atmosphere"]:
+        extras.append(f"feel={node['atmosphere'][:30]}")
 
     extra_str = f"  ({', '.join(extras)})" if extras else ""
-    return f"[{ntype}] {nid}: {desc}{extra_str}"
+    return f"[{ntype}] {nid}: {label}{extra_str}"

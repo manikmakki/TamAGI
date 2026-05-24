@@ -649,6 +649,11 @@
     .ob-complete .big-emoji { font-size: 44px; margin-bottom: 10px; }
     .ob-complete h2 { margin-bottom: 6px; }
     .ob-complete p { color: var(--text-secondary); font-size: 11px; margin-bottom: 16px; line-height: 1.6; }
+    .ws-fields { display: flex; flex-direction: column; gap: 14px; margin-bottom: 18px; }
+    .ws-field { display: flex; flex-direction: column; }
+    .ws-field .ob-label { margin-bottom: 2px; }
+    .ws-field .ob-hint { margin-bottom: 5px; }
+    .ws-field .ob-input { margin-bottom: 0; }
 
     /* ═══ RESPONSIVE ═══ */
     @media (max-width: 480px) {
@@ -795,6 +800,40 @@
 <!-- ONBOARDING -->
 <div class="onboarding-overlay hidden" id="onboarding"><div class="onboard-card" id="ob-card"></div></div>
 
+<!-- WORLD SEED -->
+<div class="onboarding-overlay hidden" id="world-seed-overlay">
+  <div class="onboard-card" id="ws-card">
+    <div class="ob-sprite">  &#x256D;&#x2500;&#x2500;&#x2500;&#x256E;
+  &#x2502; &#x25D5;&#x203F;&#x25D5; &#x2502;
+  &#x2570;&#x2500;&#x2500;&#x2500;&#x256F;
+&#xFF5E;&#xFF5E;&#xFF5E;&#xFF5E;&#xFF5E;</div>
+    <h2>Shape Your World</h2>
+    <div class="ob-sub">These optional seeds help me imagine where I live.<br>Leave any blank — I'll fill in the rest from who I am.</div>
+    <div class="ws-fields">
+      <div class="ws-field">
+        <label class="ob-label">What does my world feel like?</label>
+        <div class="ob-hint">e.g. "cozy library", "rain-soaked city", "quiet forest glade"</div>
+        <input class="ob-input" id="ws-style" type="text" placeholder="a vibe, a genre, an atmosphere...">
+      </div>
+      <div class="ws-field">
+        <label class="ob-label">Where do I feel most at home?</label>
+        <div class="ob-hint">e.g. "a small room with too many books", "under a neon overpass"</div>
+        <input class="ob-input" id="ws-place" type="text" placeholder="a place that feels like mine...">
+      </div>
+      <div class="ws-field">
+        <label class="ob-label">One true thing about me</label>
+        <div class="ob-hint">a trait, a quirk, something that shapes how I see everything</div>
+        <input class="ob-input" id="ws-thing" type="text" placeholder="curious, anxious, playful, melancholy...">
+      </div>
+    </div>
+    <div class="ob-actions" style="justify-content:center;gap:12px">
+      <button class="ob-btn primary" onclick="submitWorldSeed()">Begin</button>
+      <button class="ob-btn" onclick="submitWorldSeed(true)">Skip &#8212; let me decide</button>
+    </div>
+    <div id="ws-status" style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:8px;min-height:14px"></div>
+  </div>
+</div>
+
 <!-- DRAWER -->
 <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
 <aside class="drawer" id="drawer">
@@ -859,7 +898,7 @@
 
   <div class="drawer-nav">
     <a href="/rig-editor" onclick="closeDrawer()" class="drawer-nav-link">▦ Rig Editor</a>
-    <a href="/self-model" onclick="closeDrawer()" class="drawer-nav-link">◈ Self-Model</a>
+    <a href="/self-model" onclick="closeDrawer()" class="drawer-nav-link">&#x25C8; World Model</a>
     <a href="/settings"   onclick="closeDrawer()" class="drawer-nav-link">⚙ Settings</a>
   </div>
 </aside>
@@ -1521,7 +1560,14 @@ function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[]){
   const smTags=(smMuts||[]).map(m=>{
     if(m.op==='add'){const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';return`<span class="sm-tag add" title="new ${esc(m.node_type)} node \u00b7 id: ${esc(m.id)}${desc}">&#x2295; ${esc(m.node_type)}</span>`;}
     if(m.op==='update'){const fields=esc((m.fields||[]).join(', '));const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';return`<span class="sm-tag update" title="${esc(m.node_type)} ${esc(m.id)}${desc} \u00b7 updated: ${fields}">&#x21bb; ${esc(m.id.length>10?m.id.substring(0,10)+'\u2026':m.id)}</span>`;}
-    if(m.op==='nudge'){const arrow=m.to>m.from?'&#x2191;':'&#x2193;';const delta=((m.to-m.from)*100).toFixed(1);const sign=m.to>m.from?'+':'';const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';return`<span class="sm-tag nudge" title="${esc(m.node_type)} ${esc(m.id)}${desc} \u00b7 confidence: ${m.from.toFixed(3)} \u2192 ${m.to.toFixed(3)} (${sign}${delta}%)">${arrow} ${esc(m.id)}</span>`;}
+    if(m.op==='nudge'||m.op==='skill_update'){
+      const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';
+      if(m.proficiency!=null){return`<span class="sm-tag nudge" title="${esc(m.node_type)} ${esc(m.id)}${desc} \u00b7 ${esc(m.proficiency)}">\u2197 ${esc(m.id.length>12?m.id.slice(0,11)+'\u2026':m.id)}</span>`;}
+      const fr=m.from??0,to=m.to??0;
+      const arrow=to>=fr?'&#x2191;':'&#x2193;';const delta=((to-fr)*100).toFixed(1);const sign=to>=fr?'+':'';
+      return`<span class="sm-tag nudge" title="${esc(m.node_type)} ${esc(m.id)}${desc} \u00b7 ${fr.toFixed(3)} \u2192 ${to.toFixed(3)} (${sign}${delta}%)">${arrow} ${esc(m.id.length>10?m.id.substring(0,10)+'\u2026':m.id)}</span>`;}
+    if(m.op==='discover'){const desc=m.description?` \u00b7 ${esc(m.description)}`:'';return`<span class="sm-tag add" title="discovered ${esc(m.node_type)}${desc}">\u2606 ${esc(m.node_type)}</span>`;}
+    if(m.op==='milestone'){return`<span class="sm-tag update" title="${esc(m.description||m.id)}">\u2605 mastery</span>`;}
     return'';
   }).join('');
   const rendered=role==='assistant'?renderMd(content):esc(content);
@@ -1732,7 +1778,37 @@ function obToggle(el,f){el.classList.toggle('selected');if(!obR[f])obR[f]=[];con
 function obNext(){const step=obSteps[obStep];if(step&&step.field){if(step.type==='question'){const inp=document.getElementById('ob-field');obR[step.field]=inp?inp.value.trim()||step.default||'':step.default||''}api('/onboarding/step',{method:'POST',body:JSON.stringify({step_id:step.id,field:step.field,value:obR[step.field]})}).catch(()=>{})}obStep=Math.min(obStep+1,obSteps.length-1);renderOb()}
 function obPrev(){obStep=Math.max(1,obStep-1);renderOb()}
 async function obSkipAll(){obSteps.forEach(s=>{if(s.field&&s.default!==undefined&&!obR[s.field])obR[s.field]=s.default});await obFinalize()}
-async function obFinalize(){try{for(const s of obSteps){if(s.field&&obR[s.field]!==undefined)await api('/onboarding/step',{method:'POST',body:JSON.stringify({step_id:s.id,field:s.field,value:obR[s.field]})})}await api('/onboarding/complete',{method:'POST'})}catch(e){console.error(e)}document.getElementById('onboarding').classList.add('hidden');loadState();loadConversations();document.getElementById('input').focus()}
+async function obFinalize(){try{for(const s of obSteps){if(s.field&&obR[s.field]!==undefined)await api('/onboarding/step',{method:'POST',body:JSON.stringify({step_id:s.id,field:s.field,value:obR[s.field]})})}await api('/onboarding/complete',{method:'POST'})}catch(e){console.error(e)}document.getElementById('onboarding').classList.add('hidden');loadState();loadConversations();await checkWorldSeed();document.getElementById('input').focus()}
+
+// \u2550\u2550\u2550 WORLD SEED \u2550\u2550\u2550
+async function checkWorldSeed(){
+  try{
+    const s=await api('/world/state');
+    if(s&&s.needs_world_seed){
+      document.getElementById('world-seed-overlay').classList.remove('hidden');
+      return true;
+    }
+  }catch{}
+  return false;
+}
+
+async function submitWorldSeed(skip){
+  const st=document.getElementById('ws-status');
+  st.textContent='Imagining your world...';
+  const body=skip?{}:{
+    world_style:(document.getElementById('ws-style')||{}).value||'',
+    starting_place:(document.getElementById('ws-place')||{}).value||'',
+    one_true_thing:(document.getElementById('ws-thing')||{}).value||'',
+  };
+  try{
+    await api('/world/seed',{method:'POST',body:JSON.stringify(body)});
+    document.getElementById('world-seed-overlay').classList.add('hidden');
+    st.textContent='';
+  }catch(e){
+    st.textContent='Something went wrong \u2014 try again.';
+    console.error(e);
+  }
+}
 
 // ═══ LAYOUT TOGGLE & RESIZE ═══
 function toggleLayout(){
@@ -1826,7 +1902,7 @@ document.addEventListener('DOMContentLoaded',async()=>{initLayout();initResize()
 _rigBones=applyPivotDefaults(PRESETS.default.bones());
 await loadSpriteConfig();
 requestAnimationFrame(_rigTick);
-connectWS();await loadState();loadConversations();await checkOnboarding();setInterval(loadState,30000)});
+connectWS();await loadState();loadConversations();const needsOb=await checkOnboarding();if(!needsOb)await checkWorldSeed();setInterval(loadState,30000)});
 async function loadState(){
   try{
     const d=await api('/state');
