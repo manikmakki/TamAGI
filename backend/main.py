@@ -279,6 +279,9 @@ async def lifespan(app: FastAPI):
         config=config.world_thread,
         monologue_log=monologue_log,
         autonomy_enabled=config.autonomy.enabled,
+        schedule=config.autonomy.schedule,
+        active_hours=(config.autonomy.active_hours_start, config.autonomy.active_hours_end),
+        resume_after_conversation=config.autonomy.resume_after_conversation,
     )
     agent.set_world_thread(world_thread)
 

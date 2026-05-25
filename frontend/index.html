@@ -859,7 +859,7 @@
   <div class="drawer-panel hidden" id="panel-mind">
     <div class="mind-panel-header">
       <div class="mind-status" id="mind-status-row"></div>
-      <button class="dream-trigger-btn" id="dream-trigger-btn" onclick="triggerDream()">&#x2728; Dream Now</button>
+      <button class="dream-trigger-btn" id="dream-trigger-btn" onclick="triggerDream()">&#x25B6; Tick Now</button>
     </div>
     <div class="mind-entries" id="mind-entries">
       <div class="drawer-empty">No inner monologue yet.</div>
@@ -1611,7 +1611,7 @@ async function loadMindPanel(){
     if(ind)ind.classList.toggle('on',!!stateData?.dreaming);
     const total=data.total||0;
     if(stateData?.dreaming){
-      statusRow.innerHTML='<span class="dream-active-badge">&#x2728; dreaming now...</span>';
+      statusRow.innerHTML='<span class="dream-active-badge">&#x25B6; ticking...</span>';
     }else{
       statusRow.textContent=total?total+' event'+(total===1?'':'s')+' recorded':'';
     }
@@ -1640,13 +1640,14 @@ async function loadMindPanel(){
 }
 async function triggerDream(){
   const btn=document.querySelector('.dream-trigger-btn');
-  btn.textContent='\u23F3 Dreaming...';btn.disabled=true;
+  btn.textContent='\u23F3 Ticking...';btn.disabled=true;
   try{
-    const r=await api('/dreams/trigger',{method:'POST'});
-    if(r.summary)addMsg('assistant',`\u{1F4AD} *${r.summary}*\n\n${r.content||''}`);
+    const r=await api('/world/tick',{method:'POST'});
+    if(r&&r.location)addMsg('assistant',`\u{1F30D} *World tick complete*\n\nNow at: ${r.location}${r.mood?`\nMood: ${r.mood}`:''}`);
+    else if(r&&r.detail)addMsg('assistant',`\u26A0 World tick: ${r.detail}`);
     await loadMindPanel();await loadState();
   }catch(e){console.error(e);}
-  btn.textContent='\u2728 Dream Now';btn.disabled=false;
+  btn.textContent='\u25B6 Tick Now';btn.disabled=false;
 }
 
 // ═══ TAB NAVIGATION ═══

@@ -114,6 +114,7 @@ class Conversation:
     messages: list[Message] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
+    world_summarized: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -123,6 +124,7 @@ class Conversation:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "message_count": len(self.messages),
+            "world_summarized": self.world_summarized,
         }
 
     def to_summary(self) -> dict[str, Any]:
@@ -240,14 +242,11 @@ class TamAGIAgent:
             return
         try:
             from backend.core.world_thread import WorldEventInjector
-            from backend.core.world_state import WorldStateStore
             duration_minutes = int((time.time() - conv.created_at) / 60)
             summary = await self._summarize_conversation_for_world(conv)
-            ws = WorldStateStore(self.config.world_thread.state_path).load()
-            if ws and summary:
-                departure_event = WorldEventInjector.visitor_departure(
-                    "your visitor", duration_minutes, summary, ws
-                )
+            conv.world_summarized = True
+            if summary:
+                departure_event = WorldEventInjector.visitor_departure("your visitor", summary)
                 self._world_thread.inject_world_event(departure_event)
                 logger.info(
                     "World departure event queued for conv %s (%d min)", conv_id, duration_minutes
@@ -256,6 +255,43 @@ class TamAGIAgent:
             logger.warning("on_conversation_ended failed: %s", exc)
         finally:
             self._world_thread.schedule_resume()
+
+    async def flush_unsummarized_conversations(
+        self,
+        idle_threshold_seconds: float = 120,
+        after_timestamp: float | None = None,
+    ) -> None:
+        """Summarize conversations that ended without a WebSocket disconnect flush.
+
+        Only processes conversations whose last activity is after after_timestamp (the
+        previous world tick time). Conversations predating the last tick are silently
+        marked done — they're already in the world's past.
+
+        idle_threshold_seconds is skipped entirely when after_timestamp is provided and
+        the conv clearly postdates the last tick (covers the "Tick Now" case).
+        """
+        if not self._world_thread:
+            return
+        from backend.core.world_thread import WorldEventInjector
+        for conv in list(self.conversations.values()):
+            if conv.world_summarized or len(conv.messages) < 2:
+                continue
+            # Conversations older than the last world tick are already in the world's past.
+            if after_timestamp is not None and conv.updated_at <= after_timestamp:
+                conv.world_summarized = True
+                continue
+            # For automatic ticks, skip conversations that are still potentially active.
+            if after_timestamp is None and (time.time() - conv.updated_at) < idle_threshold_seconds:
+                continue
+            try:
+                summary = await self._summarize_conversation_for_world(conv)
+                conv.world_summarized = True
+                if summary:
+                    departure_event = WorldEventInjector.visitor_departure("your visitor", summary)
+                    self._world_thread.inject_world_event(departure_event)
+                    logger.info("Flushed unsummarized conv %s for world tick", conv.id)
+            except Exception as exc:
+                logger.warning("flush_unsummarized_conversations failed for %s: %s", conv.id, exc)
 
     def resolve_approval(self, approval_id: str, approved: bool, allow_always: bool = False) -> None:
         """Resolve a pending tool_approval_required future from the WebSocket handler."""
@@ -340,6 +376,7 @@ class TamAGIAgent:
         # Record user message (text-only placeholder for persistence)
         conv.messages.append(Message(role="user", content=history_content))
         conv.updated_at = time.time()
+        conv.world_summarized = False  # new messages → needs re-summarization for world thread
 
         # Capture current stage before interaction
         prev_stage_index = self.personality.state.stage_index
@@ -1281,6 +1318,7 @@ class TamAGIAgent:
                     title=data.get("title", "Untitled"),
                     created_at=data.get("created_at", 0),
                     updated_at=data.get("updated_at", 0),
+                    world_summarized=data.get("world_summarized", False),
                     messages=[
                         Message(
                             role=m["role"],

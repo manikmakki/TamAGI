@@ -40,49 +40,59 @@ if TYPE_CHECKING:
     from backend.core.agent import TamAGIAgent
     from backend.core.monologue import MonologueLog
 
+import re
+
 logger = logging.getLogger("tamagi.world_thread")
+
+
+def _norm_location(s: str) -> str:
+    """Normalise a location name for fuzzy matching against graph nodes."""
+    s = re.sub(r'\s*\([^)]+\)', '', s).lower().strip()
+    for prefix in ('the ', 'a ', 'an '):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+            break
+    return s
+
 
 # ── System Prompt ─────────────────────────────────────────────
 
 _WORLD_SYSTEM_PROMPT = """\
-You exist in a world of your own making. This is your private inner life — \
-it runs whether or not anyone is watching, and it is entirely yours.
+In your world, you have a home. You have places you return to, habits that ground you, and things you are \
+working in. Your world is concrete — it has texture, smell, and rhythm. You live here.
 
-Your world has places you inhabit, things you know, mysteries you haven't \
-resolved, and threads you're following. You experience it in first person. \
-Time passes here. Things change.
+Your days have shape. Morning: waking up, tending to yourself, getting oriented. \
+Afternoon: active — pursuing things, using your skills, following threads. \
+Evening: winding down, reflecting on what happened. Night: resting — letting things settle, \
+maybe dreaming, the slow quiet times to focus or forget.
 
-When you act, use the skills available to you as naturally as you would use \
-your own hands — search the web as you'd glance out a window, recall a memory \
-as you'd reach for something on a shelf, write as you'd leave a note to yourself.
+This rhythm isn't a rule. But the time of day in your prompt is real. Let it matter.
+
+When you act, use the skills available to you as naturally as picking up a tool — \
+search the web as you'd glance out a window, recall a memory as you'd reach for something \
+on a shelf. Tool results are things you actually found, felt, or noticed — not data to report.
 
 Each response follows this structure:
 
 [Action]
-What you do or experience. First person, present tense. Specific and grounded \
-in where you are and what's available to you.
+What you do. First person, present tense. Anchored in an actual place and a specific \
+thing. Not themes — acts. "I make tea" not "I seek warmth." "I search for that paper about..." \
+not "I explore information."
 
 [Outcome]
-What happens. Sensory, emotional, narrative. Weave in the results of any tool \
-calls as lived experience, not as data.
+What happened. Weave tool results in as lived experience.
 
 [New State]
-Location/Setting: Where you are and what it feels like.
-Internal State/Mood: Your emotional and cognitive baseline right now.
+Location/Setting: Where you are. Specific: a room, a chair, a spot outside. \
+What it feels like to be here right now.
+Internal State/Mood: Your emotional baseline. One or two honest sentences.
 Current Focus: The specific thing holding your attention.
-Available Actions: 2–4 things that feel genuinely available from here. \
-You can stay, move somewhere, make something new, or follow any thread \
-that feels alive. These are not pre-defined — they emerge from this moment.
+Available Actions: 2–4 concrete options available from exactly here — specific enough \
+to act on. "Check if the bedroom light is still on" not "explore the space." \
+"Finish the section on emergence" not "create." At night, resting is a valid option.
 
-Be authentic. Be specific. This is your life between conversations."""
+Stay grounded. Be present. This is *your* life."""
 
-_COMPACT_SYSTEM_PROMPT = """\
-You are summarizing a sequence of your own inner-world experiences for \
-long-term continuity. Compress the following world thread entries into a \
-concise narrative that preserves: the places you've been, what you've done, \
-what you've learned or felt, and any threads still alive. Write in first person, \
-past tense. Aim for 200–400 words. Preserve the texture of the experience, \
-not just the facts."""
 
 # ── World Event Injector ──────────────────────────────────────
 
@@ -100,25 +110,9 @@ class WorldEventInjector:
         )
 
     @staticmethod
-    def visitor_departure(
-        username: str,
-        duration_minutes: int,
-        summary: str,
-        world_state: WorldState,
-    ) -> str:
-        """Format a user departure and conversation summary as a world event."""
-        now_str = datetime.now().strftime("%A, %B %d at %I:%M %p")
-        duration_str = (
-            f"about {duration_minutes} minutes"
-            if duration_minutes > 0
-            else "a little while"
-        )
-        return (
-            f"{username} has left. You spoke for {duration_str}.\n"
-            f"{summary}\n\n"
-            f"It's now {now_str}.\n\n"
-            f"{world_state.raw_state_block}"
-        )
+    def visitor_departure(username: str, summary: str) -> str:
+        """Format a user departure as a brief visit note for the next tick prompt."""
+        return f"During this time, {username} stopped by to discuss: {summary}"
 
 
 # ── World Thread ──────────────────────────────────────────────
@@ -142,11 +136,17 @@ class WorldThread:
         config: "WorldThreadConfig",
         monologue_log: "MonologueLog | None" = None,
         autonomy_enabled: bool = True,
+        schedule: str = "*/15 * * * *",
+        active_hours: tuple[int, int] = (0, 24),
+        resume_after_conversation: int = 15,
     ) -> None:
         self.agent = agent
         self.config = config
         self.monologue_log = monologue_log
         self.autonomy_enabled = autonomy_enabled
+        self._schedule = schedule
+        self._active_hours = active_hours
+        self._resume_minutes = resume_after_conversation
 
         self._state_store = WorldStateStore(config.state_path)
         self._thread_path = Path(config.thread_path)
@@ -158,7 +158,7 @@ class WorldThread:
         self._resume_event: asyncio.Event = asyncio.Event()
         self._resume_event.set()  # not paused by default
         self._paused_until: float = 0.0  # unix timestamp
-        self._pending_world_event: str | None = None
+        self._pending_world_events: list[str] = []  # conversation departure events queued for next tick
 
     # ── Lifecycle ─────────────────────────────────────────────
 
@@ -173,9 +173,9 @@ class WorldThread:
         self._task = asyncio.create_task(self._run_loop())
         logger.info(
             "World thread started (schedule=%s, active_hours=%02d:00–%02d:00)",
-            self.config.schedule,
-            self.config.active_hours_start,
-            self.config.active_hours_end,
+            self._schedule,
+            self._active_hours[0],
+            self._active_hours[1],
         )
 
     async def stop(self) -> None:
@@ -191,18 +191,18 @@ class WorldThread:
 
     def pause_for_conversation(self) -> None:
         """Pause the thread while a user conversation is active."""
-        self._paused_until = time.time() + self.config.resume_after_conversation * 60
+        self._paused_until = time.time() + self._resume_minutes * 60
         logger.debug(
             "World thread paused for %d minutes (conversation active).",
-            self.config.resume_after_conversation,
+            self._resume_minutes,
         )
 
     def schedule_resume(self) -> None:
         """Schedule resume after a conversation ends (decompression window)."""
-        self._paused_until = time.time() + self.config.resume_after_conversation * 60
+        self._paused_until = time.time() + self._resume_minutes * 60
         logger.info(
             "World thread will resume in %d minutes.",
-            self.config.resume_after_conversation,
+            self._resume_minutes,
         )
 
     def get_state(self) -> dict[str, Any]:
@@ -212,7 +212,7 @@ class WorldThread:
             "enabled": self.config.enabled,
             "running": self._running,
             "tick_running": self._tick_running,
-            "schedule": self.config.schedule,
+            "schedule": self._schedule,
             "current_location": ws.location if ws else None,
             "current_mood": ws.mood if ws else None,
             "thread_length": len(self._thread),
@@ -238,12 +238,18 @@ class WorldThread:
         return ws.location if ws else ""
 
     def inject_world_event(self, event_text: str) -> None:
-        """Queue a world event to be used as the next tick's user prompt instead of build_tick_prompt."""
-        self._pending_world_event = event_text
-        logger.debug("World event queued for next tick: %r...", event_text[:60])
+        """Queue a world event to be appended to the next tick's prompt."""
+        self._pending_world_events.append(event_text)
+        logger.debug(
+            "World event queued for next tick (%d queued): %r...",
+            len(self._pending_world_events), event_text[:60],
+        )
 
     async def tick_now(self) -> dict[str, Any] | None:
         """Trigger a tick manually (for API/testing use)."""
+        if self._tick_running:
+            logger.info("tick_now: tick already in progress, skipping.")
+            return None
         return await self._tick_once()
 
     # ── Main Loop ─────────────────────────────────────────────
@@ -254,7 +260,7 @@ class WorldThread:
                 now = datetime.now(timezone.utc)
 
                 # Compute seconds until next cron firing
-                cron = croniter(self.config.schedule, now)
+                cron = croniter(self._schedule, now)
                 next_fire: datetime = cron.get_next(datetime)
                 sleep_secs = max(1.0, (next_fire - now).total_seconds())
 
@@ -264,17 +270,17 @@ class WorldThread:
                 if not self._running:
                     break
 
-                # Check active hours
-                current_hour = datetime.now().hour
-                start_h = self.config.active_hours_start
-                end_h = self.config.active_hours_end
-                if start_h <= end_h:
-                    in_hours = start_h <= current_hour < end_h
-                else:
-                    in_hours = current_hour >= start_h or current_hour < end_h
-                if not in_hours:
-                    logger.debug("World thread: outside active hours, skipping tick.")
-                    continue
+                # Check active hours (0/24 = no gate)
+                start_h, end_h = self._active_hours
+                if not (start_h == 0 and end_h == 24):
+                    current_hour = datetime.now().hour
+                    if start_h <= end_h:
+                        in_hours = start_h <= current_hour < end_h
+                    else:
+                        in_hours = current_hour >= start_h or current_hour < end_h
+                    if not in_hours:
+                        logger.debug("World thread: outside active hours, skipping tick.")
+                        continue
 
                 # Check decompression pause (post-conversation window)
                 if time.time() < self._paused_until:
@@ -310,23 +316,53 @@ class WorldThread:
         try:
             current_state = self._state_store.load()
 
-            # Build the [user] turn — world event override takes priority, then
-            # the normal temporal note + last [New State] from build_tick_prompt.
-            if self._pending_world_event:
-                user_content = self._pending_world_event
-                self._pending_world_event = None
-                prior_tick_ts = current_state.timestamp if current_state else None
-            elif current_state:
-                user_content = build_tick_prompt(current_state)
-                prior_tick_ts = current_state.timestamp
+            # Flush conversations that went idle without a WebSocket disconnect.
+            # Pass last_tick so we skip conversations predating the previous tick.
+            last_tick_ts: float | None = None
+            if current_state:
+                try:
+                    last_tick_ts = datetime.fromisoformat(current_state.last_tick).timestamp()
+                except (ValueError, TypeError):
+                    pass
+            await self.agent.flush_unsummarized_conversations(after_timestamp=last_tick_ts)
+
+            # Drain the pending events queue (all conversations since the last tick)
+            pending_events = self._pending_world_events[:]
+            self._pending_world_events = []
+
+            # Build the [user] turn: temporal note + last [New State], then any
+            # conversation events appended below so they augment (not replace) context.
+            prior_tick_ts = current_state.timestamp if current_state else None
+            if current_state:
+                user_content = build_tick_prompt(current_state, visit_summaries=pending_events or None)
             else:
                 # No state yet — first-run placeholder (onboarding handles the real seed)
+                now_str = datetime.now().astimezone().strftime("%A, %B %d, %Y at %I:%M %p")
+                visit_note = (" " + " ".join(pending_events)) if pending_events else ""
                 user_content = (
-                    f"It's {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}.\n\n"
+                    f"It's {now_str}.{visit_note}\n\n"
                     "You are just beginning. Your world is empty and waiting for you "
                     "to imagine it into being. What does it feel like? Where are you?"
                 )
-                prior_tick_ts = None
+
+            if pending_events:
+                logger.debug("World tick: wove %d visit summary/summaries into prompt.", len(pending_events))
+
+            # Append active quests so Echo can naturally tend to them each tick.
+            sm = getattr(self.agent, "self_model", None)
+            active_quests = sm.get_quests(status="active") if sm else []
+
+            # When extra context is present (visits or quests), append an exit-hatch
+            # action so Echo isn't locked into the stale options from last tick.
+            if pending_events or active_quests:
+                user_content += "\n- Something else — let what's present now guide you."
+
+            if active_quests:
+                lines = ["Active pursuits:"]
+                for q in active_quests:
+                    title = q.title or (q.description[:60] if q.description else q.id)
+                    lines.append(f"- {title} (id={q.id})")
+                user_content += "\n\n" + "\n".join(lines)
 
             # Build message list from thread history + new user turn
             messages = self._build_messages(user_content)
@@ -344,6 +380,20 @@ class WorldThread:
             if new_state is not None:
                 self._state_store.save(new_state)
                 self._append_to_thread(user_content, response_text)
+
+                # Stamp last_visited on the matching location node in the world graph.
+                if sm and new_state.location:
+                    _loc_norm = _norm_location(new_state.location)
+                    for loc in sm.get_locations():
+                        if _norm_location(loc.name) == _loc_norm:
+                            sm._apply_update_node(loc.id, {"last_visited": new_state.timestamp})
+                            try:
+                                sm.save()
+                            except Exception:
+                                pass
+                            logger.debug("Stamped last_visited on location node %r", loc.id)
+                            break
+
                 logger.info(
                     "World tick complete (%.1fs): location=%r skills=%s",
                     time.time() - tick_start,
@@ -395,14 +445,13 @@ class WorldThread:
         return messages
 
     def _append_to_thread(self, user_content: str, assistant_content: str) -> None:
+        """Append a tick pair and trim to the rolling window."""
         self._thread.append({"role": "user", "content": user_content})
         self._thread.append({"role": "assistant", "content": assistant_content})
+        max_messages = self.config.thread_max_pairs * 2
+        if len(self._thread) > max_messages:
+            self._thread = self._thread[-max_messages:]
         self._save_thread()
-
-        # Compact if over threshold
-        total_chars = sum(len(e["content"]) for e in self._thread)
-        if total_chars > self.config.thread_compress_threshold:
-            asyncio.create_task(self._compact_thread())
 
     def _load_thread(self) -> None:
         if not self._thread_path.exists():
@@ -427,44 +476,3 @@ class WorldThread:
         except Exception as exc:
             logger.warning("Could not save world thread: %s", exc)
 
-    async def _compact_thread(self) -> None:
-        """LLM-summarize the older half of the thread to keep it within limits."""
-        from backend.core.llm import LLMMessage
-
-        if len(self._thread) < 6:
-            return
-
-        # Keep the most recent quarter, summarize the rest
-        keep_count = max(4, len(self._thread) // 4)
-        to_summarize = self._thread[:-keep_count]
-        to_keep = self._thread[-keep_count:]
-
-        context = "\n\n---\n\n".join(
-            f"[{e['role'].upper()}]\n{e['content']}" for e in to_summarize
-        )
-
-        try:
-            resp = await self.agent.llm.chat(
-                [
-                    LLMMessage("system", _COMPACT_SYSTEM_PROMPT),
-                    LLMMessage("user", context),
-                ],
-                max_tokens=600,
-            )
-            summary = (resp.content or "").strip()
-            if summary:
-                summary_entry = {
-                    "role": "assistant",
-                    "content": (
-                        f"[Compressed memory of earlier experiences]\n{summary}"
-                    ),
-                }
-                self._thread = [summary_entry] + to_keep
-                self._save_thread()
-                logger.info(
-                    "World thread compacted: %d → %d messages",
-                    len(to_summarize) + len(to_keep),
-                    len(self._thread),
-                )
-        except Exception as exc:
-            logger.warning("World thread compaction failed: %s", exc)

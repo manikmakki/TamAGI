@@ -48,8 +48,8 @@ class WorldGraphSkill(Skill):
     parameters = {
         "action": {
             "type": "string",
-            "enum": ["add_node", "update_node", "add_edge"],
-            "description": "What to do: add_node, update_node, or add_edge.",
+            "enum": ["add_node", "update_node", "add_edge", "delete_node"],
+            "description": "What to do: add_node, update_node, add_edge, or delete_node.",
         },
         "node_type": {
             "type": "string",
@@ -129,12 +129,35 @@ class WorldGraphSkill(Skill):
             return await self._update_node(sm, kwargs)
         elif action == "add_edge":
             return await self._add_edge(sm, kwargs)
+        elif action == "delete_node":
+            return await self._delete_node(sm, kwargs)
         else:
             return SkillResult(
                 success=False,
                 error=f"Unknown action: {action!r}",
-                output=f"Valid actions: add_node, update_node, add_edge.",
+                output=f"Valid actions: add_node, update_node, add_edge, delete_node.",
             )
+
+    def _find_name_match(self, sm, node_type: str, attrs: dict) -> dict | None:
+        """Return an existing node of the same type whose label normalizes to the same string."""
+        label = (attrs.get("name") or attrs.get("title") or attrs.get("description", "")).strip()
+        if not label or len(label) < 4:
+            return None
+
+        def _norm(s: str) -> str:
+            s = s.lower().strip()
+            for prefix in ("the ", "a ", "an "):
+                if s.startswith(prefix):
+                    s = s[len(prefix):]
+                    break
+            return s
+
+        target = _norm(label)
+        for node in sm.get_all_nodes(node_type):
+            existing_label = node.get("name") or node.get("title") or node.get("description", "")
+            if _norm(str(existing_label)) == target:
+                return node
+        return None
 
     async def _add_node(self, sm, kwargs: dict) -> SkillResult:
         node_type = str(kwargs.get("node_type", "")).strip().lower()
@@ -146,6 +169,51 @@ class WorldGraphSkill(Skill):
             )
 
         attrs: dict = dict(kwargs.get("attributes") or {})
+
+        # Before creating a new node, check if one with the same name already exists.
+        # If so, merge attrs into it rather than producing a duplicate.
+        existing = self._find_name_match(sm, node_type, attrs)
+        if existing:
+            existing_id = existing["id"]
+            if attrs:
+                update_attrs = {k: v for k, v in attrs.items() if k != "id"}
+                if update_attrs:
+                    sm._apply_update_node(existing_id, update_attrs)
+
+            # Still honour explicit relationships on the re-encountered node
+            explicit_edges = 0
+            for rel in list(kwargs.get("relationships") or []):
+                tid = str(rel.get("target_id", "")).strip()
+                etype = str(rel.get("edge_type", "relates_to")).strip()
+                if not tid or etype not in _EDGE_TYPES or sm.get_node(tid) is None:
+                    continue
+                if not sm._graph.has_edge(existing_id, tid):
+                    try:
+                        sm._apply_add_edge(existing_id, tid, etype)
+                        explicit_edges += 1
+                    except Exception:
+                        pass
+
+            node = sm.get_node(existing_id) or {}
+            label = node.get("name") or node.get("title") or node.get("description", existing_id)[:60]
+            try:
+                sm.save()
+            except Exception:
+                pass
+            edge_note = f" (+{explicit_edges} edge(s))" if explicit_edges else ""
+            return SkillResult(
+                success=True,
+                output=(
+                    f"Merged with existing {node_type} node: {label!r} (id={existing_id}){edge_note}\n"
+                    f"Use id={existing_id!r} for future updates or edges."
+                ),
+                data={
+                    "node_id": existing_id,
+                    "node_type": node_type,
+                    "sm_mutation": {"op": "update", "node_type": node_type, "id": existing_id, "description": label[:60]},
+                },
+            )
+
         if not attrs.get("id"):
             prefix = {"location": "loc", "quest": "quest", "event": "evt",
                       "skill": "skill", "perk": "perk", "known": "knw",
@@ -293,3 +361,35 @@ class WorldGraphSkill(Skill):
             )
         except Exception as exc:
             return SkillResult(success=False, error=str(exc), output=str(exc))
+
+    async def _delete_node(self, sm, kwargs: dict) -> SkillResult:
+        node_id = str(kwargs.get("node_id", "")).strip()
+        if not node_id:
+            return SkillResult(success=False, error="node_id required for delete_node", output="Provide node_id.")
+
+        node = sm.get_node(node_id)
+        if node is None:
+            return SkillResult(
+                success=False, error=f"Node {node_id!r} not found",
+                output=f"No node with id {node_id!r} in the world graph.",
+            )
+
+        ntype = node.get("node_type", "")
+        label = (node.get("name") or node.get("title") or node.get("description", node_id))[:60]
+        edge_count = sm._graph.degree(node_id)
+
+        # NetworkX removes all incident edges automatically
+        sm._graph.remove_node(node_id)
+        try:
+            sm.save()
+        except Exception:
+            pass
+
+        return SkillResult(
+            success=True,
+            output=f"Deleted {ntype} node: {label!r} (id={node_id}, {edge_count} edge(s) removed)",
+            data={
+                "node_id": node_id,
+                "sm_mutation": {"op": "delete", "node_type": ntype, "id": node_id, "description": label},
+            },
+        )

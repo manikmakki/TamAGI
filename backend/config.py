@@ -114,23 +114,23 @@ class WebSearchConfig(BaseModel):
 
 
 class AutonomyConfig(BaseModel):
-    """TamAGI's autonomous idle behavior (dream engine)."""
+    """Controls when TamAGI is free to act autonomously (world thread + autonomous actions)."""
     enabled: bool = True
-    interval_minutes: int = 30  # How often TamAGI dreams (0 = disabled)
-    inactive_hours_start: int = 23   # Don't dream before this hour
-    inactive_hours_end: int = 6    # Don't dream after this hour
-    # Which activities are enabled (cleanup self-triggers; excluded from random pool)
+    # Cron expression for the world thread tick (default: every 15 minutes)
+    schedule: str = "*/15 * * * *"
+    # Active window (24h local time). Use 0/24 to run at all hours (no gate).
+    active_hours_start: int = 0
+    active_hours_end: int = 24
+    # Minutes to wait before resuming world thread after a user conversation ends
+    resume_after_conversation: int = 15
+    # Legacy dream engine fields — kept for backward compat but unused (dream engine disabled)
+    interval_minutes: int = 30
+    inactive_hours_start: int = 23
+    inactive_hours_end: int = 6
     activities: list[str] = Field(
         default_factory=lambda: ["dream", "explore", "experiment", "journal", "wander", "plan"]
     )
-    # Relative weights — journal and wander are dominant to favour self-reflection
-    # and open-ended exploration. plan enables goal-directed autonomous execution.
-    weights: list[int] = Field(
-        default_factory=lambda: [15, 12, 12, 35, 30, 20]
-    )
-    # Goals below this priority threshold are deferred to wander (reflective) rather
-    # than routed to plan (agentic execution). The goal stays queued; priority rises
-    # naturally as entropy recovers between cycles.
+    weights: list[int] = Field(default_factory=lambda: [15, 12, 12, 35, 30, 20])
     agentic_priority_min: float = 0.4
 
 
@@ -176,15 +176,11 @@ class MotivationConfig(BaseModel):
 
 
 class WorldThreadConfig(BaseModel):
-    """Configuration for the Living World autonomous thread."""
+    """Technical storage settings for the Living World thread."""
     enabled: bool = True
-    schedule: str = "*/15 * * * *"          # Cron expression — default every 15 minutes
-    resume_after_conversation: int = 15      # Minutes to wait before resuming after a user visit
-    active_hours_start: int = 8              # Don't tick before this hour
-    active_hours_end: int = 23              # Don't tick after this hour
     thread_path: str = "data/world_thread.json"
     state_path: str = "data/world_state.json"
-    thread_compress_threshold: int = 40000   # Characters before thread compaction
+    thread_max_pairs: int = 5  # Rolling window: keep last N tick pairs in LLM context
 
 
 class TaskBoardConfig(BaseModel):

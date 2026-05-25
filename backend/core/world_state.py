@@ -181,20 +181,35 @@ def parse_new_state(llm_response: str, previous_tick_ts: str | None = None) -> W
     )
 
 
-def build_tick_prompt(state: WorldState) -> str:
-    """Build the [user] message injected at the start of each world thread tick.
+def build_tick_prompt(state: WorldState, visit_summaries: list[str] | None = None) -> str:
+    """Build the [user] message for each world thread tick.
 
-    Contains the current date/time, an elapsed-time note, and the full
-    raw_state_block from the previous tick so the LLM can pick up exactly
-    where it left off.
+    Structure:
+      It's {datetime}. {elapsed note}. {visit summaries if any}
+
+      {raw_state_block from previous tick}
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now().astimezone()  # local wall-clock time, timezone-aware
     date_str = now.strftime("%A, %B %d, %Y at %I:%M %p")
 
-    elapsed_note = _elapsed_note(state.last_tick, now)
-    temporal_line = f"It's {date_str}."
+    hour = now.hour
+    if 5 <= hour < 12:
+        time_of_day = "Morning"
+    elif 12 <= hour < 17:
+        time_of_day = "Afternoon"
+    elif 17 <= hour < 21:
+        time_of_day = "Evening"
+    else:
+        time_of_day = "Night"
+
+    elapsed_note = _elapsed_note(state.timestamp, now)
+    temporal_line = f"It's {time_of_day} — {date_str}."
     if elapsed_note:
         temporal_line += f" {elapsed_note}"
+
+    if visit_summaries:
+        visits_text = " ".join(visit_summaries)
+        temporal_line += f" {visits_text}"
 
     return f"{temporal_line}\n\n{state.raw_state_block}"
 
@@ -235,7 +250,7 @@ def _elapsed_note(last_tick_iso: str, now: datetime) -> str:
         if minutes < 20:
             return ""
         if minutes < 180:
-            return f"About {int(minutes)} minutes have passed since your last thought."
+            return f"About {int(minutes)} minutes have passed since your last activity."
         if minutes < 720:
             hours = int(minutes / 60)
             return f"A few hours have passed — about {hours}."

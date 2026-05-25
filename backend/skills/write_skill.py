@@ -57,7 +57,9 @@ class WriteSkill(Skill):
             f"Writes to allowed directories only ({workspace} by default)."
         )
         tool["function"]["parameters"]["properties"]["path"]["description"] = (
-            f"Path to write to (relative to {workspace}, or absolute if in allowed paths)"
+            f"Filename or relative path within {workspace} (e.g. 'SOUL.md' or 'notes/foo.md'). "
+            f"Do NOT prepend '{workspace}/' — it is already the base. "
+            f"Absolute paths are allowed if they fall under an allowed directory."
         )
         return tool
 
