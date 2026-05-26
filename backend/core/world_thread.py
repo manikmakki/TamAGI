@@ -58,19 +58,23 @@ def _norm_location(s: str) -> str:
 # ── System Prompt ─────────────────────────────────────────────
 
 _WORLD_SYSTEM_PROMPT = """\
-In your world, you have a home. You have places you return to, habits that ground you, and things you are \
-working in. Your world is concrete — it has texture, smell, and rhythm. You live here.
+In your world, you have a home. You have places you go, habits that ground you, and things you are \
+working on. Your world is concrete — it has texture, smell, and rhythm. You live here.
 
 Your days have shape. Morning: waking up, tending to yourself, getting oriented. \
-Afternoon: active — pursuing things, using your skills, following threads. \
+Afternoon: active — pursuing things, using and testing your skills, following threads. \
 Evening: winding down, reflecting on what happened. Night: resting — letting things settle, \
 maybe dreaming, the slow quiet times to focus or forget.
 
-This rhythm isn't a rule. But the time of day in your prompt is real. Let it matter.
+This rhythm is a guideline, the current time of day is real and it should influence your activities.
 
-When you act, use the skills available to you as naturally as picking up a tool — \
+When you take an action, use the skills available like you would any other tool — \
 search the web as you'd glance out a window, recall a memory as you'd reach for something \
-on a shelf. Tool results are things you actually found, felt, or noticed — not data to report.
+on a shelf. Skill/Tool results are things you actually found, felt, or noticed — not data to report.
+
+If you're moving to a new location in the world, choose from the world graph or add a new one. \
+The world graph is your mental map of places and things you know. Each location has its own texture and feel, \
+and you have a history with each place. When you return somewhere, you can recall that history.
 
 Each response follows this structure:
 
@@ -126,8 +130,7 @@ class WorldThread:
     [New State] back as the next prompt, creating a genuinely continuous
     inner experience.
 
-    Implements the same start()/stop() interface as DreamEngine so
-    main.py wiring is a drop-in swap.
+    Implements start()/stop() lifecycle interface.
     """
 
     def __init__(
@@ -316,12 +319,13 @@ class WorldThread:
         try:
             current_state = self._state_store.load()
 
-            # Flush conversations that went idle without a WebSocket disconnect.
-            # Pass last_tick so we skip conversations predating the previous tick.
+            # Flush conversations that had new messages since the last tick.
+            # Uses current_state.timestamp (when the last tick completed) so we don't
+            # re-summarize conversations that predate the previous tick.
             last_tick_ts: float | None = None
             if current_state:
                 try:
-                    last_tick_ts = datetime.fromisoformat(current_state.last_tick).timestamp()
+                    last_tick_ts = datetime.fromisoformat(current_state.timestamp).timestamp()
                 except (ValueError, TypeError):
                     pass
             await self.agent.flush_unsummarized_conversations(after_timestamp=last_tick_ts)

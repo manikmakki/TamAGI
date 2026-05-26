@@ -24,6 +24,8 @@ _state_store = WorldStateStore()
 
 
 class WorldSeedRequest(BaseModel):
+    world_setting: str = ""   # primary open-ended field
+    # Legacy fields kept for compat
     world_style: str = ""
     starting_place: str = ""
     one_true_thing: str = ""
@@ -53,6 +55,7 @@ async def seed_world(req: WorldSeedRequest):
     identity_ctx = agent.identity.get_system_prompt_context()
 
     seed_input = OnboardingInput(
+        world_setting=req.world_setting,
         world_style=req.world_style,
         starting_place=req.starting_place,
         one_true_thing=req.one_true_thing,
@@ -105,10 +108,10 @@ async def trigger_tick():
     if ws:
         try:
             from datetime import datetime
-            last_tick_ts = datetime.fromisoformat(ws.last_tick).timestamp()
+            last_tick_ts = datetime.fromisoformat(ws.timestamp).timestamp()
         except (ValueError, TypeError):
             pass
-    await agent.flush_unsummarized_conversations(idle_threshold_seconds=0, after_timestamp=last_tick_ts)
+    await agent.flush_unsummarized_conversations(after_timestamp=last_tick_ts)
     result = await wt.tick_now()
     if result is None:
         return {"status": "error", "detail": "Tick produced no valid [New State] — check logs"}

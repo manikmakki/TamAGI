@@ -123,15 +123,6 @@ class AutonomyConfig(BaseModel):
     active_hours_end: int = 24
     # Minutes to wait before resuming world thread after a user conversation ends
     resume_after_conversation: int = 15
-    # Legacy dream engine fields — kept for backward compat but unused (dream engine disabled)
-    interval_minutes: int = 30
-    inactive_hours_start: int = 23
-    inactive_hours_end: int = 6
-    activities: list[str] = Field(
-        default_factory=lambda: ["dream", "explore", "experiment", "journal", "wander", "plan"]
-    )
-    weights: list[int] = Field(default_factory=lambda: [15, 12, 12, 35, 30, 20])
-    agentic_priority_min: float = 0.4
 
 
 class AgentConfig(BaseModel):
@@ -168,11 +159,6 @@ class AuthConfig(BaseModel):
 class SelfModelConfig(BaseModel):
     data_path: str = "data/self_model.json"
     save_interval: int = 10  # Save every N interactions
-
-
-class MotivationConfig(BaseModel):
-    tick_interval_seconds: int = 300   # How often the motivation engine ticks during dreams
-    voi_threshold: float = 0.2         # Minimum VOI to generate an exploration goal
 
 
 class WorldThreadConfig(BaseModel):
@@ -225,7 +211,6 @@ class TamAGIConfig(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
     self_model: SelfModelConfig = Field(default_factory=SelfModelConfig)
-    motivation: MotivationConfig = Field(default_factory=MotivationConfig)
     world_thread: WorldThreadConfig = Field(default_factory=WorldThreadConfig)
     task_board: TaskBoardConfig = Field(default_factory=TaskBoardConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)

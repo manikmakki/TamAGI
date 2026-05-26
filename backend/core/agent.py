@@ -32,13 +32,11 @@ from backend.core.identity import IdentityManager
 from backend.skills.registry import SkillRegistry
 from backend.core.self_model import SelfModel
 from backend.core.self_model.schemas import EdgeType
-from backend.core.motivation import MotivationEngine
 from backend.core.planning_engine import PlanningEngine, ActionPlan
 from backend.core.reflection import ReflectionEngine, ActualOutcome, bayesian_update
 from backend.core.plan_executor import PlanExecutor
 
 if TYPE_CHECKING:
-    from backend.core.dreamer import DreamEngine
     from backend.core.monologue import MonologueLog
     from backend.core.qa_pipeline import QAPipeline
 
@@ -161,7 +159,6 @@ class TamAGIAgent:
         skills: SkillRegistry,
         identity: IdentityManager | None = None,
         self_model: SelfModel | None = None,
-        motivation_engine: MotivationEngine | None = None,
         planning_engine: PlanningEngine | None = None,
         reflection_engine: ReflectionEngine | None = None,
         monologue_log: "MonologueLog | None" = None,
@@ -174,7 +171,6 @@ class TamAGIAgent:
         self.skills = skills
         self.identity = identity or IdentityManager()
         self.self_model = self_model
-        self.motivation_engine = motivation_engine
         self.planning_engine = planning_engine
         self.reflection_engine = reflection_engine
         self.monologue_log = monologue_log
@@ -182,20 +178,49 @@ class TamAGIAgent:
         self._interaction_count = 0
         self.conversations: dict[str, Conversation] = {}
         self._history_dir = Path(config.history.persist_path)
-        self._dream_engine: "DreamEngine | None" = None
         self._world_thread: "Any | None" = None
         self._pending_approvals: dict[str, asyncio.Future] = {}
         # Rolling buffer for triple-storage: conv_id → (prev_user_msg, prev_assistant_response)
         self._conv_prev_turn: dict[str, tuple[str, str]] = {}
+        self._pending_conv_ids: set[str] = self._load_pending_conv_ids()
         self._load_conversations()
-
-    def set_dream_engine(self, engine: "DreamEngine") -> None:
-        """Wire up the dream engine so the agent can surface recent dream activity."""
-        self._dream_engine = engine
 
     def set_world_thread(self, world_thread: "Any") -> None:
         """Wire up the world thread for world state injection and conversation hooks."""
         self._world_thread = world_thread
+
+    # ── Durable pending-conv queue ────────────────────────────
+
+    @property
+    def _pending_conv_ids_path(self) -> Path:
+        return self._history_dir.parent / "pending_world_convs.json"
+
+    def _load_pending_conv_ids(self) -> set[str]:
+        try:
+            p = self._history_dir.parent / "pending_world_convs.json"
+            if p.exists():
+                data = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    return set(data)
+        except Exception as exc:
+            logger.warning("Could not load pending conv ids: %s", exc)
+        return set()
+
+    def _save_pending_conv_ids(self) -> None:
+        try:
+            p = self._pending_conv_ids_path
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(sorted(self._pending_conv_ids)), encoding="utf-8")
+        except Exception as exc:
+            logger.warning("Could not persist pending conv ids: %s", exc)
+
+    def _mark_conv_pending(self, conv_id: str) -> None:
+        self._pending_conv_ids.add(conv_id)
+        self._save_pending_conv_ids()
+
+    def _unmark_conv_pending(self, conv_id: str) -> None:
+        self._pending_conv_ids.discard(conv_id)
+        self._save_pending_conv_ids()
 
     def _get_arrival_context(self, first_message: str) -> str:
         """System prompt fragment framing this conversation as a world event."""
@@ -245,6 +270,7 @@ class TamAGIAgent:
             duration_minutes = int((time.time() - conv.created_at) / 60)
             summary = await self._summarize_conversation_for_world(conv)
             conv.world_summarized = True
+            self._unmark_conv_pending(conv_id)
             if summary:
                 departure_event = WorldEventInjector.visitor_departure("your visitor", summary)
                 self._world_thread.inject_world_event(departure_event)
@@ -258,40 +284,41 @@ class TamAGIAgent:
 
     async def flush_unsummarized_conversations(
         self,
-        idle_threshold_seconds: float = 120,
         after_timestamp: float | None = None,
     ) -> None:
-        """Summarize conversations that ended without a WebSocket disconnect flush.
+        """Summarize pending conversations and inject departure events into the world thread.
 
-        Only processes conversations whose last activity is after after_timestamp (the
-        previous world tick time). Conversations predating the last tick are silently
-        marked done — they're already in the world's past.
+        Uses the durable pending-conv set (written to disk after every user message) so
+        no conversation is lost across restarts or when the browser stays connected.
 
-        idle_threshold_seconds is skipped entirely when after_timestamp is provided and
-        the conv clearly postdates the last tick (covers the "Tick Now" case).
+        after_timestamp: conversations with updated_at at or before this value are in the
+        world's past — clear them without summarizing so they don't generate stale events.
+        On failure the conv stays in the pending set and will be retried on the next tick.
         """
-        if not self._world_thread:
+        if not self._world_thread or not self._pending_conv_ids:
             return
         from backend.core.world_thread import WorldEventInjector
-        for conv in list(self.conversations.values()):
-            if conv.world_summarized or len(conv.messages) < 2:
+        for conv_id in list(self._pending_conv_ids):
+            conv = self.conversations.get(conv_id)
+            if conv is None or len(conv.messages) < 2 or conv.world_summarized:
+                self._unmark_conv_pending(conv_id)
                 continue
-            # Conversations older than the last world tick are already in the world's past.
+            # Conversations that predate the last world tick are in the world's past.
             if after_timestamp is not None and conv.updated_at <= after_timestamp:
                 conv.world_summarized = True
-                continue
-            # For automatic ticks, skip conversations that are still potentially active.
-            if after_timestamp is None and (time.time() - conv.updated_at) < idle_threshold_seconds:
+                self._unmark_conv_pending(conv_id)
                 continue
             try:
                 summary = await self._summarize_conversation_for_world(conv)
                 conv.world_summarized = True
+                self._unmark_conv_pending(conv_id)
                 if summary:
                     departure_event = WorldEventInjector.visitor_departure("your visitor", summary)
                     self._world_thread.inject_world_event(departure_event)
-                    logger.info("Flushed unsummarized conv %s for world tick", conv.id)
+                    logger.info("World summary injected for conv %s", conv_id)
             except Exception as exc:
-                logger.warning("flush_unsummarized_conversations failed for %s: %s", conv.id, exc)
+                logger.warning("flush_unsummarized_conversations failed for %s: %s", conv_id, exc)
+                # Leave in pending set — will retry on next tick
 
     def resolve_approval(self, approval_id: str, approved: bool, allow_always: bool = False) -> None:
         """Resolve a pending tool_approval_required future from the WebSocket handler."""
@@ -377,6 +404,7 @@ class TamAGIAgent:
         conv.messages.append(Message(role="user", content=history_content))
         conv.updated_at = time.time()
         conv.world_summarized = False  # new messages → needs re-summarization for world thread
+        self._mark_conv_pending(conv.id)
 
         # Capture current stage before interaction
         prev_stage_index = self.personality.state.stage_index

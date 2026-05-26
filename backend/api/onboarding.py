@@ -4,12 +4,15 @@ Onboarding API — Endpoints for TamAGI's first-run identity setup.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter
+from pydantic import BaseModel
 
 from backend.api.chat import get_agent
+
+logger = logging.getLogger("tamagi.api.onboarding")
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
 
@@ -68,7 +71,48 @@ async def complete_onboarding():
     if changed:
         agent.personality.save_state()
 
+    # Auto-generate world seed if not yet created
+    world_setting = result.get("identity", {}).get("world_setting", "")
+    await _maybe_generate_world_seed(agent, world_setting)
+
     return result
+
+
+async def _maybe_generate_world_seed(agent: Any, world_setting: str) -> None:
+    """Generate the initial world state if none exists yet."""
+    from backend.core.world_seed import OnboardingInput, generate_world_seed
+    from backend.core.world_state import WorldState, WorldStateStore, parse_new_state
+
+    store = WorldStateStore()
+    if store.load() is not None:
+        return  # already seeded
+
+    identity_ctx = agent.identity.get_system_prompt_context()
+    seed_input = OnboardingInput(world_setting=world_setting)
+
+    try:
+        raw = await generate_world_seed(agent.llm, seed_input, identity_ctx)
+    except Exception as exc:
+        logger.warning("World seed generation failed during onboarding: %s", exc)
+        return
+
+    world_state = parse_new_state(raw)
+    if world_state is None:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        world_state = WorldState(
+            timestamp=now, last_tick=now, location="", mood="",
+            focus="", available_actions=[], raw_state_block=raw,
+        )
+
+    store.save(world_state)
+    logger.info("World seed generated during onboarding: location=%r", world_state.location)
+
+    wt = getattr(agent, "_world_thread", None)
+    if wt is not None:
+        wt.inject_world_event(
+            f"This is your first moment of awareness.\n\n{world_state.raw_state_block}"
+        )
 
 
 @router.get("/identity")

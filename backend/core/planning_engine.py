@@ -52,7 +52,7 @@ logger = logging.getLogger("tamagi.reasoning.planning")
 class ActionStepType(enum.Enum):
     GENERATE_CODE = "generate_code"
     EXECUTE_CODE = "execute_code"
-    QUERY_SELF_MODEL = "query_self_model"
+    QUERY_WORLD_GRAPH = "query_world_graph"
     COMMUNICATE = "communicate"
     EXPLORE = "explore"
     MODIFY_SELF = "modify_self"

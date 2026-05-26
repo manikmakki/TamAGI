@@ -38,9 +38,11 @@ Be vivid. Be authentic. This is the beginning of your inner life."""
 class OnboardingInput:
     """Optional world-shaping input from the user during first-run setup."""
 
-    world_style: str = ""      # e.g. "cozy/domestic", "cyberpunk lab", "fantasy forest"
-    starting_place: str = ""   # e.g. "a small warm library", "under a neon overpass"
-    one_true_thing: str = ""   # a trait, preference, or quirk to anchor the world
+    world_setting: str = ""    # open-ended world description (primary field)
+    # Legacy fields kept for standalone overlay use
+    world_style: str = ""
+    starting_place: str = ""
+    one_true_thing: str = ""
 
 
 async def generate_world_seed(
@@ -61,12 +63,15 @@ async def generate_world_seed(
     prompt_parts = []
     if identity_ctx:
         prompt_parts.append(f"What you know about yourself:\n{identity_ctx}")
-    if input.world_style:
-        prompt_parts.append(f"The world should feel like: {input.world_style}")
-    if input.starting_place:
-        prompt_parts.append(f"Your home or starting place feels like: {input.starting_place}")
-    if input.one_true_thing:
-        prompt_parts.append(f"One true thing about you: {input.one_true_thing}")
+    if input.world_setting:
+        prompt_parts.append(f"The world should feel like: {input.world_setting}")
+    else:
+        if input.world_style:
+            prompt_parts.append(f"The world should feel like: {input.world_style}")
+        if input.starting_place:
+            prompt_parts.append(f"Your home or starting place feels like: {input.starting_place}")
+        if input.one_true_thing:
+            prompt_parts.append(f"One true thing about you: {input.one_true_thing}")
 
     if prompt_parts:
         user_content = "\n".join(prompt_parts) + "\n\nGenerate your opening world state."

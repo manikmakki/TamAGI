@@ -26,10 +26,8 @@ from backend.core.memory import create_memory_store
 from backend.core.personality import PersonalityEngine
 from backend.core.agent import TamAGIAgent
 from backend.core.identity import IdentityManager
-from backend.core.dreamer import DreamEngine
 from backend.core.world_thread import WorldThread
 from backend.core.self_model import SelfModel, seed_self_model
-from backend.core.motivation import MotivationEngine
 from backend.core.planning_engine import PlanningEngine
 from backend.core.reflection import ReflectionEngine
 from backend.skills.registry import SkillRegistry
@@ -38,16 +36,14 @@ from backend.skills.write_skill import WriteSkill
 from backend.skills.exec_skill import ExecSkill
 from backend.skills.web_search_skill import WebSearchSkill
 from backend.skills.express_skill import ExpressSkill
-from backend.skills.recall_dreams_skill import RecallDreamsSkill
 from backend.api.chat import router as chat_router, set_agent
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
 from backend.skills.recall_memory_skill import RecallMemorySkill
-from backend.skills.query_self_model_skill import QuerySelfModelSkill
-from backend.api.dreams import router as dreams_router, set_dream_engine
+from backend.skills.query_world_graph_skill import QueryWorldGraphSkill
 from backend.api.auth import router as auth_router
 from backend.api.self_model import router as self_model_router
-from backend.api.monologue import router as monologue_router, set_monologue_log, set_motivation_engine as set_monologue_motivation
+from backend.api.monologue import router as monologue_router, set_monologue_log
 from backend.api.sprites import router as sprites_router
 from backend.api.secrets import router as secrets_router
 from backend.api.mcp import router as mcp_router
@@ -192,23 +188,14 @@ async def lifespan(app: FastAPI):
     self_model.save()
 
     # ── Brain engines ──────────────────────────────────────────
-    motivation_engine = MotivationEngine(
-        model=self_model,
-        voi_threshold=config.motivation.voi_threshold,
-    )
     planning_engine = PlanningEngine(model=self_model)
     planning_engine.set_llm(llm)
     reflection_engine = ReflectionEngine(model=self_model)
-    logger.info("Brain engines initialized (motivation, planning, reflection)")
+    logger.info("Brain engines initialized (planning, reflection)")
 
-    # ── Monologue log + goal persistence ──────────────────────
+    # ── Monologue log ──────────────────────────────────────────
     monologue_log = MonologueLog(log_path="data/monologue.jsonl")
-    goals_path = "data/goals.json"
-    loaded = motivation_engine.load_goals(goals_path)
-    if loaded:
-        logger.info(f"Restored {loaded} pending goal(s) from disk")
     set_monologue_log(monologue_log)
-    set_monologue_motivation(motivation_engine)
 
     # ── Q&A belief pipeline ────────────────────────────────────
     from backend.core.qa_pipeline import QAPipeline
@@ -232,7 +219,6 @@ async def lifespan(app: FastAPI):
         skills=skills,
         identity=identity,
         self_model=self_model,
-        motivation_engine=motivation_engine,
         planning_engine=planning_engine,
         reflection_engine=reflection_engine,
         monologue_log=monologue_log,
@@ -249,27 +235,8 @@ async def lifespan(app: FastAPI):
         skills.register(OrchestrationSkill(orchestrator=orchestrator))
         logger.info("Orchestration skill registered")
 
-    # Initialize dream engine (kept for backward compatibility during transition)
-    dream_engine = DreamEngine(
-        agent=agent,
-        enabled=False,  # Disabled — replaced by WorldThread
-        interval_minutes=config.autonomy.interval_minutes,
-        inactive_hours=(config.autonomy.inactive_hours_start, config.autonomy.inactive_hours_end),
-        activities=config.autonomy.activities,
-        weights=config.autonomy.weights,
-        motivation_engine=motivation_engine,
-        monologue_log=monologue_log,
-        goals_path=goals_path,
-        agentic_priority_min=config.autonomy.agentic_priority_min,
-    )
-    set_dream_engine(dream_engine)
-    agent.set_dream_engine(dream_engine)
-    skills.register(RecallDreamsSkill(
-        dream_engine=dream_engine,
-        dreams_dir=Path(config.workspace.path) / "dreams",
-    ))
     skills.register(RecallMemorySkill(agent=agent))
-    skills.register(QuerySelfModelSkill(agent=agent))
+    skills.register(QueryWorldGraphSkill(agent=agent))
     from backend.skills.world_graph_skill import WorldGraphSkill
     skills.register(WorldGraphSkill(agent=agent))
 
@@ -317,7 +284,6 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info(f"═══ {config.tamagi.name} is going to sleep... ═══")
-    await dream_engine.stop()
     await world_thread.stop()
     personality.save_state()
     self_model.save()
@@ -414,7 +380,6 @@ app.include_router(mcp_router)
 app.include_router(chat_router)
 app.include_router(skills_router)
 app.include_router(onboarding_router)
-app.include_router(dreams_router)
 app.include_router(self_model_router)
 app.include_router(monologue_router)
 app.include_router(sprites_router)

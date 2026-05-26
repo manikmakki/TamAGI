@@ -200,6 +200,15 @@ ONBOARDING_STEPS = [
         "default": "conversational",
     },
     {
+        "id": "world_setting",
+        "type": "textarea",
+        "field": "world_setting",
+        "label": "What kind of world do I live in?",
+        "placeholder": "Leave blank — I'll imagine it from who I am",
+        "hint": 'e.g. "a cozy apartment with too many books and a demanding cat" · "a neon-drenched cyberpunk district, always half-awake" · "a medieval wizard\'s tower at the edge of a forest"',
+        "default": "",
+    },
+    {
         "id": "complete",
         "type": "complete",
         "prompt": None,
@@ -336,6 +345,7 @@ class IdentityManager:
         user_name = r.get("user_name", "friend")
         user_interests = r.get("user_interests", "")
         user_comm_pref = r.get("user_comm_pref", "conversational")
+        world_setting = r.get("world_setting", "")
 
         # Generate IDENTITY.md
         identity_content = DEFAULT_IDENTITY.format(
@@ -393,6 +403,7 @@ class IdentityManager:
                 "vibe": vibe,
                 "emoji": emoji,
                 "values": values,
+                "world_setting": world_setting,
             },
             "user": {
                 "name": user_name,

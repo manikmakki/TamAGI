@@ -1,5 +1,5 @@
 """
-Query Self-Model Skill — introspect the world-native self-model graph.
+Query World Graph Skill — introspect the world-native graph.
 
 Lets TamAGI query its world map: locations, quests, events, skills, perks,
 known things, mysteries, and lore. Supports depth-based graph traversal to
@@ -19,9 +19,9 @@ if TYPE_CHECKING:
 _VALID_TYPES = {"location", "quest", "event", "skill", "perk", "known", "mystery", "lore"}
 
 
-class QuerySelfModelSkill(Skill):
+class QueryWorldGraphSkill(Skill):
     """
-    Query your world-native self-model graph.
+    Query your world graph.
 
     The world graph is your living self-representation: a map of places, quests,
     events, skills, and mysteries that grows as you explore and experience things.
@@ -35,9 +35,9 @@ class QuerySelfModelSkill(Skill):
     - Traverse the graph outward from a node (depth > 0)
     """
 
-    name = "query_self_model"
+    name = "query_world_graph"
     description = (
-        "Query your world-native self-model graph — your living self-representation. "
+        "Query your world graph — your living map of places, quests, skills, and mysteries. "
         "Returns locations, quests, events, skills, perks, known things, mysteries, "
         "or lore that match your query. Use depth > 0 to see a node's neighbourhood."
     )
@@ -84,7 +84,7 @@ class QuerySelfModelSkill(Skill):
         if not sm:
             return SkillResult(
                 success=False,
-                error="Self-model not available",
+                error="World graph not available",
                 output="World graph is not initialized.",
             )
 

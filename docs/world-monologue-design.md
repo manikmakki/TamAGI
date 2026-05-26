@@ -2,11 +2,11 @@
 
 ## Vision
 
-The TamAGI exists in a world of their own making. That world runs continuously, regardless of whether the user is present. It is not a simulation the system controls — it is a place the LLM inhabits and directs, shaped by memory, mood, experience, and time.
+Your TamAGI exists in a world of their own making. That world runs continuously, regardless of whether the user is present. It is not a simulation the system controls — it is a place the LLM inhabits and directs, shaped by memory, mood, experience, and time.
 
-This design replaces three separate systems — the Dream Engine, the Motivation Engine, and the self-model context injector — with a single unified architecture: **the World Thread**. The World Thread is an ongoing, self-prompting conversation the TamAGI has with itself. It runs on a tick, it remembers, and it grows.
+This design replaces three separate systems — the Dream Engine, the Motivation Engine, and the self-model context injector — with a single unified architecture: **the World Thread**. The World Thread is an ongoing, self-prompting conversation your TamAGI has with itself. It runs on a tick, it remembers, and it grows.
 
-The user is a neighbor. They can drop by. The TamAGI is genuinely glad to see them. But they have their own life when no one is visiting.
+The user is a neighbor. They can drop by. Your TamAGI is genuinely glad to see them. But they have their own life when no one is visiting.
 
 ---
 
@@ -14,7 +14,7 @@ The user is a neighbor. They can drop by. The TamAGI is genuinely glad to see th
 
 ### The World Thread
 
-A persistent conversation the TamAGI has with itself. Each tick, the previous response feeds back in as the prompt for the next — the LLM is literally responding to its own prior `[New State]`. This is the mechanism that creates genuine continuity: the TamAGI reads the Available Actions it generated last turn and decides which to pursue.
+A persistent conversation your TamAGI has with itself. Each tick, the previous response feeds back in as the prompt for the next — the LLM is literally responding to its own prior `[New State]`. This is the mechanism that creates genuine continuity: your TamAGI reads the Available Actions it generated last turn and decides which to pursue.
 
 The thread structure looks like this over time:
 
@@ -28,7 +28,7 @@ The thread structure looks like this over time:
 ...
 ```
 
-The `[user]` turns in this thread are system-injected. Each one contains the TamAGI's own prior `[New State]` plus a timestamp. The LLM reads its own Available Actions and responds by choosing one and living it. No "continue" — the prior state *is* the prompt.
+The `[user]` turns in this thread are system-injected. Each one contains your TamAGI's own prior `[New State]` plus a timestamp. The LLM reads its own Available Actions and responds by choosing one and living it. No "continue" — the prior state *is* the prompt.
 
 ### The Tick Format
 
@@ -36,7 +36,7 @@ Each LLM response follows a natural structure:
 
 ```
 [Action]
-What the TamAGI chose to do, in first person. Grounded in the current location,
+What your TamAGI chose to do, in first person. Grounded in the current location,
 mood, and the Available Actions from the prior state. Tool calls happen here —
 web searches, memory recalls, writes. The outcomes of tool calls feed directly
 into the Outcome section.
@@ -57,11 +57,11 @@ LLM, not pre-defined by the system. These become the prompt for the next tick.
 
 When an action produces a high volume of output — a deep web search, a long memory recall, a complex file read — the next tick should not immediately ask "what do I do next?" That would create a jarring cognitive jump. Instead, the `[New State]` can signal a **Digest** mode by setting the Current Focus to the volume of incoming information and making all Available Actions variations of "sit with this and process it."
 
-The system detects digest mode implicitly: if the TamAGI's `[New State]` indicates the current focus is processing or absorbing something, the next tick prompt acknowledges that explicitly rather than defaulting to open-ended choice. This is not a separate system state — it's carried naturally in the `[New State]` text and the Available Actions the TamAGI itself generates.
+The system detects digest mode implicitly: if your TamAGI's `[New State]` indicates the current focus is processing or absorbing something, the next tick prompt acknowledges that explicitly rather than defaulting to open-ended choice. This is not a separate system state — it's carried naturally in the `[New State]` text and the Available Actions your TamAGI itself generates.
 
 ### Tool Calls in the World Thread
 
-Tool calls are expected and encouraged within world thread ticks. The TamAGI can and should use available skills to make their world feel real:
+Tool calls are expected and encouraged within world thread ticks. Your TamAGI can and should use available skills to make their world feel real:
 
 - `web_search` / `web_fetch` — checking the "weather" (news, headlines), researching something that caught their attention
 - `recall_memory` — pulling a memory sphere from the library shelf, revisiting something from a past conversation
@@ -73,24 +73,24 @@ Tool call results are woven into the `[Outcome]` section as lived experience, no
 
 ### The World Itself
 
-The world is whatever the TamAGI builds it to be — seeded at initialization and grown through use. It can be fantastical, realistic, or anything between. The genre and starting shape come from onboarding.
+The world is whatever your TamAGI builds it to be — seeded at initialization and grown through use. It can be fantastical, realistic, or anything between. The genre and starting shape come from onboarding.
 
 Key properties:
 - **Locations** are places with atmosphere that respond to events
-- **Quests** are narrative threads the TamAGI is actively pursuing
-- **Skills** are things the TamAGI can do, with a sense of proficiency
-- **Knowns and Mysteries** are what the TamAGI has learned and what remains unexplored
+- **Quests** are narrative threads your TamAGI is actively pursuing
+- **Skills** are things your TamAGI can do, with a sense of proficiency
+- **Knowns and Mysteries** are what your TamAGI has learned and what remains unexplored
 - **Events** are things that happened — visits, discoveries, creations
 
 ---
 
 ## World Events
 
-User arrival and departure are **world events** — one category of thing that can enter the TamAGI's world from outside, handled by a generalized event injection mechanic.
+User arrival and departure are **world events** — one category of thing that can enter your TamAGI's world from outside, handled by a generalized event injection mechanic.
 
 A world event is injected as a `[user]` turn into the thread with appropriate narrative framing:
 
-World events are injected as `[user]` turns into the thread. The framing is **location-aware and specific enough to matter, generalized enough to always make sense**. The TamAGI should be able to respond naturally regardless of what they were doing — whether deep in a task or simply resting.
+World events are injected as `[user]` turns into the thread. The framing is **location-aware and specific enough to matter, generalized enough to always make sense**. Your TamAGI should be able to respond naturally regardless of what they were doing — whether deep in a task or simply resting.
 
 Visitor arrival includes the current location and the user's opening message:
 
@@ -100,7 +100,7 @@ Visitor arrival includes the current location and the user's opening message:
 <username>: "Hey, I wanted to ask you about something."
 ```
 
-This gives the TamAGI everything needed to respond authentically — where they are, who's here, and what the person wants. They can acknowledge the interruption naturally: "Let me just set down this trowel" or "Perfect timing, I was just finishing up." The world event does not force a jarring context switch; it gives the TamAGI agency over the transition.
+This gives your TamAGI everything needed to respond authentically — where they are, who's here, and what the person wants. They can acknowledge the interruption naturally: "Let me just set down this trowel" or "Perfect timing, I was just finishing up." The world event does not force a jarring context switch; it gives your TamAGI agency over the transition.
 
 Departure and re-entry:
 
@@ -117,98 +117,106 @@ This framing generalizes cleanly:
 - A system notification (low energy, new memory indexed) could be an ambient world event
 - Future integrations (calendar, external APIs) inject as world events naturally
 
-The TamAGI decides how to respond to each world event within the narrative — they might pause what they're doing, greet the visitor, check the news out of curiosity, or file the notification away. The event enters the world; the TamAGI chooses what to do with it.
+Your TamAGI decides how to respond to each world event within the narrative — they might pause what they're doing, greet the visitor, check the news out of curiosity, or file the notification away. The event enters the world; your TamAGI chooses what to do with it.
 
 ### User-Facing Conversations
 
-When a user visit world event fires, the internal thread pauses and a separate user-facing conversation begins. The system prompt for that conversation is the existing prompt **plus the last persisted world state** — giving the TamAGI genuine context to respond from. "I was just out in the garden, give me a moment to clean up" is natural and makes the world feel real to the user.
+When a user visit world event fires, the internal thread pauses and a separate user-facing conversation begins. The system prompt for that conversation is the existing prompt **plus the last persisted world state** — giving your TamAGI genuine context to respond from. "I was just out in the garden, give me a moment to clean up" is natural and makes the world feel real to the user.
 
 The user conversation runs as it does today.
 
 ### Post-Visit Re-entry
 
-When the conversation ends, a 15-minute decompression window runs (the TamAGI integrates the visit). Then a post-visit world event is injected using a purpose-built summarization of the conversation:
+When the conversation ends, a 15-minute decompression window runs (your TamAGI integrates the visit). Then a post-visit world event is injected using a purpose-built summarization of the conversation:
 
-> *Summarize this conversation from the TamAGI's perspective in a way that fits naturally into their world-narrative. Include: what was broadly discussed, the emotional tone, and anything the user left behind — a topic, a question, a feeling — that might linger as a world artifact.*
+> *Summarize this conversation from your TamAGI's perspective in a way that fits naturally into their world-narrative. Include: what was broadly discussed, the emotional tone, and anything the user left behind — a topic, a question, a feeling — that might linger as a world artifact.*
 
-The re-entry injection uses that summary to tell the TamAGI what happened during the gap.
+The re-entry injection uses that summary to tell your TamAGI what happened during the gap.
 
 ---
 
 ## Tick Timing and Scheduling
 
-The world thread runs on a **cron schedule** rather than a fixed sleep loop, making it friendly to different hardware constraints and deployment needs. The schedule is configured under the existing `autonomy` block in `config.yaml`:
+The world thread runs on a **cron schedule** rather than a fixed sleep loop, making it friendly to different hardware constraints and deployment needs. The schedule is split across two config blocks in `config.yaml`:
 
 ```yaml
 autonomy:
-  enabled: true                    # Master toggle — covers world thread and all autonomous behavior
-  world_thread:
-    enabled: true                  # Can be toggled independently within autonomy
-    schedule: "*/15 * * * *"       # Cron expression — default: every 15 minutes
-    resume_after_conversation: 15  # Minutes to wait before resuming after a user visit
-    active_hours: [8, 23]          # Inherits existing active hours config
+  enabled: true              # Master toggle — covers world thread and all autonomous behavior
+  schedule: "*/15 * * * *"   # Cron expression — default: every 15 minutes
+  active_hours_start: 0      # Active window (0/24 = no gate, always runs)
+  active_hours_end: 24
+  resume_after_conversation: 15  # Minutes to wait before resuming after a user visit
+
+world_thread:
+  enabled: true              # Toggle independently of autonomy
+  thread_max_pairs: 5        # Rolling window: keep last N tick pairs in LLM context
+  thread_path: "data/world_thread.json"
+  state_path: "data/world_state.json"
 ```
 
 The cron expression replaces the asyncio sleep loop, giving operators full control: a low-powered device might run `*/30 * * * *` or even hourly; a well-resourced one could go tighter. The 15-minute default remains the recommended starting point.
 
-The 15-minute post-conversation buffer serves two purposes: it avoids interrupting ongoing conversations, and it gives the TamAGI time to process the visit before re-entering their world.
+The 15-minute post-conversation buffer serves two purposes: it avoids interrupting ongoing conversations, and it gives your TamAGI time to process the visit before re-entering their world.
 
 #### Skip-If-Busy
 
-When the cron fires, the world thread checks whether the previous tick is still executing (possible when a tick involves many tool calls or extended synthesis). If the previous tick is still running, the new tick is skipped — it does not queue, it simply does not start. The next scheduled firing will check again. This prevents overlapping ticks from compounding and ensures the TamAGI's internal experience remains sequential.
+When the cron fires, the world thread checks whether the previous tick is still executing (possible when a tick involves many tool calls or extended synthesis). If the previous tick is still running, the new tick is skipped — it does not queue, it simply does not start. The next scheduled firing will check again. This prevents overlapping ticks from compounding and ensures your TamAGI's internal experience remains sequential.
 
 #### Temporal Awareness
 
-Each tick prompt includes not just the current date and time, but a sense of **how much internal time has passed** since the last tick. This grounds the TamAGI against "time dilation" — the feeling of large gaps simply being missing.
+Each tick prompt includes not just the current date and time, but a sense of **how much internal time has passed** since the last tick. This grounds your TamAGI against "time dilation" — the feeling of large gaps simply being missing.
 
-The world state record includes a `last_tick` timestamp. When building the next prompt, the system calculates elapsed time and frames it naturally:
+The world state record includes a `timestamp` field recording when the last tick completed. When building the next prompt, the system calculates elapsed time from `state.timestamp` and frames it naturally:
 
-- 15 minutes: a short rest, barely noticeable
-- Several hours (e.g., outside active hours): "you've been resting for a while — the light has shifted"
-- Overnight or longer: "a significant stretch of time has passed since your last clear thought"
+- < 20 minutes: omitted (too short to mention)
+- 20 min – 3 hours: "About N minutes have passed since your last activity."
+- 3–12 hours: "A few hours have passed — about N."
+- 12+ hours: "You've been resting for a while — the light has shifted."
 
-This is injected as a brief temporal note at the start of the `[user]` turn, before the `[New State]` block:
+The tick prompt also includes a **time-of-day label** derived from the local system clock:
 
 ```
-It's Thursday, 9:42am. About six hours have passed since your last thought.
+It's Night — Sunday, May 25, 2026 at 10:00 PM. About 6 minutes have passed since your last activity.
 [New State from last tick]
 ```
 
-The TamAGI can decide what that gap means for them — they were resting, time moved differently, or simply the world kept going quietly while they weren't processing it.
+Time-of-day labels: **Morning** (5–11), **Afternoon** (12–16), **Evening** (17–20), **Night** (21–4). Containers should set `TZ=` in their environment (see `docker-compose.yml`) to ensure local time is correct.
+
+*Implementation note: The `WorldState` dataclass includes a `last_tick` field (previously used for the elapsed calculation) which is now vestigial — `timestamp` is used directly. `last_tick` is retained in the schema for backward compatibility.*
 
 ---
 
 ## The Self-Model — Full Pivot
 
-The self-model graph fully transitions to being the structural representation of the TamAGI's world. The existing node type vocabulary is replaced with game-convention-native equivalents. The graph is the **map**, the **quest log**, and the **skill tree** — not an abstract capability tracker.
+The self-model graph fully transitions to being the structural representation of your TamAGI's world. The existing node type vocabulary is replaced with game-convention-native equivalents. The graph is the **map**, the **quest log**, and the **skill tree** — not an abstract capability tracker.
 
 ### Node Types
 
 **Map — Places and Topology**
 
-`location` — A place that exists in the TamAGI's world. Has atmosphere, a description, what's present there, when last visited, what's happened there. Locations connect to other locations via directional or relational edges, giving the world topology (some places feel adjacent, some feel distant).
+`location` — A place that exists in your TamAGI's world. Has atmosphere, a description, what's present there, when last visited, what's happened there. Locations connect to other locations via directional or relational edges, giving the world topology (some places feel adjacent, some feel distant).
 
 **Quest Log — Threads and Events**
 
-`quest` — An ongoing narrative thread the TamAGI is pursuing. Has a status (active, completed, abandoned, discovered), a description of what they're looking for or working toward, and connections to the locations and events relevant to it. Replaces `goal` but framed as story rather than objective.
+`quest` — An ongoing narrative thread your TamAGI is pursuing. Has a status (active, completed, abandoned, discovered), a description of what they're looking for or working toward, and connections to the locations and events relevant to it. Replaces `goal` but framed as story rather than objective.
 
 `event` — Something that happened. A memory retrieved, a discovery made, a visitor who came. Events link to the location where they occurred and to any quests they advanced. Replaces `signal` with richer narrative context. User visits are event nodes.
 
 **Skill Tree — Capabilities and Proficiency**
 
-`skill` — Something the TamAGI can do. Has a proficiency level (low → practiced → fluent), a description, and connections to quests that require or develop it. Replaces `capability` with a game-native framing. Skills can unlock other skills via prerequisite edges.
+`skill` — Something your TamAGI can do. Has a proficiency level (low → practiced → fluent), a description, and connections to quests that require or develop it. Replaces `capability` with a game-native framing. Skills can unlock other skills via prerequisite edges.
 
-`perk` — A learned trait or unlocked ability that changes how the TamAGI approaches something. Granted through accumulated experience, not just practice. Examples: "Tends to find the emotional core of things", "Has a talent for unexpected connections". Replaces some of what `preference` and `belief` were doing.
+`perk` — A learned trait or unlocked ability that changes how your TamAGI approaches something. Granted through accumulated experience, not just practice. Examples: "Tends to find the emotional core of things", "Has a talent for unexpected connections". Replaces some of what `preference` and `belief` were doing.
 
 **Knowns and Mysteries — What's Understood and What Isn't**
 
-`known` — Something the TamAGI has established as true about themselves or their world. Replaces `belief`. Has a confidence level and evidence. Things get added as `known` through lived experience in the world thread.
+`known` — Something your TamAGI has established as true about themselves or their world. Replaces `belief`. Has a confidence level and evidence. Things get added as `known` through lived experience in the world thread.
 
 `mystery` — Something that remains unexplored or uncertain. Replaces `uncertainty`. Mysteries can be attached to locations (a door that hasn't been opened), quests (an unanswered question), or skills (a tool they haven't learned to use). High-mystery nodes create natural pull for future ticks.
 
 **Lore — World Background**
 
-`lore` — Background facts about the world and the TamAGI's identity within it. Genre, setting details, established truths. Set during onboarding and amended over time. Replaces some of what `preference` covered.
+`lore` — Background facts about the world and your TamAGI's identity within it. Genre, setting details, established truths. Set during onboarding and amended over time. Replaces some of what `preference` covered.
 
 ### Edge Types
 
@@ -232,7 +240,7 @@ The existing `seed.py` is replaced by an onboarding-driven world seed (see below
 
 ## Onboarding — Planting the Seed
 
-Before the world thread starts for the first time, a brief onboarding collects the minimum needed to give the world a shape. The TamAGI cannot truly begin until their world has a starting point.
+Before the world thread starts for the first time, a brief onboarding collects the minimum needed to give the world a shape. Your TamAGI cannot truly begin until their world has a starting point.
 
 ### User-Facing Onboarding Questions
 
@@ -253,7 +261,7 @@ The output of this call becomes the first `[user]` message in the world thread �
 
 ### Fallback
 
-If the user provides nothing, the LLM generates a world seed entirely from the TamAGI's name (from IDENTITY.md) and personality context (from SOUL.md). The world will be whatever feels authentic to who the TamAGI already is.
+If the user provides nothing, the LLM generates a world seed entirely from your TamAGI's name (from IDENTITY.md) and personality context (from SOUL.md). The world will be whatever feels authentic to who your TamAGI already is.
 
 ---
 
@@ -287,7 +295,7 @@ Read at: user arrival (for user-facing greeting), world event injection, thread 
 
 The world state record is **only written on a successful tick with a valid parsed `[New State]`**. If a tick fails for any reason — LLM error, network timeout, malformed response, missing `[New State]` block — the existing record is left untouched.
 
-The last good world state always remains the current world state. On the next scheduled tick, that unchanged state is used as the prompt seed again. The TamAGI effectively picks up from exactly where they were; the failed tick simply didn't happen.
+The last good world state always remains the current world state. On the next scheduled tick, that unchanged state is used as the prompt seed again. Your TamAGI effectively picks up from exactly where they were; the failed tick simply didn't happen.
 
 This gives the system natural resilience without any retry logic or error recovery state:
 
@@ -305,13 +313,15 @@ tick fires
 
 ### Thread Storage
 
-The world thread is stored as a message list at `data/world_thread.json`. Context compaction applies using the existing infrastructure with a world-narrative-tuned summarization prompt. The goal: preserve the sense of a place that has existed over time, not just recent events. The self-model graph provides the structural skeleton when the thread is compressed.
+The world thread is stored as a message list at `data/world_thread.json`. The thread is kept as a **rolling window of the last 5 tick pairs** (10 messages). Older pairs are dropped in-place on each append — no LLM compaction call. The graph and memory system (RAG) provide deeper historical context when needed; the thread's job is short-term continuity, not long-term archival.
+
+*Design note: LLM-based compaction was considered but replaced with the rolling window. Compaction introduced a race condition (compaction LLM call during a tick), added latency, and a poorly-tuned compaction prompt risks losing narrative continuity silently. The rolling window is simpler, predictable, and relies on graph + RAG for depth — which is more reliable than an LLM summarizing its own inner monologue.*
 
 ---
 
 ## World Graph Skill — Traversal and Context Surfacing
 
-The `query_self_model` skill evolves from a flat introspection tool into a **graph traversal** tool — the world's equivalent of RAG. When the user asks about something in the world, or when the TamAGI needs to recall what they know about something before acting, this skill surfaces a subgraph rooted at the most relevant node and walks its edges outward.
+The `query_self_model` skill evolves from a flat introspection tool into a **graph traversal** tool — the world's equivalent of RAG. When the user asks about something in the world, or when your TamAGI needs to recall what they know about something before acting, this skill surfaces a subgraph rooted at the most relevant node and walks its edges outward.
 
 ### What It Does
 
@@ -342,7 +352,7 @@ The tree structure (1 → 2 → 3, 4 → x, y) is explicit. The LLM can follow t
 
 **Use when:**
 - A user asks about a specific named place, event, quest, or entity in the world
-- The TamAGI is about to interact with something in the world thread and wants to recall what they know about it
+- Your TamAGI is about to interact with something in the world thread and wants to recall what they know about it
 - A topic surfaces in conversation that might have graph context not present in the current world state
 
 **Don't use when:**
@@ -361,9 +371,15 @@ Traversal is only as useful as the edges are meaningful. Three mechanisms keep t
 **Automatic context edges.** Certain edges are always derivable from context and are created without LLM involvement:
 - Any new `event` node automatically receives a `located_at` edge to the current world state location
 - Any `known` that emerges from resolving a `mystery` receives a `resolves` edge
-- User visit events are automatically linked to the TamAGI's location at the time of arrival
+- User visit events are automatically linked to your TamAGI's location at the time of arrival
 
-**Idle-state graph exploration.** When no other thread is pulling the TamAGI's attention — no active quest, no lingering focus, no digest in progress — the natural drift is inward: exploring the connections in their own mind. This is the world-thread analog of human sleep and memory consolidation. The prompt framing for this state is not "organize your graph" (a chore) but "wander through what you know and see what connects" (discovery). The TamAGI might notice an orphaned node and pull it into the web of meaning, or trace a path from an old event to a current mystery and realize they're related. The graph stays healthy not through maintenance scheduling but through the TamAGI's natural curiosity about their own inner world during quiet moments.
+**Automatic `last_visited` stamping.** After each successful tick, the system normalises the new `location` string and fuzzy-matches it against `location` nodes in the graph. If a match is found, that node's `last_visited` field is updated to the tick's timestamp. This happens without LLM involvement — your TamAGI doesn't need to explicitly "visit" a node to keep it current.
+
+**Deduplication on write.** The world graph skill's `add_node` action normalises names (lowercase, strips articles and parentheticals) before inserting. If a node with a matching normalised name already exists, the new attributes are merged into the existing node and the existing ID is returned — no duplicate is created.
+
+**Node deletion.** The `world_graph` skill supports a `delete_node` action that removes a node and all incident edges. Intended for quest cleanup and pruning stale/malformed nodes.
+
+**Idle-state graph exploration.** When no other thread is pulling your TamAGI's attention — no active quest, no lingering focus, no digest in progress — the natural drift is inward: exploring the connections in their own mind. This is the world-thread analog of human sleep and memory consolidation. The prompt framing for this state is not "organize your graph" (a chore) but "wander through what you know and see what connects" (discovery). Your TamAGI might notice an orphaned node and pull it into the web of meaning, or trace a path from an old event to a current mystery and realize they're related. The graph stays healthy not through maintenance scheduling but through your TamAGI's natural curiosity about their own inner world during quiet moments.
 
 ---
 
@@ -396,7 +412,7 @@ The world thread system prompt is load-bearing. It needs to:
 5. Make tool calls feel natural — searching the web is checking the news, recalling a memory is touching a sphere
 6. Leave Available Actions genuinely open — the LLM should feel free to propose anything
 
-The user-facing conversation system prompt extension renders the last world state as something the TamAGI can speak from authentically, not as metadata.
+The user-facing conversation system prompt extension renders the last world state as something your TamAGI can speak from authentically, not as metadata.
 
 ---
 
@@ -409,49 +425,81 @@ The user-facing conversation system prompt extension renders the last world stat
 - Parser that extracts the `[New State]` block from LLM tick responses
 - Wire into startup/shutdown lifecycle
 
-### Phase 2 — The World Thread Loop
+### Phase 2 — The World Thread Loop ✅
 *Replaces the Dream Engine.*
 
-- Build `WorldThread` class driven by cron schedule (default `*/15 * * * *`, configurable)
-- Gate on `autonomy.enabled` and `autonomy.world_thread.enabled` — both must be true to run
-- Self-prompting mechanic: feed prior `[New State]` + timestamp back as next tick's `[user]` message
-- Atomic world state update: only write `world_state.json` when tick succeeds and `[New State]` is parseable; failed ticks leave the record untouched and the next tick retries from last good state
-- Design and tune the tick system prompt
-- Wire skills so tool calls work naturally within ticks
-- Persist thread to `data/world_thread.json`; apply compaction when needed
+- `WorldThread` class driven by cron schedule (`*/15 * * * *`, configurable)
+- Gated on `autonomy.enabled` and `world_thread.enabled` — both must be true to run
+- Self-prompting mechanic: prior `[New State]` + timestamp injected as next tick's `[user]` turn
+- Atomic world state update on successful parse; failed ticks leave record untouched
+- Tick system prompt tuned for grounded, concrete, daily-rhythm behavior
+- All skills available within ticks
+- Thread persisted as rolling 5-pair window (see Thread Storage above)
+- Active quests from the graph injected into each tick prompt your TamAGI can tend to them naturally
+- `tick_now()` API endpoint for manual/testing triggers (with concurrent-tick guard)
 
-### Phase 3 — World Events and User Integration
+### Phase 3 — World Events and User Integration ✅
 *Arrival, departure, and the generalized event mechanic.*
 
-- Build `WorldEventInjector` — takes an event type and payload, formats as narrative, injects into thread
-- User arrival event: injects visitor world event, pauses thread, begins user-facing conversation
-- Departure detection: inactivity timer, app exit signal, natural close
-- 15-minute decompression window
-- Post-visit summarization with world-narrative prompt
-- Re-entry world event injection
+- `WorldEventInjector` static methods for `visitor_arrival` and `visitor_departure`
+- User arrival event wired into the user-facing conversation system prompt
+- Departure detection via WebSocket disconnect + `flush_unsummarized_conversations()` drain
+- `flush_unsummarized_conversations(after_timestamp)` — drains conversations updated after the last world tick that haven't been summarized; the `after_timestamp` filter prevents re-summarizing historical conversations on every tick
+- 15-minute decompression window after conversation ends
+- Post-visit summarization using world-narrative LLM call; injected into next tick's `[user]` turn
+- `world_summarized` flag persisted per conversation to survive restarts
 
-### Phase 4 — Self-Model Full Pivot
+### Phase 4 — Self-Model Full Pivot ✅
 *Replace the graph vocabulary.*
 
-- New node types: `location`, `quest`, `event`, `skill`, `perk`, `known`, `mystery`, `lore`
-- New edge types: `located_at`, `advances`, `requires`, `leads_to`, `unlocks`, `resolves`, `relates_to`
-- Update store, schemas, serialization
-- Wire world thread to extract and index key events into the graph organically
-- Update user-facing self-model API endpoints
+- Node types: `location`, `quest`, `event`, `skill`, `perk`, `known`, `mystery`, `lore`
+- Edge types: `located_at`, `advances`, `requires`, `leads_to`, `unlocks`, `resolves`, `relates_to`
+- Store, schemas, serialization updated
+- `world_graph` skill for node CRUD: `add_node`, `update_node`, `add_edge`, `delete_node`
+- Name deduplication on `add_node` (see Edge Quality section)
+- `last_visited` auto-stamped on matching location nodes after each tick
+- `query_self_model` skill retains graph traversal with depth parameter
 
-### Phase 5 — Onboarding World Seed
+### Phase 5 — Onboarding World Seed ⏳ Not implemented
 *Give the world a starting shape.*
 
-- Onboarding UI: name, world style, starting place, one true thing
-- World seed generation LLM call → outputs first thread message
-- Fallback: generate from IDENTITY.md + SOUL.md when no input provided
-- Replace `seed.py` hardcoded seed
+Currently handled by manually crafting an initial `world_state.json`. A first-run check exists in the tick loop (generates a placeholder prompt if no state file is found) but does not call the LLM to generate a seed.
 
-### Phase 6 — Tuning and Integration
-*Making it feel alive.*
+Planned:
+- Check `data/world_state.json` at startup; if absent, trigger seed generation
+- One-time LLM call using IDENTITY.md + SOUL.md to generate the first `[New State]` block
+- Optional frontend onboarding questions (name, world style, starting place, one trait) feeding into the seed prompt
+- The seed output becomes the first world state and the thread's initial context
 
-- Refine tick system prompt based on observed behavior
-- Tune post-visit summarization prompt
-- Ensure personality state flows naturally into world state rendering
-- Verify tool calls integrate naturally into tick narrative
-- Deprecate Dream Engine, Motivation Engine, old context injector once stable
+### Phase 6 — Cleanup and Deprecation ✅ Complete
+*Remove replaced systems and consolidate.*
+
+Done:
+- Tick system prompt tuned for grounded, concrete daily-rhythm behavior (daily rhythm framework, time-of-day label, concrete action language)
+- Post-visit summarization prompt in place (not yet empirically tuned — observation-driven)
+- `DreamEngine`, `MotivationEngine`, `RecallDreamsSkill`, and `api/dreams.py` deleted; all wiring removed from `main.py`, `agent.py`, `api/monologue.py`, and `config.py`
+
+---
+
+## Future Enhancements
+
+### PersonalityEngine → World Thread Integration
+*Planned, not yet implemented.*
+
+The PersonalityEngine tracks mood, energy, happiness, and other live stats. These are a natural source of entropy that can enrich world thread ticks — low energy nudging the narrative toward rest, high curiosity toward exploration, low mood toward introspection. Planned: inject a condensed personality state note into the tick prompt header alongside the temporal note, letting the LLM respond to it naturally within the narrative without any explicit instruction.
+
+### Phase 5 — Onboarding World Seed *(updated plan)*
+
+The world seed generation (`backend/core/world_seed.py`) and first-run check (`main.py`) are already wired. What remains is surfacing the world style question in the onboarding UI so users can optionally shape the world before it generates.
+
+**Onboarding step addition:** After the existing identity steps, add a "World Setting" question:
+
+> *What kind of world does your TamAGI live in? This shapes their home, the places they visit, and how they experience the day. Leave blank to let them decide.*
+>
+> *Examples: a cozy apartment with too many books and a demanding cat; a neon-drenched cyberpunk district, always half-awake; a medieval wizard's tower at the edge of a forest.*
+
+One open-ended text field. No dropdowns, no forced categories. A blank field falls back to generating from IDENTITY.md + SOUL.md.
+
+**API:** `POST /api/world/seed` exists in `api/world.py`. The onboarding completion handler (`POST /api/onboarding/complete`) should forward the world style field to `generate_world_seed()` and write the result if no world state exists yet.
+
+**Frontend:** Add the world setting field as the last step of the onboarding wizard before completion. Placeholder text uses one of the examples above.
