@@ -55,6 +55,15 @@ def _norm_location(s: str) -> str:
     return s
 
 
+def _first_sentence(s: str) -> str:
+    """Return the first sentence of s, capped at 100 characters."""
+    for sep in ('. ', '.\n', '\n'):
+        idx = s.find(sep)
+        if 0 < idx <= 100:
+            return s[:idx + 1].strip()
+    return s[:100].strip() if len(s) > 100 else s.strip()
+
+
 # ── System Prompt ─────────────────────────────────────────────
 
 _WORLD_SYSTEM_PROMPT = """\
@@ -116,7 +125,7 @@ class WorldEventInjector:
     @staticmethod
     def visitor_departure(username: str, summary: str) -> str:
         """Format a user departure as a brief visit note for the next tick prompt."""
-        return f"During this time, {username} stopped by to discuss: {summary}"
+        return f"During this time {summary}"
 
 
 # ── World Thread ──────────────────────────────────────────────
@@ -222,18 +231,18 @@ class WorldThread:
         }
 
     def get_world_state_context(self) -> str:
-        """System prompt fragment for user-facing conversations."""
+        """Location/Mood/Focus block for user-facing conversation system prompts."""
         ws = self._state_store.load()
         if not ws:
             return ""
-        lines = [
-            "\n\n## Your World",
-            f"**Where you are:** {ws.location}",
-            f"**How you're feeling:** {ws.mood}",
-        ]
+        lines = []
+        if ws.location:
+            lines.append(f"Location: {_first_sentence(ws.location)}")
+        if ws.mood:
+            lines.append(f"Mood: {_first_sentence(ws.mood)}")
         if ws.focus:
-            lines.append(f"**What you were doing:** {ws.focus}")
-        return "\n".join(lines)
+            lines.append(f"Focus: {_first_sentence(ws.focus)}")
+        return "\n".join(lines) if lines else ""
 
     def get_current_location(self) -> str:
         """Return the TamAGI's current location for visitor arrival framing."""
@@ -243,9 +252,9 @@ class WorldThread:
     def inject_world_event(self, event_text: str) -> None:
         """Queue a world event to be appended to the next tick's prompt."""
         self._pending_world_events.append(event_text)
-        logger.debug(
-            "World event queued for next tick (%d queued): %r...",
-            len(self._pending_world_events), event_text[:60],
+        logger.info(
+            "World event queued (%d total): %r...",
+            len(self._pending_world_events), event_text[:80],
         )
 
     async def tick_now(self) -> dict[str, Any] | None:
@@ -319,26 +328,31 @@ class WorldThread:
         try:
             current_state = self._state_store.load()
 
-            # Flush conversations that had new messages since the last tick.
-            # Uses current_state.timestamp (when the last tick completed) so we don't
-            # re-summarize conversations that predate the previous tick.
-            last_tick_ts: float | None = None
-            if current_state:
-                try:
-                    last_tick_ts = datetime.fromisoformat(current_state.timestamp).timestamp()
-                except (ValueError, TypeError):
-                    pass
-            await self.agent.flush_unsummarized_conversations(after_timestamp=last_tick_ts)
+            # Flush any conversations marked as pending world-summarization.
+            # The pending set is the source of truth — no timestamp filtering.
+            await self.agent.flush_unsummarized_conversations()
 
             # Drain the pending events queue (all conversations since the last tick)
             pending_events = self._pending_world_events[:]
             self._pending_world_events = []
+            if pending_events:
+                logger.info("World tick: draining %d pending event(s) into prompt.", len(pending_events))
 
             # Build the [user] turn: temporal note + last [New State], then any
             # conversation events appended below so they augment (not replace) context.
+            # Personality stats for tick prompt header
+            personality_stats = ""
+            _pe = getattr(self.agent, "personality", None)
+            if _pe is not None:
+                personality_stats = _pe.get_stats_line()
+
             prior_tick_ts = current_state.timestamp if current_state else None
             if current_state:
-                user_content = build_tick_prompt(current_state, visit_summaries=pending_events or None)
+                user_content = build_tick_prompt(
+                    current_state,
+                    visit_summaries=pending_events or None,
+                    personality_stats=personality_stats,
+                )
             else:
                 # No state yet — first-run placeholder (onboarding handles the real seed)
                 now_str = datetime.now().astimezone().strftime("%A, %B %d, %Y at %I:%M %p")
@@ -385,6 +399,12 @@ class WorldThread:
                 self._state_store.save(new_state)
                 self._append_to_thread(user_content, response_text)
 
+                # Post-tick personality feedback: skills used → curiosity falls + vitality cost
+                if _pe is not None and skills_used:
+                    for _ in skills_used:
+                        _pe.state.use_skill()
+                    _pe.save_state()
+
                 # Stamp last_visited on the matching location node in the world graph.
                 if sm and new_state.location:
                     _loc_norm = _norm_location(new_state.location)
@@ -416,7 +436,7 @@ class WorldThread:
                     type="action_completed",
                     source="autonomous",
                     title=f"World tick: {new_state.location[:60]}",
-                    content=(response_text or "")[:400],
+                    content=response_text or "",
                     metadata={
                         "location": new_state.location,
                         "mood": new_state.mood,

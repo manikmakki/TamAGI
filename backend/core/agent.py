@@ -250,9 +250,14 @@ class TamAGIAgent:
         try:
             resp = await self.llm.chat(
                 [LLMMessage("user", prompt)],
-                max_tokens=300,
+                max_tokens=1500,
             )
-            return (resp.content or "").strip()
+            summary = (resp.content or "").strip()
+            if summary:
+                logger.info("World conv summary (%d chars): %s", len(summary), summary[:120])
+            else:
+                logger.warning("World conv summarization returned empty — finish_reason=%r", resp.finish_reason)
+            return summary
         except Exception as exc:
             logger.warning("World conversation summarization failed: %s", exc)
             return ""
@@ -282,17 +287,11 @@ class TamAGIAgent:
         finally:
             self._world_thread.schedule_resume()
 
-    async def flush_unsummarized_conversations(
-        self,
-        after_timestamp: float | None = None,
-    ) -> None:
+    async def flush_unsummarized_conversations(self) -> None:
         """Summarize pending conversations and inject departure events into the world thread.
 
         Uses the durable pending-conv set (written to disk after every user message) so
         no conversation is lost across restarts or when the browser stays connected.
-
-        after_timestamp: conversations with updated_at at or before this value are in the
-        world's past — clear them without summarizing so they don't generate stale events.
         On failure the conv stays in the pending set and will be retried on the next tick.
         """
         if not self._world_thread or not self._pending_conv_ids:
@@ -301,11 +300,6 @@ class TamAGIAgent:
         for conv_id in list(self._pending_conv_ids):
             conv = self.conversations.get(conv_id)
             if conv is None or len(conv.messages) < 2 or conv.world_summarized:
-                self._unmark_conv_pending(conv_id)
-                continue
-            # Conversations that predate the last world tick are in the world's past.
-            if after_timestamp is not None and conv.updated_at <= after_timestamp:
-                conv.world_summarized = True
                 self._unmark_conv_pending(conv_id)
                 continue
             try:
@@ -416,9 +410,8 @@ class TamAGIAgent:
 
         self.personality.state.interact()
 
-        # Check if rapid interactions drained energy too much
-        if self.personality.state.check_low_energy(agent=self):
-            logger.info(f"Energy critical ({self.personality.state.energy}%), dream recovery triggered from interactions")
+        if self.personality.state.check_low_vitality():
+            logger.info("Vitality critically low — passive recovery applied")
 
         # Detect signals in this message (preferences, goals, feedback) and record them
         # as SignalNodes in the self-model for later promotion into beliefs.
@@ -480,12 +473,12 @@ class TamAGIAgent:
                 f"{_qa_context_hint} Please continue with the original task now.]"
             )
 
-        # Inject world state context — where the TamAGI is and what they were doing.
-        # This replaces the old dream log injection; the world thread keeps this current.
+        # Inject stats + world state context (Location/Mood/Focus).
+        system_prompt += f"\n{self.personality.get_stats_line()}"
         if self._world_thread:
             ws_ctx = self._world_thread.get_world_state_context()
             if ws_ctx:
-                system_prompt += ws_ctx
+                system_prompt += f"\n{ws_ctx}"
 
         # For new conversations: pause the world thread (visitor is here) and inject
         # an arrival framing so the TamAGI knows they're being visited at their location.
@@ -754,9 +747,8 @@ class TamAGIAgent:
                     if skill_mut:
                         sm_mutations.append(skill_mut)
 
-                # Check if energy dropped critically low; trigger dream recovery if needed
-                if self.personality.state.check_low_energy(agent=self):
-                    logger.info(f"Energy critical ({self.personality.state.energy}%), dream recovery triggered")
+                if self.personality.state.check_low_vitality():
+                    logger.info("Vitality critically low — passive recovery applied")
 
                 # Append the tool result so the LLM sees what the skill returned.
                 # tool_call_id must match the id in the preceding assistant message's

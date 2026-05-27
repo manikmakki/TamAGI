@@ -102,16 +102,7 @@ async def trigger_tick():
         raise HTTPException(status_code=503, detail="World thread not initialized")
     if not wt._running:
         raise HTTPException(status_code=409, detail="World thread is not running")
-    # Flush conversations since the last tick immediately — no idle threshold for manual ticks.
-    last_tick_ts: float | None = None
-    ws = _state_store.load()
-    if ws:
-        try:
-            from datetime import datetime
-            last_tick_ts = datetime.fromisoformat(ws.timestamp).timestamp()
-        except (ValueError, TypeError):
-            pass
-    await agent.flush_unsummarized_conversations(after_timestamp=last_tick_ts)
+    await agent.flush_unsummarized_conversations()
     result = await wt.tick_now()
     if result is None:
         return {"status": "error", "detail": "Tick produced no valid [New State] — check logs"}

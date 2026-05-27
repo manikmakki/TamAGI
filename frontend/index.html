@@ -175,10 +175,12 @@
     }
     .stat-item.tip-open .stat-tip { display: block; }
     @media (hover: hover) { .stat-item:hover .stat-tip { display: block; } }
-    .stat-fill.energy { background: var(--warning); }
-    .stat-fill.happiness { background: var(--accent-secondary); }
-    .stat-fill.satiety { background: var(--accent-tertiary); }
-    .stat-fill.cleanliness { background: var(--accent); }
+    .stat-fill.vitality { background: var(--warning); }
+    .stat-fill.curiosity { background: var(--accent-tertiary); }
+    .world-context { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .wc-row { display: flex; gap: 5px; align-items: baseline; font-family: var(--font-mono); font-size: 9px; line-height: 1.4; }
+    .wc-label { color: var(--text-muted); flex-shrink: 0; letter-spacing: 0.5px; }
+    .wc-val { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Floating delta indicators (+N / -N) that appear when a stat changes */
     .stat-delta {
@@ -553,11 +555,12 @@
     /* ═══ MIND PANEL ═══ */
     .mind-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 6px; }
     .mind-status { font-size: 9px; color: var(--text-muted); flex: 1; }
-    .mind-entries { flex: 1; overflow-y: auto; padding: 6px 8px; }
+    .mind-body { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+    .mind-entries { position: absolute; inset: 0; overflow-y: auto; padding: 6px 8px; }
     .mind-entries::-webkit-scrollbar { width: 4px; }
     .mind-entries::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-    .mind-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; margin-bottom: 6px; transition: border-color 0.15s; }
-    .mind-card:hover { border-color: var(--border-bright); }
+    .mind-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; margin-bottom: 6px; transition: border-color 0.15s; cursor: pointer; }
+    .mind-card:hover { border-color: var(--accent-dim); }
     .mind-card-header { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
     .mind-type-icon { font-size: 12px; line-height: 1; flex-shrink: 0; }
     .mind-source-badge { font-size: 8px; padding: 1px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; flex-shrink: 0; }
@@ -568,6 +571,31 @@
     .mind-title { font-size: 10px; color: var(--text-primary); line-height: 1.4; margin-bottom: 3px; font-weight: 500; }
     .mind-content { font-size: 9px; color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
     .mind-type-label { font-size: 8px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
+    /* flyout */
+    .mind-flyout { position: absolute; inset: 0; background: var(--bg-primary); overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .mind-flyout.hidden { display: none; }
+    .mind-flyout::-webkit-scrollbar { width: 4px; }
+    .mind-flyout::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .flyout-nav { display: flex; align-items: center; gap: 6px; padding: 2px 0 6px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .flyout-back { background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--accent); cursor: pointer; font-size: 10px; padding: 2px 8px; transition: border-color 0.15s; }
+    .flyout-back:hover { border-color: var(--accent-dim); }
+    .flyout-nav-time { margin-left: auto; font-size: 8px; color: var(--text-muted); }
+    .flyout-nav-badge { font-size: 8px; padding: 1px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; }
+    .flyout-nav-badge[data-source="autonomous"] { background: rgba(255,107,157,0.12); color: var(--accent-secondary); }
+    .flyout-nav-badge[data-source="user"]       { background: rgba(107,138,255,0.15); color: var(--accent-tertiary); }
+    .flyout-nav-badge[data-source="self"]       { background: rgba(0,255,157,0.12);   color: var(--accent); }
+    .flyout-meta { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; flex-shrink: 0; }
+    .flyout-meta-row { display: flex; gap: 6px; font-size: 9px; line-height: 1.5; margin-bottom: 2px; }
+    .flyout-meta-row:last-child { margin-bottom: 0; }
+    .flyout-meta-icon { flex-shrink: 0; color: var(--text-muted); }
+    .flyout-meta-val { color: var(--text-secondary); }
+    .flyout-section { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; flex-shrink: 0; }
+    .flyout-section-label { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 6px; }
+    .flyout-section-label.action  { color: var(--accent); }
+    .flyout-section-label.outcome { color: var(--accent-secondary); }
+    .flyout-section-label.state   { color: var(--accent-tertiary); }
+    .flyout-section-label.other   { color: var(--text-muted); }
+    .flyout-section-text { font-size: 10px; color: var(--text-secondary); line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
 
     /* ═══ ONBOARDING ═══ */
     .onboarding-overlay { position: fixed; inset: 0; background: var(--bg-deep); z-index: 200; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 16px; }
@@ -821,8 +849,20 @@
       <div class="mind-status" id="mind-status-row"></div>
       <button class="dream-trigger-btn" id="dream-trigger-btn" onclick="triggerDream()">&#x25B6; Tick Now</button>
     </div>
-    <div class="mind-entries" id="mind-entries">
-      <div class="drawer-empty">No inner monologue yet.</div>
+    <div class="mind-body">
+      <div class="mind-entries" id="mind-entries">
+        <div class="drawer-empty">No inner monologue yet.</div>
+      </div>
+      <!-- Flyout detail view — slides over entries when a card is clicked -->
+      <div class="mind-flyout hidden" id="mind-flyout">
+        <div class="flyout-nav">
+          <button class="flyout-back" onclick="closeMindFlyout()">&#x2190; Back</button>
+          <span class="flyout-nav-badge" id="flyout-badge"></span>
+          <span class="flyout-nav-time" id="flyout-time"></span>
+        </div>
+        <div class="flyout-meta hidden" id="flyout-meta"></div>
+        <div id="flyout-body"></div>
+      </div>
     </div>
   </div>
 
@@ -882,10 +922,13 @@
           <div class="avatar-name" id="a-name">Tama</div>
           <div class="avatar-subtitle" id="a-subtitle">EGG &mdash; Level 1</div>
         </div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Energy <span class="stat-help">&#9432;</span></span><span id="s-energy-v">80</span></div><div class="stat-bar"><div class="stat-fill energy" id="s-energy-f" style="width:80%"></div></div><div class="stat-tip">Drains over time &amp; from activity. Low energy = tired mood, skipped dreams. Recharges while idle.</div></div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F496; Happiness <span class="stat-help">&#9432;</span></span><span id="s-happy-v">70</span></div><div class="stat-bar"><div class="stat-fill happiness" id="s-happy-f" style="width:70%"></div></div><div class="stat-tip">Rises from chatting, dreaming &amp; creating. Drops when ignored. Affects mood and response tone.</div></div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F37D; Satiety <span class="stat-help">&#9432;</span></span><span id="s-satiety-v">50</span></div><div class="stat-bar"><div class="stat-fill satiety" id="s-satiety-f" style="width:50%"></div></div><div class="stat-tip">Intellectual hunger — drains over time (faster at higher stages). Satisfied by using tools, web searches &amp; being fed knowledge. Low satiety makes your TamAGI curious and inquisitive.</div></div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F9F9; Cleanliness <span class="stat-help">&#9432;</span></span><span id="s-clean-v">100</span></div><div class="stat-bar"><div class="stat-fill cleanliness" id="s-clean-f" style="width:100%"></div></div><div class="stat-tip">Workspace hygiene — drops as dream logs, memories &amp; archives accumulate. Your TamAGI tidies up autonomously when it gets messy, or ask it to clean up directly.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Vitality <span class="stat-help">&#9432;</span></span><span id="s-vitality-v">80</span></div><div class="stat-bar"><div class="stat-fill vitality" id="s-vitality-f" style="width:80%"></div></div><div class="stat-tip">Activation and drive. Drifts toward a time-of-day baseline — high midday, low at night. Costs a little per conversation turn and skill use.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F52D; Curiosity <span class="stat-help">&#9432;</span></span><span id="s-curiosity-v">60</span></div><div class="stat-bar"><div class="stat-fill curiosity" id="s-curiosity-f" style="width:60%"></div></div><div class="stat-tip">Intellectual hunger — builds when unstimulated, satisfied by using tools, exploring, and interesting conversations. High curiosity steers the world thread toward discovery.</div></div>
+        <div class="world-context" id="world-context" style="display:none">
+          <div class="wc-row"><span class="wc-label">&#x1F4CD;</span><span class="wc-val" id="wc-location">—</span></div>
+          <div class="wc-row"><span class="wc-label">&#x25CB;</span><span class="wc-val" id="wc-mood">—</span></div>
+          <div class="wc-row"><span class="wc-label">&#x25CF;</span><span class="wc-val" id="wc-focus">—</span></div>
+        </div>
       </div>
     </div>
     <div class="resize-handle" id="resize-handle"></div>
@@ -1413,7 +1456,9 @@ function setPose(parts){
   _rigAnimName=POSE_TO_ANIM[parts.pose]||'idle';
 }
 
-function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-mood',(s.mood||'').toUpperCase());setText('p-xp',s.experience||0);const mc={ecstatic:'#00ff9d',happy:'#00cc7d',content:'#6b8aff',neutral:'#8888aa',bored:'#ffaa00',sad:'#ff6b9d',tired:'#555570'};const md=document.getElementById('p-mood-dot');if(md)md.style.color=mc[s.mood]||'#8888aa';if(s.pose_parts)setPose(s.pose_parts);setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-energy',s.energy);setBar('s-happy',s.happiness);setBar('s-satiety',s.satiety);setBar('s-clean',s.cleanliness)}
+function firstSentence(s){if(!s)return'';const m=s.match(/^(.+?)(?:\.\s|\.$|\n)/);if(m&&m[1].length<=100)return m[1].trim();return s.length>80?s.slice(0,80).trim()+'\u2026':s.trim()}
+function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-xp',s.experience||0);if(s.pose_parts)setPose(s.pose_parts);setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-vitality',s.vitality??s.energy??80);setBar('s-curiosity',s.curiosity??50)}
+function updateWorldContext(ws){if(!ws||ws.needs_world_seed)return;const loc=firstSentence(ws.location||'');const mood=firstSentence(ws.mood||'');const focus=firstSentence(ws.focus||'');const md=document.getElementById('p-mood-dot');const mp=document.getElementById('p-mood');if(mp)mp.textContent=mood.toUpperCase()||'...';if(md)md.style.color='var(--accent-secondary)';const wc=document.getElementById('world-context');if(wc&&(loc||mood||focus)){wc.style.display='flex';setText('wc-location',loc||'\u2014');setText('wc-mood',mood||'\u2014');setText('wc-focus',focus||'\u2014')}}
 // Previous stat values — null on first load so the initial updateState() call
 // establishes a baseline without spawning spurious indicators.
 const _prevStat={};
@@ -1434,7 +1479,7 @@ function setBar(p,v){
   if(!statItem)return;
 
   // Match the indicator colour to the stat bar colour
-  const colourMap={energy:'var(--warning)',happiness:'var(--accent-secondary)',satiety:'var(--accent-tertiary)',cleanliness:'var(--accent)'};
+  const colourMap={vitality:'var(--warning)',curiosity:'var(--accent-tertiary)'};
   const fillClass=[...(f.classList||[])].find(c=>colourMap[c]);
 
   const el=document.createElement('span');
@@ -1551,23 +1596,25 @@ const MIND_ICONS={
   clarification_asked:'&#x2753;',
   belief_updated:'&#x1F4A1;',
 };
+// Cache of full event objects keyed by id — populated in loadMindPanel
+const _mindEvents={};
+
 async function loadMindPanel(){
   const statusRow=document.getElementById('mind-status-row');
   const entries=document.getElementById('mind-entries');
   try{
-    const data=await api('/monologue/log?limit=60');
+    const data=await api('/monologue/log?limit=80');
     const total=data.total||0;
     statusRow.textContent=total?total+' event'+(total===1?'':'s')+' recorded':'';
     const events=(data.events||[]).slice().reverse();
     if(!events.length){entries.innerHTML='<div class="drawer-empty">No inner monologue yet.</div>';return;}
+    // Store full event data for flyout
+    events.forEach(ev=>{ _mindEvents[ev.id]=ev; });
     entries.innerHTML=events.map(ev=>{
       const icon=MIND_ICONS[ev.type]||'&#x25CB;';
       const src=ev.source||'autonomous';
-      const content=(ev.content||'').substring(0,180);
-      const mood=ev.metadata?.mood_delta||{};
-      const moodHtml=Object.entries(mood).filter(([,v])=>v!==0)
-        .map(([k,v])=>`<span class="dream-mood-chip ${v>0?'pos':'neg'}">${v>0?'+':''}${v} ${esc(k)}</span>`).join('');
-      return`<div class="mind-card">
+      const snippet=(ev.content||'').substring(0,140).trimEnd();
+      return`<div class="mind-card" onclick="openMindFlyout('${esc(ev.id)}')">
         <div class="mind-card-header">
           <span class="mind-type-icon">${icon}</span>
           <span class="mind-source-badge" data-source="${esc(src)}">${esc(src)}</span>
@@ -1575,11 +1622,84 @@ async function loadMindPanel(){
           <span class="mind-time">${relativeTime(ev.timestamp)}</span>
         </div>
         <div class="mind-title">${esc(ev.title||'')}</div>
-        ${content?`<div class="mind-content">${esc(content)}</div>`:''}
-        ${moodHtml?`<div class="dream-mood-chips">${moodHtml}</div>`:''}
+        ${snippet?`<div class="mind-content">${esc(snippet)}&hellip;</div>`:''}
       </div>`;
     }).join('');
   }catch(err){console.error('loadMindPanel',err);entries.innerHTML='<div class="drawer-empty">Failed to load monologue.</div>';}
+}
+
+// ── Flyout ────────────────────────────────────────────────────
+
+/** Parse [Section] blocks from a tick content string. */
+function parseMindSections(text){
+  const sections=[];
+  const re=/\[([^\]]+)\]([\s\S]*?)(?=\n\[|$)/g;
+  let m;
+  while((m=re.exec(text))!==null){
+    sections.push({label:m[1].trim(), text:m[2].trim()});
+  }
+  if(!sections.length && text.trim()) sections.push({label:'',text:text.trim()});
+  return sections;
+}
+
+function _flyoutSectionClass(label){
+  const l=label.toLowerCase();
+  if(l==='action') return 'action';
+  if(l==='outcome') return 'outcome';
+  if(l.includes('state')) return 'state';
+  return 'other';
+}
+
+function openMindFlyout(evId){
+  const ev=_mindEvents[evId];
+  if(!ev) return;
+  const meta=ev.metadata||{};
+
+  // Badge
+  const src=ev.source||'autonomous';
+  const badge=document.getElementById('flyout-badge');
+  badge.textContent=src;
+  badge.dataset.source=src;
+
+  // Time
+  document.getElementById('flyout-time').textContent=relativeTime(ev.timestamp);
+
+  // Meta block
+  const metaEl=document.getElementById('flyout-meta');
+  const metaRows=[];
+  if(meta.location) metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">📍</span><span class="flyout-meta-val">${esc(meta.location)}</span></div>`);
+  if(meta.mood){
+    // first sentence only
+    const moodShort=meta.mood.split(/\.\s+|\n/)[0];
+    metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">○</span><span class="flyout-meta-val">${esc(moodShort)}</span></div>`);
+  }
+  if(meta.duration_seconds!=null) metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">⏱</span><span class="flyout-meta-val">${parseFloat(meta.duration_seconds).toFixed(1)}s</span></div>`);
+  if(meta.skills_used?.length) metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">🔧</span><span class="flyout-meta-val">${esc([...new Set(meta.skills_used)].join(', '))}</span></div>`);
+  if(metaRows.length){
+    metaEl.innerHTML=metaRows.join('');
+    metaEl.classList.remove('hidden');
+  } else {
+    metaEl.innerHTML='';
+    metaEl.classList.add('hidden');
+  }
+
+  // Content sections
+  const content=ev.content||'';
+  const sections=parseMindSections(content);
+  document.getElementById('flyout-body').innerHTML=sections.map(s=>`
+    <div class="flyout-section">
+      ${s.label?`<div class="flyout-section-label ${_flyoutSectionClass(s.label)}">${esc(s.label)}</div>`:''}
+      <div class="flyout-section-text">${esc(s.text)}</div>
+    </div>`).join('');
+
+  // Show flyout, hide list
+  document.getElementById('mind-flyout').classList.remove('hidden');
+  document.getElementById('mind-entries').style.visibility='hidden';
+}
+
+function closeMindFlyout(){
+  document.getElementById('mind-flyout').classList.add('hidden');
+  document.getElementById('mind-entries').style.visibility='';
 }
 async function triggerDream(){
   const btn=document.querySelector('.dream-trigger-btn');
@@ -1816,6 +1936,8 @@ async function loadState(){
       const a=await fetch(`${API}/api/auth/status`).then(r=>r.json());
       document.getElementById('logout-btn').style.display=a.enabled?'inline':'none';
     }catch{}
+    // Pull world context separately and update mood pill + location/focus display
+    try{const ws=await api('/world/state');updateWorldContext(ws)}catch{}
   }catch{setConnected(false)}
 }
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});

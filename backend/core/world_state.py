@@ -181,15 +181,20 @@ def parse_new_state(llm_response: str, previous_tick_ts: str | None = None) -> W
     )
 
 
-def build_tick_prompt(state: WorldState, visit_summaries: list[str] | None = None) -> str:
+def build_tick_prompt(
+    state: WorldState,
+    visit_summaries: list[str] | None = None,
+    personality_stats: str = "",
+) -> str:
     """Build the [user] message for each world thread tick.
 
     Structure:
-      It's {datetime}. {elapsed note}. {visit summaries if any}
+      It's {time_of_day} — {datetime}. {elapsed note}. {visit summaries if any}
+      {Vitality: X/100 | Curiosity: X/100}  ← if provided
 
       {raw_state_block from previous tick}
     """
-    now = datetime.now().astimezone()  # local wall-clock time, timezone-aware
+    now = datetime.now().astimezone()
     date_str = now.strftime("%A, %B %d, %Y at %I:%M %p")
 
     hour = now.hour
@@ -210,6 +215,9 @@ def build_tick_prompt(state: WorldState, visit_summaries: list[str] | None = Non
     if visit_summaries:
         visits_text = " ".join(visit_summaries)
         temporal_line += f" {visits_text}"
+
+    if personality_stats:
+        temporal_line += f"\n{personality_stats}"
 
     return f"{temporal_line}\n\n{state.raw_state_block}"
 

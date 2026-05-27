@@ -63,10 +63,13 @@ class MonologueLog:
     """Persistent append-only inner-monologue event stream.
 
     Thread-safe for append; not designed for concurrent writers.
+    When the log exceeds max_entries, oldest entries are trimmed and the
+    file is rewritten atomically so disk usage stays bounded.
     """
 
-    def __init__(self, log_path: str | Path = "data/monologue.jsonl"):
+    def __init__(self, log_path: str | Path = "data/monologue.jsonl", max_entries: int = 1000):
         self._path = Path(log_path)
+        self._max_entries = max_entries
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._events: list[dict] = []
         self._load()
@@ -98,7 +101,28 @@ class MonologueLog:
                 f.write(json.dumps(d) + "\n")
         except OSError as exc:
             logger.warning("Could not write monologue event: %s", exc)
+        if len(self._events) > self._max_entries:
+            self._rotate()
         return event
+
+    def _rotate(self) -> None:
+        """Trim oldest entries to keep log under max_entries. Rewrites file atomically."""
+        keep = int(self._max_entries * 0.85)
+        dropped = len(self._events) - keep
+        self._events = self._events[-keep:]
+        tmp_path = self._path.with_suffix(".tmp")
+        try:
+            with tmp_path.open("w", encoding="utf-8") as f:
+                for ev in self._events:
+                    f.write(json.dumps(ev) + "\n")
+            tmp_path.replace(self._path)
+            logger.info("Monologue log rotated: dropped %d old events, %d remaining.", dropped, len(self._events))
+        except OSError as exc:
+            logger.warning("Could not rotate monologue log: %s", exc)
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def recent(
         self,

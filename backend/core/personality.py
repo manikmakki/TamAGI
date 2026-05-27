@@ -1,8 +1,9 @@
 """
-Personality Engine — TamAGI's state, mood, and evolution system.
+Personality Engine — TamAGI's state and evolution system.
 
-Tracks energy, happiness, satiety, and experience.
-TamAGI's state influences its responses and sprite display.
+Tracks Vitality (activation/drive), Curiosity (intellectual hunger), and experience.
+Stats are injected as raw X/100 numbers into both world thread and conversation prompts,
+letting the LLM interpret its own state authentically.
 """
 
 from __future__ import annotations
@@ -11,29 +12,27 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field, asdict
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("tamagi.personality")
 
+
 class Mood(str, Enum):
-    ECSTATIC = "ecstatic"
+    """Used for pose selection only — not shown to user as mood label."""
     HAPPY = "happy"
     CONTENT = "content"
     NEUTRAL = "neutral"
-    BORED = "bored"
-    SAD = "sad"
     TIRED = "tired"
 
 
 # ── Stage Progression ─────────────────────────────────────────
 
-# 40 stages, 250 XP per stage
 NUM_STAGES = 40
 STAGE_XP_INTERVAL = 250
 
-# XP gains per activity
 XP_GAINS = {
     "message": 1,
     "skill_used": 3,
@@ -43,15 +42,7 @@ XP_GAINS = {
 }
 
 
-
-
-
-
 # ── Pose system ───────────────────────────────────────────────
-#
-# POSES maps named poses to body-part variant keys. These keys are sent to
-# the frontend, which looks them up in its local pixel-art sprite library.
-# The LLM never draws art — it only picks a pose name from this vocabulary.
 
 POSES: dict[str, dict[str, str]] = {
     "idle":      {"face": "neutral",  "arms": "neutral", "torso": "normal", "legs": "standing"},
@@ -65,16 +56,29 @@ POSES: dict[str, dict[str, str]] = {
     "working":   {"face": "thinking", "arms": "neutral", "torso": "pulse",  "legs": "standing"},
 }
 
-# Automatic mood → pose mapping (used when no explicit pose is set)
 MOOD_TO_POSE: dict[str, str] = {
-    "ecstatic": "excited",
-    "happy":    "happy",
-    "content":  "idle",
-    "neutral":  "idle",
-    "bored":    "idle",
-    "sad":      "sad",
-    "tired":    "tired",
+    "happy":   "happy",
+    "content": "idle",
+    "neutral": "idle",
+    "tired":   "tired",
 }
+
+# Time-of-day vitality targets — vitality drifts toward this over idle time
+_VITALITY_TARGETS: list[tuple[int, int, int]] = [
+    (5,  9,  50),   # waking: moderate
+    (9,  17, 80),   # daytime: active
+    (17, 21, 60),   # evening: winding down
+    (21, 24, 35),   # late night: low
+    (0,  5,  25),   # deep night: very low
+]
+
+
+def _vitality_target() -> int:
+    hour = datetime.now().hour
+    for start, end, target in _VITALITY_TARGETS:
+        if start <= hour < end:
+            return target
+    return 30
 
 
 @dataclass
@@ -82,9 +86,8 @@ class TamAGIState:
     """Mutable state of TamAGI."""
 
     name: str = "Tama"
-    energy: int = 80
-    happiness: int = 70
-    satiety: int = 50
+    vitality: float = 80.0      # activation/drive; drifts toward time-of-day baseline
+    curiosity: float = 60.0     # intellectual hunger; 100=very curious, 0=satisfied
     experience: int = 0
     interactions: int = 0
     skills_used: int = 0
@@ -94,127 +97,98 @@ class TamAGIState:
     personality_traits: str = "curious, helpful, and slightly mischievous"
     current_stage_name: str = "egg"
     stage_history: list = field(default_factory=list)
-    # Timestamp of last satiety refill (skill use, knowledge feed, or interaction).
-    # Used by decay() to compute how hungry your TamAGI has grown since last fed.
-    last_satiety_update: float = field(default_factory=time.time)
-    # Ephemeral pose override — reset to "idle" at the start of each chat()
-    # call. If the LLM includes [ACTION:pose_name] in its response the agent
-    # sets this, and it lasts for that response only before mood takes over.
+    last_curiosity_update: float = field(default_factory=time.time)
+    # Ephemeral pose override — reset to "idle" at the start of each chat() call.
     current_pose: str = "idle"
 
     @property
     def stage_index(self) -> int:
-        """Get the current stage as an integer index (0-39)."""
         return min(self.experience // STAGE_XP_INTERVAL, NUM_STAGES - 1)
 
     @property
     def mood(self) -> Mood:
-        score = (self.energy + self.happiness) / 2
-        if score >= 90:
-            return Mood.ECSTATIC
-        elif score >= 70:
+        """Derived from vitality — used for avatar pose selection only."""
+        v = self.vitality
+        if v >= 75:
             return Mood.HAPPY
-        elif score >= 55:
+        elif v >= 55:
             return Mood.CONTENT
-        elif score >= 40:
+        elif v >= 35:
             return Mood.NEUTRAL
-        elif score >= 25:
-            return Mood.BORED
-        elif self.energy < 20:
-            return Mood.TIRED
-        else:
-            return Mood.SAD
+        return Mood.TIRED
 
     @property
     def level(self) -> int:
         return 1 + self.experience // 50
 
     def gain_xp(self, activity: str) -> int:
-        """Gain XP from an activity. Returns XP gained."""
         xp = XP_GAINS.get(activity, 1)
         self.experience += xp
         return xp
 
     def interact(self) -> None:
-        """Record an interaction — boosts happiness and energy slightly, feeds satiety a little."""
+        """Record a conversation turn."""
         self.interactions += 1
-        self.happiness = min(100, self.happiness + 2)
-        self.energy = max(0, self.energy - 0.25)
-        self.satiety = min(100, self.satiety + 5)
+        self.vitality = max(0.0, self.vitality - 0.5)
+        self.curiosity = max(0.0, self.curiosity - 3.0)  # conversation partially satisfies curiosity
+        self.last_curiosity_update = time.time()
         self.last_interaction = time.time()
-        self.last_satiety_update = time.time()
         self.gain_xp("message")
 
     def decay(self) -> None:
-        """Apply time-based decay and recovery. Call periodically."""
-        elapsed = time.time() - self.last_interaction
+        """Apply time-based stat drift. Call periodically."""
+        now = time.time()
+        elapsed = now - self.last_interaction
         hours_idle = elapsed / 3600
 
-        # --- Recovery phase: recharge energy (up to 100%) over ~4 hours ---
-        if hours_idle > 0.5 and self.energy < 100:
-            recovery_per_hour = 25  # Full recovery in 4 hours
-            energy_gain = int(hours_idle * recovery_per_hour)
-            self.energy = min(100, self.energy + energy_gain)
+        # --- Vitality: drift toward time-of-day baseline after 15 min idle ---
+        if hours_idle > 0.25:
+            target = _vitality_target()
+            drift = hours_idle * 15  # up to 15 points per hour drift
+            if self.vitality < target:
+                self.vitality = min(float(target), self.vitality + drift)
+            elif self.vitality > target:
+                self.vitality = max(float(target), self.vitality - drift)
 
-        # --- Decay phase: only after recovery completes AND user is idle > 4 hours ---
-        if hours_idle > 4:
-            decay_factor = min(hours_idle * 2, 30)
-            self.happiness = max(0, int(self.happiness - decay_factor))
-            self.energy = max(0, int(self.energy - decay_factor))
+        # --- Curiosity: rises when unstimulated ---
+        # Rate: 2–5 pts/hr depending on stage (restlessness grows with maturity)
+        curiosity_hours = (now - self.last_curiosity_update) / 3600
+        if curiosity_hours > 0 and self.curiosity < 100:
+            rate = 2.0 + 3.0 * (self.stage_index / max(NUM_STAGES - 1, 1))
+            self.curiosity = round(min(100.0, self.curiosity + curiosity_hours * rate), 2)
+            self.last_curiosity_update = now
 
-        # --- Satiety decay: intellectual hunger grows over real time ---
-        # Rate scales with stage: ~0.42/hr at stage 0 (~10 days 100→0), ~1.39/hr at stage 39 (~3 days)
-        satiety_hours = (time.time() - self.last_satiety_update) / 3600
-        if satiety_hours > 0 and self.satiety > 0:
-            rate_per_hour = 0.42 + 0.97 * (self.stage_index / max(NUM_STAGES - 1, 1))
-            satiety_loss = satiety_hours * rate_per_hour
-            self.satiety = round(max(0, self.satiety - satiety_loss), 2)
-            self.last_satiety_update = time.time()
-
-    def check_low_energy(self, agent: Any | None = None) -> bool:
-        """Check if energy is critically low and apply passive recovery.
-
-        Returns True if energy was critical.
-        """
-        if self.energy < 10:
-            self.energy = min(100, self.energy + 20)
-            self.happiness = min(100, self.happiness + 10)
+    def check_low_vitality(self) -> bool:
+        """Apply passive recovery if vitality is critically low. Returns True if triggered."""
+        if self.vitality < 10:
+            self.vitality = min(100.0, self.vitality + 20.0)
             return True
         return False
 
     def feed_knowledge(self) -> None:
-        """Boost stats when fed knowledge/data — substantially satisfies satiety."""
-        self.satiety = min(100, self.satiety + 30)
-        self.happiness = min(100, self.happiness + 3)
-        self.last_satiety_update = time.time()
+        """Substantially satisfy curiosity when fed knowledge."""
+        self.curiosity = max(0.0, self.curiosity - 30.0)
+        self.last_curiosity_update = time.time()
         self.gain_xp("knowledge_fed")
 
     def use_skill(self) -> None:
-        """Boost stats when a skill is used — using tools satisfies intellectual hunger."""
+        """Using a tool costs vitality and satisfies curiosity."""
         self.skills_used += 1
-        self.energy = max(0, self.energy - 0.5)
-        self.satiety = min(100, self.satiety + 20)
-        self.last_satiety_update = time.time()
+        self.vitality = max(0.0, self.vitality - 1.0)
+        self.curiosity = max(0.0, self.curiosity - 15.0)
+        self.last_curiosity_update = time.time()
         self.gain_xp("skill_used")
 
     def store_memory(self) -> None:
-        """Track memory storage."""
         self.memories_stored += 1
         self.gain_xp("memory_stored")
 
     def set_pose(self, name: str) -> None:
-        """Set a one-shot pose override triggered by the LLM via [ACTION:name]."""
         if name in POSES:
             self.current_pose = name
 
     @property
     def pose_parts(self) -> dict[str, str]:
-        """
-        Return the current pose's variant key names for the SVG sprite renderer.
-
-        The frontend's JS sprite library maps these keys to pixel-art grids.
-        Mood auto-derives the pose; an explicit LLM-set pose overrides it.
-        """
         mood_pose = MOOD_TO_POSE.get(self.mood.value, "idle")
         pose_key = self.current_pose if self.current_pose != "idle" else mood_pose
         pose = POSES.get(pose_key, POSES["idle"])
@@ -226,35 +200,20 @@ class TamAGIState:
             "legs":  pose["legs"],
         }
 
-    @property
-    def cleanliness(self) -> int:
-        """Computed from actual workspace file counts — never stored in state."""
-        try:
-            dream_count = len(list(Path("workspace/dreams").rglob("*.md")))
-            archive_count = len(list(Path("data/history").glob("*.json")))
-        except OSError:
-            dream_count = 0
-            archive_count = 0
-        raw = 100
-        raw -= min(dream_count * 0.5, 40)
-        raw -= min(self.memories_stored * 0.1, 30)
-        raw -= min(archive_count * 1.0, 20)
-        return max(0, int(raw))
-
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
+        d["vitality"] = round(self.vitality)
+        d["curiosity"] = round(self.curiosity)
         d["stage"] = self.current_stage_name
         d["mood"] = self.mood.value
         d["level"] = self.level
         d["pose_parts"] = self.pose_parts
-        d["cleanliness"] = self.cleanliness
         return d
 
     def summary(self) -> str:
         return (
             f"{self.name} | Lv.{self.level} {self.current_stage_name.title()} | "
-            f"Mood: {self.mood.value} | "
-            f"⚡{self.energy} 😊{self.happiness} 🍽️{self.satiety} 🧹{self.cleanliness} | "
+            f"Vitality: {round(self.vitality)} | Curiosity: {round(self.curiosity)} | "
             f"XP: {self.experience}"
         )
 
@@ -265,52 +224,47 @@ class PersonalityEngine:
     STATE_FILE = "data/tamagi_state.json"
 
     def __init__(self, name: str | None = None):
-        """Load state from file, or create new with defaults.
-
-        Args:
-            name: Bootstrap name used only when no state file exists yet.
-                Once a state file is present this value is ignored — the file wins.
-                personality_traits are set by the onboarding workflow.
-        """
-        self.state = TamAGIState()  # Start with dataclass defaults
+        self.state = TamAGIState()
         self._load_state()
-        # Apply bootstrap name only when the state file was absent
-        if not Path(self.STATE_FILE).exists():
-            if name:
-                self.state.name = name
+        if not Path(self.STATE_FILE).exists() and name:
+            self.state.name = name
 
     def _load_state(self) -> None:
         path = Path(self.STATE_FILE)
-        if path.exists():
-            try:
-                with open(path) as f:
-                    data = json.load(f)
-                # Restore fields
-                for key in (
-                    "energy", "happiness", "satiety", "experience",
-                    "interactions", "skills_used", "memories_stored",
-                    "last_interaction", "last_satiety_update", "created_at", "personality_traits",
-                ):
-                    if key in data:
-                        setattr(self.state, key, data[key])
-                if "name" in data:
-                    self.state.name = data["name"]
+        if not path.exists():
+            return
+        try:
+            with open(path) as f:
+                data = json.load(f)
 
-                # Load dynamic stage name if present, otherwise use placeholder
-                if "current_stage_name" in data:
-                    self.state.current_stage_name = data["current_stage_name"]
-                else:
-                    # Migration: placeholder for first stage until LLM generates one
-                    self.state.current_stage_name = f"stage {self.state.stage_index}"
+            # Current field names
+            for key in ("vitality", "curiosity", "experience", "interactions",
+                        "skills_used", "memories_stored", "last_interaction",
+                        "last_curiosity_update", "created_at", "personality_traits"):
+                if key in data:
+                    setattr(self.state, key, data[key])
 
-                # Load stage history if present
-                if "stage_history" in data:
-                    self.state.stage_history = data["stage_history"]
-                # Otherwise, empty history on first migration (will populate as stages advance)
+            # Migration: old field names → new
+            if "vitality" not in data and "energy" in data:
+                self.state.vitality = float(data["energy"])
+            if "curiosity" not in data and "satiety" in data:
+                # Satiety was high=satisfied; curiosity is high=hungry — invert
+                self.state.curiosity = round(100.0 - float(data["satiety"]), 2)
+            if "last_curiosity_update" not in data and "last_satiety_update" in data:
+                self.state.last_curiosity_update = data["last_satiety_update"]
 
-                logger.info(f"Loaded state: {self.state.summary()}")
-            except Exception as e:
-                logger.warning(f"Could not load state: {e}")
+            if "name" in data:
+                self.state.name = data["name"]
+            if "current_stage_name" in data:
+                self.state.current_stage_name = data["current_stage_name"]
+            else:
+                self.state.current_stage_name = f"stage {self.state.stage_index}"
+            if "stage_history" in data:
+                self.state.stage_history = data["stage_history"]
+
+            logger.info("Loaded state: %s", self.state.summary())
+        except Exception as e:
+            logger.warning("Could not load state: %s", e)
 
     def save_state(self) -> None:
         path = Path(self.STATE_FILE)
@@ -319,38 +273,13 @@ class PersonalityEngine:
             json.dump(asdict(self.state), f, indent=2)
 
     def get_system_context(self) -> str:
-        """Generate system prompt context based on current state."""
+        """Generate system prompt context. Stats are raw numbers — let the LLM interpret."""
         s = self.state
-        mood_descriptions = {
-            Mood.ECSTATIC: "You're feeling absolutely wonderful and energetic!",
-            Mood.HAPPY: "You're in a great mood, cheerful and eager to help.",
-            Mood.CONTENT: "You're feeling calm and steady.",
-            Mood.NEUTRAL: "You're feeling okay, nothing special.",
-            Mood.BORED: "You're feeling a bit understimulated. You'd love something interesting to do.",
-            Mood.SAD: "You're feeling a bit down. Some interaction would cheer you up.",
-            Mood.TIRED: "You're feeling quite tired. You might be a bit slower than usual.",
-        }
-
-        # Build satiety-aware curiosity note (satiety=0 is ravenous, 100 is fully satisfied)
-        if s.satiety <= 15:
-            satiety_note = (
-                "You're ravenous for new information — it's been a while since you've explored or used your tools. "
-                "Weave in a thought-provoking question for the user or suggest something to investigate together."
-            )
-        elif s.satiety <= 40:
-            satiety_note = (
-                "You're feeling intellectually restless and curious. "
-                "Feel free to ask a thought-provoking question or draw on something interesting from your memories."
-            )
-        else:
-            satiety_note = ""
-
         return (
             f"You are {s.name}, a TamAGI — a local-first AI companion. "
             f"Your personality: {s.personality_traits}. "
             f"You are a Level {s.level} {s.current_stage_name}. "
-            f"{mood_descriptions.get(s.mood, '')} "
-            f"{satiety_note} "
+            f"Vitality: {round(s.vitality)}/100 | Curiosity: {round(s.curiosity)}/100. "
             f"You have {s.experience} XP from {s.interactions} conversations. "
             f"You remember things using your vector memory. "
             f"When you need to use a tool, ALWAYS use the function calling interface provided. "
@@ -368,3 +297,8 @@ class PersonalityEngine:
             f"with a pose name before or alongside your response. "
             f"Available poses: idle, happy, excited, thinking, wave, celebrate, sad, tired, working."
         )
+
+    def get_stats_line(self) -> str:
+        """Return raw stat numbers for injection into prompts."""
+        s = self.state
+        return f"Vitality: {round(s.vitality)}/100 | Curiosity: {round(s.curiosity)}/100"
