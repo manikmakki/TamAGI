@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 _VALID_TYPES = {"location", "quest", "event", "skill", "perk", "known", "mystery", "lore"}
 
 
-class QueryWorldGraphSkill(Skill):
+class ReadWorldGraphSkill(Skill):
     """
     Query your world graph.
 

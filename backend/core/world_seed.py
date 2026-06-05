@@ -85,12 +85,13 @@ async def generate_world_seed(
                 LLMMessage("user", user_content),
             ],
             temperature=0.8,
-            max_tokens=400,
+            max_tokens=1500,
         )
         text = response.content.strip()
         if text:
             logger.info("World seed generated (%d chars)", len(text))
             return text
+        logger.warning("World seed LLM returned empty content (finish_reason=%r) — using fallback", response.finish_reason)
     except Exception as exc:
         logger.warning("World seed LLM call failed: %s — using fallback", exc)
 

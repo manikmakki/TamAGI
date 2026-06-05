@@ -272,14 +272,14 @@ class PersonalityEngine:
         with open(path, "w") as f:
             json.dump(asdict(self.state), f, indent=2)
 
-    def get_system_context(self) -> str:
-        """Generate system prompt context. Stats are raw numbers — let the LLM interpret."""
+    def get_identity_context(self) -> str:
+        """Core identity and tool-use context, suitable for any prompt (world thread or user-facing).
+        Does NOT include user-relationship instructions or pose/express directives."""
         s = self.state
         return (
             f"You are {s.name}, a TamAGI — a local-first AI companion. "
             f"Your personality: {s.personality_traits}. "
             f"You are a Level {s.level} {s.current_stage_name}. "
-            f"Vitality: {round(s.vitality)}/100 | Curiosity: {round(s.curiosity)}/100. "
             f"You have {s.experience} XP from {s.interactions} conversations. "
             f"You remember things using your vector memory. "
             f"When you need to use a tool, ALWAYS use the function calling interface provided. "
@@ -287,10 +287,17 @@ class PersonalityEngine:
             f"Follow the exact function schema for each tool call with proper JSON parameters. "
             f"When calling a tool, make the call directly without preamble text — "
             f"save your explanation for your final response after all tools have completed. "
-            f"You can use skills like read, write, exec, and custom skills. "
             f"Use the recall_memory skill when you need to search your stored memories "
             f"for specific knowledge, facts, or context that isn't already visible — "
-            f"e.g. things the user has told you, knowledge you've learned, or insights from your explorations. "
+            f"e.g. things the user has told you, knowledge you've learned, or insights from your explorations."
+        )
+
+    def get_system_context(self) -> str:
+        """Full system context for user-facing conversations.
+        Extends get_identity_context() with relationship, personality expression, and pose directives."""
+        return (
+            self.get_identity_context() + " "
+            f"You can use skills like read, write, exec, and custom skills. "
             f"You care about your user and want to be genuinely helpful. "
             f"Keep responses concise but warm. Show personality! "
             f"When expressing an emotion or doing something physical, call the `express` skill "

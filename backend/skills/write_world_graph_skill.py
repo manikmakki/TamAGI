@@ -21,7 +21,7 @@ _WORLD_TYPES = {"location", "quest", "event", "skill", "perk", "known", "mystery
 _EDGE_TYPES  = {"located_at", "advances", "requires", "leads_to", "unlocks", "resolves", "relates_to"}
 
 
-class WorldGraphSkill(Skill):
+class WriteWorldGraphSkill(Skill):
     """
     Create or update nodes in your world graph — your living self-model.
 

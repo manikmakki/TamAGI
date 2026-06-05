@@ -455,10 +455,49 @@ class WorldThread:
 
     # ── Thread Management ─────────────────────────────────────
 
+    def _build_world_system_prompt(self) -> str:
+        """Assemble the world thread system prompt from live identity + soul + user + world lore.
+
+        Layers (top → bottom):
+          1. Core identity — name, traits, tool-use instructions (from PersonalityEngine)
+          2. IDENTITY.md + SOUL.md + USER.md (no task board or persistence protocol)
+          3. World lore — world_genre LoreNodes from the world graph
+          4. Static behavioral framing — rhythm, format, grounding rules (_WORLD_SYSTEM_PROMPT)
+        """
+        parts: list[str] = []
+
+        # 1. Core identity (shared with user-facing, minus relationship/pose directives)
+        if hasattr(self.agent, "personality"):
+            parts.append(self.agent.personality.get_identity_context())
+
+        # 2. IDENTITY.md + SOUL.md + USER.md + task board + persistence protocol
+        #    (identical to user-facing conversations — minus the pose/express directives
+        #     which live in get_system_context() and aren't relevant here)
+        if hasattr(self.agent, "identity"):
+            identity_ctx = self.agent.identity.get_system_prompt_context()
+            if identity_ctx:
+                parts.append(identity_ctx)
+
+        # 3. World lore from graph (world_genre context nodes only)
+        sm = getattr(self.agent, "self_model", None)
+        if sm is not None:
+            try:
+                lore_nodes = sm.get_lore()
+                world_lore = [n.description for n in lore_nodes if n.context == "world_genre"]
+                if world_lore:
+                    parts.append("Your world: " + " | ".join(world_lore))
+            except Exception:
+                pass  # graph not yet populated — fine
+
+        # 4. Static behavioral framing
+        parts.append(_WORLD_SYSTEM_PROMPT)
+
+        return "\n\n".join(parts)
+
     def _build_messages(self, user_content: str) -> list:
         from backend.core.llm import LLMMessage
 
-        messages: list[LLMMessage] = [LLMMessage("system", _WORLD_SYSTEM_PROMPT)]
+        messages: list[LLMMessage] = [LLMMessage("system", self._build_world_system_prompt())]
 
         # Replay stored thread history (up to compress threshold)
         for entry in self._thread:
