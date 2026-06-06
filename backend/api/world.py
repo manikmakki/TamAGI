@@ -107,3 +107,31 @@ async def trigger_tick():
     if result is None:
         return {"status": "error", "detail": "Tick produced no valid [New State] — check logs"}
     return {"status": "ok", **result}
+
+
+@router.post("/consolidate")
+async def trigger_consolidation():
+    """Manually run a sleep-time consolidation pass right now (distills recent
+    lived experience into SOUL.md / IDENTITY.md). Useful for testing."""
+    agent = get_agent()
+    engine = getattr(agent, "consolidation", None)
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Consolidation engine not initialized")
+    result = await engine.consolidate(force=True)
+    if result is None:
+        return {"status": "skipped", "detail": "Nothing to consolidate (no new material, or rewrite rejected)"}
+    return {"status": "ok", **result}
+
+
+@router.post("/consolidate-relational")
+async def trigger_relational_consolidation():
+    """Manually run a relational consolidation pass right now (distills recent
+    conversation history into USER.md + the supplemental relationship file)."""
+    agent = get_agent()
+    rc = getattr(agent, "relational_consolidator", None)
+    if rc is None:
+        raise HTTPException(status_code=503, detail="Relational consolidator not initialized")
+    result = await rc.consolidate(force=True)
+    if result is None:
+        return {"status": "skipped", "detail": "Nothing to consolidate (no conversation history, or rewrite rejected)"}
+    return {"status": "ok", **result}

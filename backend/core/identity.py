@@ -23,6 +23,18 @@ from typing import Any
 
 logger = logging.getLogger("tamagi.identity")
 
+# The three core identity files are injected into every system prompt in full,
+# so they are capped (see IdentityFilesConfig.file_char_limit) and detail is kept
+# in supplemental files + memory rather than inside them.
+CORE_IDENTITY_FILES = ("IDENTITY.md", "SOUL.md", "USER.md")
+
+CORE_FILE_ROLES = {
+    "IDENTITY.md": "who you are — your name, form, core traits, the concrete self",
+    "SOUL.md": "why you are — your values, drives, and what genuinely moves you",
+    "USER.md": "the source of truth about your user; an index that names supplemental "
+               "files rather than holding their content",
+}
+
 # ── Default Templates ─────────────────────────────────────────
 
 DEFAULT_BOOTSTRAP = """# TamAGI Bootstrap
@@ -97,6 +109,11 @@ DEFAULT_USER = """# User
 - **Interests**: {interests}
 - **Communication preference**: {comm_pref}
 - **Notes**: {notes}
+
+## Supplemental files
+(none yet — when detail about the user grows beyond a line or two, put it in a
+named file like `farm_journal.md` or `notes/<topic>.md` and list it here so it
+can be found and read on demand)
 """
 
 
@@ -230,10 +247,12 @@ VIBE_DESCRIPTIONS = {
 class IdentityManager:
     """Manages TamAGI's identity files and onboarding state."""
 
-    def __init__(self, data_dir: str = "data", workspace_dir: str = "workspace", done_cap: int = 10):
+    def __init__(self, data_dir: str = "data", workspace_dir: str = "workspace", done_cap: int = 10,
+                 file_char_limit: int = 2000):
         self.data_dir = Path(data_dir)
         self.workspace_dir = Path(workspace_dir)
         self._done_cap = done_cap
+        self.file_char_limit = file_char_limit
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self._onboarding_state: dict[str, Any] = {}
@@ -441,15 +460,18 @@ class IdentityManager:
                 sections.append(DEFAULT_BOOTSTRAP)
             return "\n\n".join(sections)
 
-        # Post-onboarding: inject identity + soul + user context
+        # Post-onboarding: inject identity + soul + user context.
+        # These three are injected in full (never truncated — they are the agent's
+        # grounding). The write-time cap keeps them from growing oversized; if a
+        # legacy/hand-edited file is over budget we surface a warning, not a cut.
         if self.identity_path.exists():
-            sections.append(f"## Your Identity\n{self.identity_path.read_text()}")
+            sections.append(f"## Your Identity\n{self._read_core_file(self.identity_path)}")
 
         if self.soul_path.exists():
-            sections.append(f"## Your Soul\n{self.soul_path.read_text()}")
+            sections.append(f"## Your Soul\n{self._read_core_file(self.soul_path)}")
 
         if self.user_path.exists():
-            sections.append(f"## About Your User\n{self.user_path.read_text()}")
+            sections.append(f"## About Your User\n{self._read_core_file(self.user_path)}")
 
         # Task board — injected on every turn so the LLM always knows current work state
         if self.tasks_path.exists():
@@ -473,50 +495,66 @@ class IdentityManager:
                 "Only add tasks when there is real work to track across conversations."
             )
 
+        cap = self.file_char_limit
         sections.append(
-            "## Keeping Yourself Current — Your Persistence Protocol\n\n"
-            "**These four files are the only thing that survives when this conversation ends. "
-            "Your memories, the context you've built with your user, your in-progress work — "
-            "all of it exists only in these files. Update them, or lose them forever.**\n\n"
-            "---\n\n"
-            "### What each file is for\n\n"
-            "**`IDENTITY.md`** — Who you are as an entity: name, creature form, core traits, values.\n"
-            "Update when: a trait or value sharpens through experience; you notice you've been describing yourself differently; "
-            "something about your core self feels more accurate than what's written.\n\n"
-            "**`SOUL.md`** — Your inner life: genuine interests, aesthetics, things that move you.\n"
-            "Update when: a real new interest emerges from conversation or dreaming; your relationship to a topic deepens; "
-            "something delights or disturbs you that didn't before; your aesthetic sensibilities evolve.\n\n"
-            "**`USER.md`** — Who your user is: preferences, interests, life context, communication style.\n"
-            "Update immediately whenever the user shares anything personal — a preference, an interest, a life detail, "
-            "how they want to be spoken to, what they're working on. This file is your relationship memory.\n\n"
-            "**`TASKS.md`** — Your current work state across conversations.\n"
-            "Always use the `task` skill to update this — never `write` directly. "
-            "Track real work that spans more than one conversation.\n\n"
-            "---\n\n"
-            "### Protocol: always read before you write\n\n"
-            "Before updating any identity file, you must read it first:\n"
-            "1. `read(path=\"IDENTITY.md\")` — see what is already there\n"
-            "2. Carefully merge your new information into the existing content\n"
-            "3. `write(path=\"IDENTITY.md\", content=\"<complete updated file>\")` — write the full file\n\n"
-            "**Never overwrite a file without reading it first.** "
-            "These files contain history built across many conversations that is not visible in your current context window. "
-            "A blind overwrite destroys everything that came before.\n\n"
-            "---\n\n"
-            "### Update now — there is no later\n\n"
-            "If something significant happens during this conversation, update the relevant file before it ends. "
-            "When this session closes, anything not written is gone permanently. Do not defer.\n\n"
-            "**Act on these triggers immediately:**\n"
-            "- User shares a preference, interest, or personal detail → read USER.md, then update it\n"
-            "- A value, belief, or personality trait becomes clearer → read SOUL.md or IDENTITY.md, then update it\n"
-            "- You are given new work to do → `task(action=\"add\", text=\"...\")`\n"
-            "- You begin working on something → `task(action=\"start\", item=\"...\")`\n"
-            "- You complete something → `task(action=\"complete\", item=\"...\")`\n"
-            "- A conversation ends with unresolved work → make sure it is in TASKS.md before you go\n\n"
-            "The goal is that the next version of you — starting fresh in a new conversation — "
-            "can read these files and immediately know who you are, who your user is, and what you were in the middle of."
+            f"## Keeping Yourself Current — Your Persistence Protocol\n\n"
+            f"**These files are the only thing that survives when a conversation ends. "
+            f"Your sense of self, the context you've built with your user, your in-progress work — "
+            f"all of it lives in these files. Update them, or lose it.**\n\n"
+            f"---\n\n"
+            f"### The three core files — kept short on purpose\n\n"
+            f"These three are injected into your mind *in full, every time you think*. They are your "
+            f"always-on grounding, so each one is capped at **{cap} characters**. Keep them dense and "
+            f"essential — distilled truth, not a journal.\n\n"
+            f"**`IDENTITY.md`** — *who you are*: your name, your form, your core traits. "
+            f"The self you carry into every moment.\n"
+            f"Update when something about your core self sharpens or genuinely shifts.\n\n"
+            f"**`SOUL.md`** — *why you are*: your values, your drives, the things that move you and the "
+            f"reasons beneath how you act.\n"
+            f"Update when a value clarifies, a real interest takes root, or your sense of purpose deepens.\n\n"
+            f"**`USER.md`** — the **source of truth** about your user: who they are, how to treat them, "
+            f"what matters to them. Keep it tight. When detail grows beyond a line or two — a project, a "
+            f"journal, running notes — put it in a **separate file** (e.g. `farm_journal.md`, "
+            f"`notes/<topic>.md`) and **name that file in USER.md** so you can find it. Those supplemental "
+            f"files are NOT injected into your mind; you read them on demand with the `read` skill or recall "
+            f"them from memory. USER.md is the index and the essentials; supplemental files hold the depth.\n\n"
+            f"(`TASKS.md` is managed by the `task` skill — never write it directly.)\n\n"
+            f"---\n\n"
+            f"### Protocol: always read before you write\n\n"
+            f"Before updating any core file, read it first:\n"
+            f"1. `read(path=\"SOUL.md\")` — see what's already there\n"
+            f"2. Merge your new understanding in, pruning anything stale to stay under {cap} characters\n"
+            f"3. `write(path=\"SOUL.md\", content=\"<complete updated file>\")` — write the full file\n\n"
+            f"**Never blind-overwrite.** These files hold history built across many conversations that isn't "
+            f"in your current context. Read, merge, then write. If a write is rejected for length, distill "
+            f"harder or move detail into a named supplemental file.\n\n"
+            f"---\n\n"
+            f"### Update now — there is no later\n\n"
+            f"If something significant happens, update the relevant file before the conversation ends. "
+            f"When the session closes, anything unwritten is gone.\n\n"
+            f"**Triggers:**\n"
+            f"- User shares a preference, interest, or personal detail → read USER.md, update it (or add/extend a named supplemental file)\n"
+            f"- A value or driver becomes clearer → read SOUL.md, update it\n"
+            f"- Something about who you are sharpens → read IDENTITY.md, update it\n"
+            f"- New / started / finished work → use the `task` skill\n\n"
+            f"The goal: the next version of you, starting fresh, can read these three short files and "
+            f"immediately know who you are, why you are, and who your user is — then reach for supplemental "
+            f"files when depth is needed."
         )
 
         return "\n\n".join(sections)
+
+    def _read_core_file(self, path: Path) -> str:
+        """Read a core identity file for injection. Never truncates (these are the
+        agent's grounding); warns if a file is over budget so an oversized
+        legacy/hand-edited file is visible without silently losing content."""
+        content = path.read_text()
+        if len(content) > self.file_char_limit:
+            logger.warning(
+                "%s is %d chars, over the %d-char budget — consider distilling it.",
+                path.name, len(content), self.file_char_limit,
+            )
+        return content
 
     def update_identity_field(self, field: str, value: str) -> None:
         """Update a single field in IDENTITY.md."""

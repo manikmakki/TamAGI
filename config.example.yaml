@@ -108,50 +108,62 @@ web_search:
 
 # ── Agent / Tool-Call Behavior ───────────────
 agent:
-  max_tool_rounds: 3           # Fallback round limit for unplanned tasks
-  max_tool_rounds_ceiling: 20  # Hard cap when AURA plan drives the limit (estimated_steps * 1.5)
+  max_tool_rounds: 20          # Fallback round limit for unplanned tasks
+  max_tool_rounds_ceiling: 40  # Hard cap when plan drives the limit (estimated_steps * 1.5)
   use_plan_executor: false     # Set true to step through ActionPlan via PlanExecutor (requires WS)
   llm_retry_attempts: 1        # Retries on server disconnect (RemoteProtocolError / ConnectError)
   llm_retry_delay: 2.0         # Seconds between retries
 
-# ── Autonomy / Dream Engine ──────────────────
-# While idle, TamAGI dreams, explores, experiments, and journals.
-# This is self-directed behavior — not task automation for the user.
+# ── Autonomy ─────────────────────────────────
+# Controls when TamAGI is free to act on its own — world thread ticks
+# and any other autonomous behaviors share this single window.
 autonomy:
-  # Enable/disable autonomous behavior entirely
   enabled: true
 
-  # How often TamAGI wakes to do something (in minutes)
-  # Lower = more active/costly. Set to 0 to disable.
-  interval_minutes: 30
+  # Cron expression for world thread ticks
+  # Examples: "*/30 * * * *" (every 30 min), "0 * * * *" (hourly)
+  schedule: "*/15 * * * *"
 
-  # Only dream during these hours (24h format, local time)
-  inactive_hours_start: 23
-  inactive_hours_end: 6
+  # Active window (24h local time). Use 0/24 to run at all hours — no gate.
+  active_hours_start: 0
+  active_hours_end: 24
 
-  # Which activities are enabled:
-  #   dream      — Replay memories, find connections and insights
-  #   explore    — Search the web for a topic the LLM chooses based on personality/memories
-  #   experiment — Create something; the LLM proposes its own creative prompt each time
-  #   journal    — Write a private diary entry reflecting on growth
-  #   wander     — Fully freeform: no category, no template — follow any thread
-  #   cleanup    — Prune old dream logs when workspace cleanliness is low
-  #   plan       — Autonomous plan+execute via PlanExecutor; capability gaps teach AURA
-  activities:
-    - dream
-    - explore
-    - experiment
-    - journal
-    - cleanup
-    - wander
-    - plan
+  # Minutes to wait before world thread resumes after a user conversation ends
+  resume_after_conversation: 15
 
-  # Relative weights for activity selection (higher = more likely)
-  # Must match the order of activities above.
-  # Weights are further nudged at runtime based on current mood/stats:
-  #   low satiety → explore/wander boosted  |  low happiness → journal/wander boosted
-  #   high energy → experiment/wander boosted
-  weights: [25, 20, 20, 20, 10, 25, 15]
+# ── Living World Thread ───────────────────────
+# Technical storage settings. Timing is controlled by autonomy above.
+world_thread:
+  enabled: true
+  thread_max_pairs: 5  # Rolling window: last N tick pairs kept in LLM context
+
+  # Sleep-time consolidation: periodically distills accumulated lived experience
+  # (world-thread monologue + self-model graph) into the agent's own SOUL.md, and
+  # nudges the IDENTITY.md "Stage". This is context-level persistence — "who you've
+  # become" — independent of any weight training. The merge is non-destructive.
+  consolidation:
+    enabled: true
+    every_n_ticks: 12        # Consolidate after this many new autonomous ticks
+    max_ticks_per_run: 60    # Cap on lived-experience ticks fed to the pass
+    min_soul_retention: 0.5  # Reject a rewrite shorter than this fraction of SOUL.md
+
+# ── Identity Files ────────────────────────────
+# IDENTITY.md (who you are), SOUL.md (why you are), and USER.md (source of truth
+# about the user) are injected into every system prompt in full, so each is capped.
+# Detail belongs in supplemental files (named in USER.md) + memory/RAG, not here.
+identity_files:
+  file_char_limit: 2000    # Hard cap (characters) enforced on each core file
+
+# ── Relational Consolidation ──────────────────
+# Distills conversation history into USER.md (the capped source of truth) plus a
+# named, uncapped supplemental relationship file (read on demand, not injected).
+# Runs after every N ended conversations, and on demand via
+# POST /api/world/consolidate-relational.
+relational:
+  enabled: true
+  every_n_conversations: 3
+  max_dialogue_chars: 8000
+  supplemental_filename: "relationship.md"
 
 # ── Multi-Agent Orchestration ─────────────────
 # When TamAGI encounters a complex multi-step task, it can spawn specialized

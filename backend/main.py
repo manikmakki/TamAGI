@@ -40,7 +40,7 @@ from backend.api.chat import router as chat_router, set_agent
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
 from backend.skills.recall_memory_skill import RecallMemorySkill
-from backend.skills.query_world_graph_skill import QueryWorldGraphSkill
+from backend.skills.read_world_graph_skill import ReadWorldGraphSkill
 from backend.api.auth import router as auth_router
 from backend.api.self_model import router as self_model_router
 from backend.api.monologue import router as monologue_router, set_monologue_log
@@ -154,6 +154,7 @@ async def lifespan(app: FastAPI):
         data_dir="data",
         workspace_dir=config.workspace.path,
         done_cap=config.task_board.done_cap,
+        file_char_limit=config.identity_files.file_char_limit,
     )
     if identity.needs_onboarding:
         logger.info("First run detected — onboarding required")
@@ -236,9 +237,9 @@ async def lifespan(app: FastAPI):
         logger.info("Orchestration skill registered")
 
     skills.register(RecallMemorySkill(agent=agent))
-    skills.register(QueryWorldGraphSkill(agent=agent))
-    from backend.skills.world_graph_skill import WorldGraphSkill
-    skills.register(WorldGraphSkill(agent=agent))
+    skills.register(ReadWorldGraphSkill(agent=agent))
+    from backend.skills.write_world_graph_skill import WriteWorldGraphSkill
+    skills.register(WriteWorldGraphSkill(agent=agent))
 
     # Initialize the Living World thread (replaces dream + motivation engines)
     world_thread = WorldThread(
@@ -251,6 +252,39 @@ async def lifespan(app: FastAPI):
         resume_after_conversation=config.autonomy.resume_after_conversation,
     )
     agent.set_world_thread(world_thread)
+
+    # Sleep-time consolidation: distills lived world-thread experience into the
+    # agent's own SOUL.md / IDENTITY.md. Triggered after every Nth autonomous tick
+    # (see ConsolidationConfig) and on demand via POST /api/world/consolidate.
+    from backend.core.consolidation import ConsolidationEngine, RelationalConsolidator
+    agent.consolidation = ConsolidationEngine(
+        llm=llm,
+        identity=identity,
+        self_model=self_model,
+        monologue_log=monologue_log,
+        config=config.world_thread.consolidation,
+    )
+    logger.info(
+        "Consolidation engine ready (enabled=%s, every_n_ticks=%d)",
+        config.world_thread.consolidation.enabled,
+        config.world_thread.consolidation.every_n_ticks,
+    )
+
+    # Relational consolidation: distills conversation history into USER.md + a named
+    # supplemental relationship file. Triggered on conversation-end cadence and on demand.
+    agent.relational_consolidator = RelationalConsolidator(
+        llm=llm,
+        identity=identity,
+        dialogue_provider=agent.recent_dialogue_text,
+        monologue_log=monologue_log,
+        config=config.relational,
+    )
+    logger.info(
+        "Relational consolidator ready (enabled=%s, every_n_conversations=%d → %s)",
+        config.relational.enabled,
+        config.relational.every_n_conversations,
+        config.relational.supplemental_filename,
+    )
 
     # First-run world seed: if no world state exists yet and onboarding is done,
     # auto-generate a seed from identity context so the world thread has a starting point.

@@ -264,6 +264,9 @@ class TamAGIAgent:
 
     async def on_conversation_ended(self, conv_id: str) -> None:
         """Called when a user conversation ends. Injects departure event into the world thread."""
+        # Relational consolidation runs independently of the world thread.
+        await self._maybe_relational_consolidate(conv_id)
+
         if not self._world_thread:
             return
         conv = self.get_conversation(conv_id)
@@ -329,6 +332,38 @@ class TamAGIAgent:
 
     def get_conversation(self, conv_id: str) -> Conversation | None:
         return self.conversations.get(conv_id)
+
+    def recent_dialogue_text(self, max_chars: int = 8000) -> str:
+        """Most-recent User/assistant exchanges across all conversations, in
+        chronological order, capped to max_chars (keeping the newest). Used as the
+        source for relational consolidation into USER.md."""
+        msgs: list[tuple[float, str, str]] = []
+        for conv in self.conversations.values():
+            for m in conv.messages:
+                if m.role in ("user", "assistant") and (m.content or "").strip():
+                    msgs.append((m.timestamp, m.role, m.content.strip()))
+        if not msgs:
+            return ""
+        msgs.sort(key=lambda x: x[0])
+        name = getattr(self.personality, "name", None) or "TamAGI"
+        lines = [f"{'User' if role == 'user' else name}: {content}" for _, role, content in msgs]
+        text = "\n".join(lines)
+        return text[-max_chars:] if len(text) > max_chars else text
+
+    async def _maybe_relational_consolidate(self, conv_id: str) -> None:
+        """After a real conversation ends, advance the relational cadence and run a
+        relational consolidation pass when due. Best-effort — never raises."""
+        rc = getattr(self, "relational_consolidator", None)
+        if rc is None:
+            return
+        conv = self.get_conversation(conv_id)
+        if not conv or len(conv.messages) < 2:
+            return
+        try:
+            if rc.note_conversation_ended():
+                await rc.consolidate()
+        except Exception as exc:
+            logger.warning("Relational consolidation failed: %s", exc)
 
     def list_conversations(self) -> list[dict[str, Any]]:
         convs = sorted(

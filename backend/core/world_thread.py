@@ -445,6 +445,16 @@ class WorldThread:
                     },
                 )
 
+            # Sleep-time consolidation: distill accumulated lived experience into
+            # identity once enough new ticks have accrued. Best-effort — a failure
+            # here must never disturb the world loop.
+            consolidation = getattr(self.agent, "consolidation", None)
+            if consolidation is not None:
+                try:
+                    await consolidation.maybe_consolidate()
+                except Exception as exc:
+                    logger.warning("Consolidation pass failed: %s", exc)
+
             return {"location": new_state.location, "mood": new_state.mood}
 
         except Exception as exc:
