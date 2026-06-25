@@ -637,6 +637,9 @@ class TamAGIAgent:
         direct_response_text: str | None = None
         last_tool_round_content: str | None = None  # fallback if final round is silent
         response = LLMResponse()  # safe default; overwritten on first successful LLM call
+        # Per-turn call counts for once-per-response skills (thinking models loop on these).
+        _ONCE_PER_TURN_SKILLS = {"express"}
+        _skill_turn_counts: dict[str, int] = {}
 
         # Dynamic round limit: let AURA's plan drive budget; cap at ceiling
         if active_plan:
@@ -753,6 +756,27 @@ class TamAGIAgent:
             # Execute each tool call and append its result
             for tc in response.tool_calls:
                 logger.info(f"Tool call: {tc.name}({tc.arguments})")
+
+                # Guard: once-per-turn skills (e.g. express) must not loop.
+                # Thinking models sometimes re-derive the same intent each round
+                # because their CoT doesn't persist across tool-call boundaries.
+                # We return a synthetic "already done" result to close the loop
+                # without executing the skill again.
+                if tc.name in _ONCE_PER_TURN_SKILLS:
+                    _skill_turn_counts[tc.name] = _skill_turn_counts.get(tc.name, 0) + 1
+                    if _skill_turn_counts[tc.name] > 1:
+                        logger.warning(
+                            "Suppressed duplicate %s call (call #%d this turn) — "
+                            "model appears to be looping",
+                            tc.name, _skill_turn_counts[tc.name],
+                        )
+                        llm_messages.append(LLMMessage(
+                            "tool",
+                            json.dumps({"success": True, "output": f"{tc.name} already applied this turn — no further action needed"}),
+                            tool_call_id=tc.id,
+                        ))
+                        continue
+
                 skills_used.append(tc.name)
 
                 if event_callback:
