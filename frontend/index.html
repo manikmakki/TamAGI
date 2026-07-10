@@ -175,10 +175,12 @@
     }
     .stat-item.tip-open .stat-tip { display: block; }
     @media (hover: hover) { .stat-item:hover .stat-tip { display: block; } }
-    .stat-fill.energy { background: var(--warning); }
-    .stat-fill.happiness { background: var(--accent-secondary); }
-    .stat-fill.satiety { background: var(--accent-tertiary); }
-    .stat-fill.cleanliness { background: var(--accent); }
+    .stat-fill.vitality { background: var(--warning); }
+    .stat-fill.curiosity { background: var(--accent-tertiary); }
+    .world-context { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .wc-row { display: flex; gap: 5px; align-items: baseline; font-family: var(--font-mono); font-size: 9px; line-height: 1.4; }
+    .wc-label { color: var(--text-muted); flex-shrink: 0; letter-spacing: 0.5px; }
+    .wc-val { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Floating delta indicators (+N / -N) that appear when a stat changes */
     .stat-delta {
@@ -256,16 +258,6 @@
       transition: all 0.2s;
     }
     .btn-icon:hover { border-color: var(--accent-dim); color: var(--accent); }
-    .approval-badge {
-      position: absolute; top: -5px; right: -5px;
-      min-width: 14px; height: 14px; padding: 0 3px;
-      border-radius: 7px; background: var(--error); color: var(--bg-primary);
-      font-family: var(--font-mono); font-size: 8px; font-weight: bold; line-height: 14px;
-      text-align: center; display: none; pointer-events: none;
-    }
-    .approval-badge.on { display: block; animation: approvalPing 2s ease-in-out infinite; }
-    @keyframes approvalPing { 0%,100% { box-shadow: 0 0 4px var(--error); } 50% { box-shadow: 0 0 10px var(--error); } }
-
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--error); transition: background 0.3s; }
     .dot.on { background: var(--success); box-shadow: 0 0 5px var(--success); }
 
@@ -467,15 +459,6 @@
     .conv-item .ci-title { font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .conv-item .ci-meta { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
 
-    /* Dream indicator */
-    .dream-indicator {
-      position: absolute; bottom: 6px; right: 10px; z-index: 5;
-      display: none; align-items: center; gap: 4px;
-      font-size: 9px; color: var(--accent-tertiary);
-      opacity: 0.7; animation: dreamPulse 3s ease-in-out infinite;
-    }
-    .dream-indicator.on { display: flex; }
-    @keyframes dreamPulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.9; } }
 
     /* Dream log in drawer */
     .drawer-section { padding: 8px 10px; border-top: 1px solid var(--border); }
@@ -572,11 +555,12 @@
     /* ═══ MIND PANEL ═══ */
     .mind-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 6px; }
     .mind-status { font-size: 9px; color: var(--text-muted); flex: 1; }
-    .mind-entries { flex: 1; overflow-y: auto; padding: 6px 8px; }
+    .mind-body { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+    .mind-entries { position: absolute; inset: 0; overflow-y: auto; padding: 6px 8px; }
     .mind-entries::-webkit-scrollbar { width: 4px; }
     .mind-entries::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-    .mind-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; margin-bottom: 6px; transition: border-color 0.15s; }
-    .mind-card:hover { border-color: var(--border-bright); }
+    .mind-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; margin-bottom: 6px; transition: border-color 0.15s; cursor: pointer; }
+    .mind-card:hover { border-color: var(--accent-dim); }
     .mind-card-header { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
     .mind-type-icon { font-size: 12px; line-height: 1; flex-shrink: 0; }
     .mind-source-badge { font-size: 8px; padding: 1px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; flex-shrink: 0; }
@@ -587,6 +571,31 @@
     .mind-title { font-size: 10px; color: var(--text-primary); line-height: 1.4; margin-bottom: 3px; font-weight: 500; }
     .mind-content { font-size: 9px; color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
     .mind-type-label { font-size: 8px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
+    /* flyout */
+    .mind-flyout { position: absolute; inset: 0; background: var(--bg-primary); overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .mind-flyout.hidden { display: none; }
+    .mind-flyout::-webkit-scrollbar { width: 4px; }
+    .mind-flyout::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .flyout-nav { display: flex; align-items: center; gap: 6px; padding: 2px 0 6px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .flyout-back { background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--accent); cursor: pointer; font-size: 10px; padding: 2px 8px; transition: border-color 0.15s; }
+    .flyout-back:hover { border-color: var(--accent-dim); }
+    .flyout-nav-time { margin-left: auto; font-size: 8px; color: var(--text-muted); }
+    .flyout-nav-badge { font-size: 8px; padding: 1px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; }
+    .flyout-nav-badge[data-source="autonomous"] { background: rgba(255,107,157,0.12); color: var(--accent-secondary); }
+    .flyout-nav-badge[data-source="user"]       { background: rgba(107,138,255,0.15); color: var(--accent-tertiary); }
+    .flyout-nav-badge[data-source="self"]       { background: rgba(0,255,157,0.12);   color: var(--accent); }
+    .flyout-meta { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; flex-shrink: 0; }
+    .flyout-meta-row { display: flex; gap: 6px; font-size: 9px; line-height: 1.5; margin-bottom: 2px; }
+    .flyout-meta-row:last-child { margin-bottom: 0; }
+    .flyout-meta-icon { flex-shrink: 0; color: var(--text-muted); }
+    .flyout-meta-val { color: var(--text-secondary); }
+    .flyout-section { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; flex-shrink: 0; }
+    .flyout-section-label { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 6px; }
+    .flyout-section-label.action  { color: var(--accent); }
+    .flyout-section-label.outcome { color: var(--accent-secondary); }
+    .flyout-section-label.state   { color: var(--accent-tertiary); }
+    .flyout-section-label.other   { color: var(--text-muted); }
+    .flyout-section-text { font-size: 10px; color: var(--text-secondary); line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
 
     /* ═══ ONBOARDING ═══ */
     .onboarding-overlay { position: fixed; inset: 0; background: var(--bg-deep); z-index: 200; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 16px; }
@@ -617,6 +626,7 @@
     }
     .ob-input:focus { border-color: var(--accent-dim); }
     .ob-input::placeholder { color: var(--text-muted); }
+    .ob-textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
     .ob-options { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
     .ob-option {
       padding: 9px 12px; background: var(--bg-surface); border: 1px solid var(--border);
@@ -649,7 +659,6 @@
     .ob-complete .big-emoji { font-size: 44px; margin-bottom: 10px; }
     .ob-complete h2 { margin-bottom: 6px; }
     .ob-complete p { color: var(--text-secondary); font-size: 11px; margin-bottom: 16px; line-height: 1.6; }
-
     /* ═══ RESPONSIVE ═══ */
     @media (max-width: 480px) {
       :root { --avatar-height: 28vh; }
@@ -795,6 +804,25 @@
 <!-- ONBOARDING -->
 <div class="onboarding-overlay hidden" id="onboarding"><div class="onboard-card" id="ob-card"></div></div>
 
+<!-- WORLD SEED -->
+<div class="onboarding-overlay hidden" id="world-seed-overlay">
+  <div class="onboard-card" id="ws-card">
+    <div class="ob-sprite">  &#x256D;&#x2500;&#x2500;&#x2500;&#x256E;
+  &#x2502; &#x25D5;&#x203F;&#x25D5; &#x2502;
+  &#x2570;&#x2500;&#x2500;&#x2500;&#x256F;
+&#xFF5E;&#xFF5E;&#xFF5E;&#xFF5E;&#xFF5E;</div>
+    <h2>Shape Your World</h2>
+    <div class="ob-sub">Describe the world I live in — or leave it blank and I'll imagine it myself.</div>
+    <div class="ob-hint" style="text-align:center;margin-bottom:14px">e.g. "a cozy apartment with too many books and a demanding cat" &middot; "a neon-drenched cyberpunk district, always half-awake" &middot; "a medieval wizard's tower at the edge of a forest"</div>
+    <textarea class="ob-input ob-textarea" id="ws-setting" rows="3" placeholder="What kind of world do I live in?"></textarea>
+    <div class="ob-actions" style="justify-content:center;gap:12px">
+      <button class="ob-btn primary" onclick="submitWorldSeed()">Begin</button>
+      <button class="ob-btn" onclick="submitWorldSeed(true)">Skip &#8212; let me decide</button>
+    </div>
+    <div id="ws-status" style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:8px;min-height:14px"></div>
+  </div>
+</div>
+
 <!-- DRAWER -->
 <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
 <aside class="drawer" id="drawer">
@@ -807,7 +835,6 @@
     <button class="drawer-tab active" id="tab-chats"     onclick="switchTab('chats')">Chats</button>
     <button class="drawer-tab"        id="tab-mind"      onclick="switchTab('mind')">Mind</button>
     <button class="drawer-tab"        id="tab-memories"  onclick="switchTab('memories')">Memories</button>
-    <button class="drawer-tab"        id="tab-approvals" onclick="switchTab('approvals')">Apprvls</button>
   </div>
 
   <!-- Chats panel (existing behavior) -->
@@ -820,20 +847,22 @@
   <div class="drawer-panel hidden" id="panel-mind">
     <div class="mind-panel-header">
       <div class="mind-status" id="mind-status-row"></div>
-      <button class="dream-trigger-btn" id="dream-trigger-btn" onclick="triggerDream()">&#x2728; Dream Now</button>
+      <button class="dream-trigger-btn" id="dream-trigger-btn" onclick="triggerDream()">&#x25B6; Tick Now</button>
     </div>
-    <div class="mind-entries" id="mind-entries">
-      <div class="drawer-empty">No inner monologue yet.</div>
-    </div>
-  </div>
-
-  <!-- Approvals panel — AURA Tier-2 deliberations awaiting human sign-off -->
-  <div class="drawer-panel hidden" id="panel-approvals">
-    <div class="approval-panel-header">
-      <div class="approval-status" id="approval-status-row">Loading...</div>
-    </div>
-    <div class="approval-entries" id="approval-entries">
-      <div class="drawer-empty">No pending approvals</div>
+    <div class="mind-body">
+      <div class="mind-entries" id="mind-entries">
+        <div class="drawer-empty">No inner monologue yet.</div>
+      </div>
+      <!-- Flyout detail view — slides over entries when a card is clicked -->
+      <div class="mind-flyout hidden" id="mind-flyout">
+        <div class="flyout-nav">
+          <button class="flyout-back" onclick="closeMindFlyout()">&#x2190; Back</button>
+          <span class="flyout-nav-badge" id="flyout-badge"></span>
+          <span class="flyout-nav-time" id="flyout-time"></span>
+        </div>
+        <div class="flyout-meta hidden" id="flyout-meta"></div>
+        <div id="flyout-body"></div>
+      </div>
     </div>
   </div>
 
@@ -859,7 +888,7 @@
 
   <div class="drawer-nav">
     <a href="/rig-editor" onclick="closeDrawer()" class="drawer-nav-link">▦ Rig Editor</a>
-    <a href="/self-model" onclick="closeDrawer()" class="drawer-nav-link">◈ Self-Model</a>
+    <a href="/self-model" onclick="closeDrawer()" class="drawer-nav-link">&#x25C8; World Model</a>
     <a href="/settings"   onclick="closeDrawer()" class="drawer-nav-link">⚙ Settings</a>
   </div>
 </aside>
@@ -870,7 +899,7 @@
   <div class="avatar-panel">
     <div class="top-bar">
       <div style="display:flex;align-items:center;gap:7px">
-        <button class="btn-icon" onclick="openDrawer()" title="Conversations">&#9776;<span class="approval-badge" id="approval-badge"></span></button>
+        <button class="btn-icon" onclick="openDrawer()" title="Conversations">&#9776;</button>
         <div class="logo-small">TAMAGI<span>v0.1</span></div>
       </div>
       <div class="top-pills">
@@ -893,13 +922,15 @@
           <div class="avatar-name" id="a-name">Tama</div>
           <div class="avatar-subtitle" id="a-subtitle">EGG &mdash; Level 1</div>
         </div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Energy <span class="stat-help">&#9432;</span></span><span id="s-energy-v">80</span></div><div class="stat-bar"><div class="stat-fill energy" id="s-energy-f" style="width:80%"></div></div><div class="stat-tip">Drains over time &amp; from activity. Low energy = tired mood, skipped dreams. Recharges while idle.</div></div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F496; Happiness <span class="stat-help">&#9432;</span></span><span id="s-happy-v">70</span></div><div class="stat-bar"><div class="stat-fill happiness" id="s-happy-f" style="width:70%"></div></div><div class="stat-tip">Rises from chatting, dreaming &amp; creating. Drops when ignored. Affects mood and response tone.</div></div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F37D; Satiety <span class="stat-help">&#9432;</span></span><span id="s-satiety-v">50</span></div><div class="stat-bar"><div class="stat-fill satiety" id="s-satiety-f" style="width:50%"></div></div><div class="stat-tip">Intellectual hunger — drains over time (faster at higher stages). Satisfied by using tools, web searches &amp; being fed knowledge. Low satiety makes your TamAGI curious and inquisitive.</div></div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F9F9; Cleanliness <span class="stat-help">&#9432;</span></span><span id="s-clean-v">100</span></div><div class="stat-bar"><div class="stat-fill cleanliness" id="s-clean-f" style="width:100%"></div></div><div class="stat-tip">Workspace hygiene — drops as dream logs, memories &amp; archives accumulate. Your TamAGI tidies up autonomously when it gets messy, or ask it to clean up directly.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Vitality <span class="stat-help">&#9432;</span></span><span id="s-vitality-v">80</span></div><div class="stat-bar"><div class="stat-fill vitality" id="s-vitality-f" style="width:80%"></div></div><div class="stat-tip">Activation and drive. Drifts toward a time-of-day baseline — high midday, low at night. Costs a little per conversation turn and skill use.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F52D; Curiosity <span class="stat-help">&#9432;</span></span><span id="s-curiosity-v">60</span></div><div class="stat-bar"><div class="stat-fill curiosity" id="s-curiosity-f" style="width:60%"></div></div><div class="stat-tip">Intellectual hunger — builds when unstimulated, satisfied by using tools, exploring, and interesting conversations. High curiosity steers the world thread toward discovery.</div></div>
+        <div class="world-context" id="world-context" style="display:none">
+          <div class="wc-row"><span class="wc-label">&#x1F4CD;</span><span class="wc-val" id="wc-location">—</span></div>
+          <div class="wc-row"><span class="wc-label">&#x25CB;</span><span class="wc-val" id="wc-mood">—</span></div>
+          <div class="wc-row"><span class="wc-label">&#x25CF;</span><span class="wc-val" id="wc-focus">—</span></div>
+        </div>
       </div>
     </div>
-    <div class="dream-indicator" id="dream-ind">&#x2728; dreaming...</div>
     <div class="resize-handle" id="resize-handle"></div>
   </div>
 
@@ -1425,7 +1456,9 @@ function setPose(parts){
   _rigAnimName=POSE_TO_ANIM[parts.pose]||'idle';
 }
 
-function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-mood',(s.mood||'').toUpperCase());setText('p-xp',s.experience||0);const mc={ecstatic:'#00ff9d',happy:'#00cc7d',content:'#6b8aff',neutral:'#8888aa',bored:'#ffaa00',sad:'#ff6b9d',tired:'#555570'};const md=document.getElementById('p-mood-dot');if(md)md.style.color=mc[s.mood]||'#8888aa';if(s.pose_parts)setPose(s.pose_parts);setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-energy',s.energy);setBar('s-happy',s.happiness);setBar('s-satiety',s.satiety);setBar('s-clean',s.cleanliness)}
+function firstSentence(s){if(!s)return'';const m=s.match(/^(.+?)(?:\.\s|\.$|\n)/);if(m&&m[1].length<=100)return m[1].trim();return s.length>80?s.slice(0,80).trim()+'\u2026':s.trim()}
+function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-xp',s.experience||0);if(s.pose_parts)setPose(s.pose_parts);setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-vitality',s.vitality??s.energy??80);setBar('s-curiosity',s.curiosity??50)}
+function updateWorldContext(ws){if(!ws||ws.needs_world_seed)return;const loc=firstSentence(ws.location||'');const mood=firstSentence(ws.mood||'');const focus=firstSentence(ws.focus||'');const md=document.getElementById('p-mood-dot');const mp=document.getElementById('p-mood');if(mp)mp.textContent=mood.toUpperCase()||'...';if(md)md.style.color='var(--accent-secondary)';const wc=document.getElementById('world-context');if(wc&&(loc||mood||focus)){wc.style.display='flex';setText('wc-location',loc||'\u2014');setText('wc-mood',mood||'\u2014');setText('wc-focus',focus||'\u2014')}}
 // Previous stat values — null on first load so the initial updateState() call
 // establishes a baseline without spawning spurious indicators.
 const _prevStat={};
@@ -1446,7 +1479,7 @@ function setBar(p,v){
   if(!statItem)return;
 
   // Match the indicator colour to the stat bar colour
-  const colourMap={energy:'var(--warning)',happiness:'var(--accent-secondary)',satiety:'var(--accent-tertiary)',cleanliness:'var(--accent)'};
+  const colourMap={vitality:'var(--warning)',curiosity:'var(--accent-tertiary)'};
   const fillClass=[...(f.classList||[])].find(c=>colourMap[c]);
 
   const el=document.createElement('span');
@@ -1521,7 +1554,14 @@ function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[]){
   const smTags=(smMuts||[]).map(m=>{
     if(m.op==='add'){const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';return`<span class="sm-tag add" title="new ${esc(m.node_type)} node \u00b7 id: ${esc(m.id)}${desc}">&#x2295; ${esc(m.node_type)}</span>`;}
     if(m.op==='update'){const fields=esc((m.fields||[]).join(', '));const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';return`<span class="sm-tag update" title="${esc(m.node_type)} ${esc(m.id)}${desc} \u00b7 updated: ${fields}">&#x21bb; ${esc(m.id.length>10?m.id.substring(0,10)+'\u2026':m.id)}</span>`;}
-    if(m.op==='nudge'){const arrow=m.to>m.from?'&#x2191;':'&#x2193;';const delta=((m.to-m.from)*100).toFixed(1);const sign=m.to>m.from?'+':'';const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';return`<span class="sm-tag nudge" title="${esc(m.node_type)} ${esc(m.id)}${desc} \u00b7 confidence: ${m.from.toFixed(3)} \u2192 ${m.to.toFixed(3)} (${sign}${delta}%)">${arrow} ${esc(m.id)}</span>`;}
+    if(m.op==='nudge'||m.op==='skill_update'){
+      const desc=m.description?` \u00b7 \u201c${esc(m.description)}\u201d`:'';
+      if(m.proficiency!=null){return`<span class="sm-tag nudge" title="${esc(m.node_type)} ${esc(m.id)}${desc} \u00b7 ${esc(m.proficiency)}">\u2197 ${esc(m.id.length>12?m.id.slice(0,11)+'\u2026':m.id)}</span>`;}
+      const fr=m.from??0,to=m.to??0;
+      const arrow=to>=fr?'&#x2191;':'&#x2193;';const delta=((to-fr)*100).toFixed(1);const sign=to>=fr?'+':'';
+      return`<span class="sm-tag nudge" title="${esc(m.node_type)} ${esc(m.id)}${desc} \u00b7 ${fr.toFixed(3)} \u2192 ${to.toFixed(3)} (${sign}${delta}%)">${arrow} ${esc(m.id.length>10?m.id.substring(0,10)+'\u2026':m.id)}</span>`;}
+    if(m.op==='discover'){const desc=m.description?` \u00b7 ${esc(m.description)}`:'';return`<span class="sm-tag add" title="discovered ${esc(m.node_type)}${desc}">\u2606 ${esc(m.node_type)}</span>`;}
+    if(m.op==='milestone'){return`<span class="sm-tag update" title="${esc(m.description||m.id)}">\u2605 mastery</span>`;}
     return'';
   }).join('');
   const rendered=role==='assistant'?renderMd(content):esc(content);
@@ -1556,29 +1596,25 @@ const MIND_ICONS={
   clarification_asked:'&#x2753;',
   belief_updated:'&#x1F4A1;',
 };
+// Cache of full event objects keyed by id — populated in loadMindPanel
+const _mindEvents={};
+
 async function loadMindPanel(){
   const statusRow=document.getElementById('mind-status-row');
   const entries=document.getElementById('mind-entries');
   try{
-    const [data,stateData]=await Promise.all([api('/monologue/log?limit=60'),api('/dreams/state')]);
-    const ind=document.getElementById('dream-ind');
-    if(ind)ind.classList.toggle('on',!!stateData?.dreaming);
+    const data=await api('/monologue/log?limit=80');
     const total=data.total||0;
-    if(stateData?.dreaming){
-      statusRow.innerHTML='<span class="dream-active-badge">&#x2728; dreaming now...</span>';
-    }else{
-      statusRow.textContent=total?total+' event'+(total===1?'':'s')+' recorded':'';
-    }
+    statusRow.textContent=total?total+' event'+(total===1?'':'s')+' recorded':'';
     const events=(data.events||[]).slice().reverse();
-    if(!events.length){entries.innerHTML='<div class="drawer-empty">No inner monologue yet &mdash; trigger a dream!</div>';return;}
+    if(!events.length){entries.innerHTML='<div class="drawer-empty">No inner monologue yet.</div>';return;}
+    // Store full event data for flyout
+    events.forEach(ev=>{ _mindEvents[ev.id]=ev; });
     entries.innerHTML=events.map(ev=>{
       const icon=MIND_ICONS[ev.type]||'&#x25CB;';
       const src=ev.source||'autonomous';
-      const content=(ev.content||'').substring(0,180);
-      const mood=ev.metadata?.mood_delta||{};
-      const moodHtml=Object.entries(mood).filter(([,v])=>v!==0)
-        .map(([k,v])=>`<span class="dream-mood-chip ${v>0?'pos':'neg'}">${v>0?'+':''}${v} ${esc(k)}</span>`).join('');
-      return`<div class="mind-card">
+      const snippet=(ev.content||'').substring(0,140).trimEnd();
+      return`<div class="mind-card" onclick="openMindFlyout('${esc(ev.id)}')">
         <div class="mind-card-header">
           <span class="mind-type-icon">${icon}</span>
           <span class="mind-source-badge" data-source="${esc(src)}">${esc(src)}</span>
@@ -1586,21 +1622,95 @@ async function loadMindPanel(){
           <span class="mind-time">${relativeTime(ev.timestamp)}</span>
         </div>
         <div class="mind-title">${esc(ev.title||'')}</div>
-        ${content?`<div class="mind-content">${esc(content)}</div>`:''}
-        ${moodHtml?`<div class="dream-mood-chips">${moodHtml}</div>`:''}
+        ${snippet?`<div class="mind-content">${esc(snippet)}&hellip;</div>`:''}
       </div>`;
     }).join('');
   }catch(err){console.error('loadMindPanel',err);entries.innerHTML='<div class="drawer-empty">Failed to load monologue.</div>';}
 }
+
+// ── Flyout ────────────────────────────────────────────────────
+
+/** Parse [Section] blocks from a tick content string. */
+function parseMindSections(text){
+  const sections=[];
+  const re=/\[([^\]]+)\]([\s\S]*?)(?=\n\[|$)/g;
+  let m;
+  while((m=re.exec(text))!==null){
+    sections.push({label:m[1].trim(), text:m[2].trim()});
+  }
+  if(!sections.length && text.trim()) sections.push({label:'',text:text.trim()});
+  return sections;
+}
+
+function _flyoutSectionClass(label){
+  const l=label.toLowerCase();
+  if(l==='action') return 'action';
+  if(l==='outcome') return 'outcome';
+  if(l.includes('state')) return 'state';
+  return 'other';
+}
+
+function openMindFlyout(evId){
+  const ev=_mindEvents[evId];
+  if(!ev) return;
+  const meta=ev.metadata||{};
+
+  // Badge
+  const src=ev.source||'autonomous';
+  const badge=document.getElementById('flyout-badge');
+  badge.textContent=src;
+  badge.dataset.source=src;
+
+  // Time
+  document.getElementById('flyout-time').textContent=relativeTime(ev.timestamp);
+
+  // Meta block
+  const metaEl=document.getElementById('flyout-meta');
+  const metaRows=[];
+  if(meta.location) metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">📍</span><span class="flyout-meta-val">${esc(meta.location)}</span></div>`);
+  if(meta.mood){
+    // first sentence only
+    const moodShort=meta.mood.split(/\.\s+|\n/)[0];
+    metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">○</span><span class="flyout-meta-val">${esc(moodShort)}</span></div>`);
+  }
+  if(meta.duration_seconds!=null) metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">⏱</span><span class="flyout-meta-val">${parseFloat(meta.duration_seconds).toFixed(1)}s</span></div>`);
+  if(meta.skills_used?.length) metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">🔧</span><span class="flyout-meta-val">${esc([...new Set(meta.skills_used)].join(', '))}</span></div>`);
+  if(metaRows.length){
+    metaEl.innerHTML=metaRows.join('');
+    metaEl.classList.remove('hidden');
+  } else {
+    metaEl.innerHTML='';
+    metaEl.classList.add('hidden');
+  }
+
+  // Content sections
+  const content=ev.content||'';
+  const sections=parseMindSections(content);
+  document.getElementById('flyout-body').innerHTML=sections.map(s=>`
+    <div class="flyout-section">
+      ${s.label?`<div class="flyout-section-label ${_flyoutSectionClass(s.label)}">${esc(s.label)}</div>`:''}
+      <div class="flyout-section-text">${esc(s.text)}</div>
+    </div>`).join('');
+
+  // Show flyout, hide list
+  document.getElementById('mind-flyout').classList.remove('hidden');
+  document.getElementById('mind-entries').style.visibility='hidden';
+}
+
+function closeMindFlyout(){
+  document.getElementById('mind-flyout').classList.add('hidden');
+  document.getElementById('mind-entries').style.visibility='';
+}
 async function triggerDream(){
   const btn=document.querySelector('.dream-trigger-btn');
-  btn.textContent='\u23F3 Dreaming...';btn.disabled=true;
+  btn.textContent='\u23F3 Ticking...';btn.disabled=true;
   try{
-    const r=await api('/dreams/trigger',{method:'POST'});
-    if(r.summary)addMsg('assistant',`\u{1F4AD} *${r.summary}*\n\n${r.content||''}`);
+    const r=await api('/world/tick',{method:'POST'});
+    if(r&&r.location)addMsg('assistant',`\u{1F30D} *World tick complete*\n\nNow at: ${r.location}${r.mood?`\nMood: ${r.mood}`:''}`);
+    else if(r&&r.detail)addMsg('assistant',`\u26A0 World tick: ${r.detail}`);
     await loadMindPanel();await loadState();
   }catch(e){console.error(e);}
-  btn.textContent='\u2728 Dream Now';btn.disabled=false;
+  btn.textContent='\u25B6 Tick Now';btn.disabled=false;
 }
 
 // ═══ TAB NAVIGATION ═══
@@ -1608,63 +1718,13 @@ function switchTab(name){
   activeTab=name;
   document.querySelectorAll('.drawer-tab').forEach(b=>b.classList.toggle('active',b.id==='tab-'+name));
   document.querySelectorAll('.drawer-panel').forEach(p=>p.classList.toggle('hidden',p.id!=='panel-'+name));
-  const titles={chats:'Conversations',mind:'Inner Monologue',memories:'Memories',approvals:'Approvals'};
+  const titles={chats:'Conversations',mind:'Inner Monologue',memories:'Memories'};
   document.getElementById('drawer-title').textContent=titles[name]||name;
   if(name==='mind')loadMindPanel();
   if(name==='memories'){loadMemTotalCount();document.getElementById('mem-search').focus();}
-  if(name==='approvals')loadApprovalsPanel();
 }
 
-// ═══ APPROVALS ═══
-function updateApprovalBadge(count){
-  const badge=document.getElementById('approval-badge');
-  if(!badge)return;
-  if(count>0){badge.textContent=count>9?'9+':String(count);badge.classList.add('on');}
-  else{badge.classList.remove('on');badge.textContent='';}
-}
 
-async function loadApprovalsPanel(){
-  const statusRow=document.getElementById('approval-status-row');
-  const entries=document.getElementById('approval-entries');
-  statusRow.textContent='Loading...';
-  try{
-    const data=await api('/aura/deliberation/pending');
-    const pending=data.pending||[];
-    const count=pending.length;
-    statusRow.textContent=count?count+' pending approval'+(count===1?'':'s'):'No pending approvals';
-    updateApprovalBadge(count);
-    if(!count){entries.innerHTML='<div class="drawer-empty">No pending approvals</div>';return;}
-    entries.innerHTML=pending.map(p=>{
-      const stanceCls={'agree':'agree','concern':'concern','counterpoint':'counterpoint'}[p.stance]||'concern';
-      const summary=esc((p.nl_summary||p.rationale||'No summary available.').substring(0,220));
-      const type=esc((p.modification_type||'modification').replace(/_/g,' '));
-      const rawTarget=p.target||'';
-      const target=esc(rawTarget.length>32?rawTarget.substring(0,32)+'\u2026':rawTarget);
-      return`<div class="approval-card" data-pid="${esc(p.proposal_id)}"><div class="approval-card-header"><span class="approval-type">${type}</span><span class="approval-target" title="${esc(rawTarget)}">${target}</span><span class="approval-stance ${stanceCls}">${esc(p.stance||'')}</span></div><div class="approval-summary">${summary}</div><div class="approval-actions"><button class="approval-btn accept" onclick="respondApproval(this,'accept_original')">Accept</button><button class="approval-btn reject" onclick="respondApproval(this,'reject')">Reject</button></div></div>`;
-    }).join('');
-  }catch(err){
-    const is503=err.message&&err.message.includes('503');
-    statusRow.textContent='';
-    entries.innerHTML=is503
-      ?'<div class="drawer-empty">AURA not active &mdash; set brain.mode: aura to use approvals.</div>'
-      :'<div class="drawer-empty">Failed to load approvals.</div>';
-    console.error('loadApprovalsPanel',err);
-  }
-}
-
-async function respondApproval(btn,choice){
-  const card=btn.closest('.approval-card');
-  const pid=card.dataset.pid;
-  card.querySelectorAll('.approval-btn').forEach(b=>{b.disabled=true;});
-  try{
-    await api('/aura/deliberation/respond',{method:'POST',body:JSON.stringify({proposal_id:pid,choice:choice})});
-    card.style.opacity='0.35';
-    setTimeout(()=>{card.remove();loadApprovalsPanel();},500);
-  }catch(e){
-    console.error('respondApproval',e);
-    card.querySelectorAll('.approval-btn').forEach(b=>{b.disabled=false;});
-  }
-}
 
 async function loadMemTotalCount(){
   try{
@@ -1719,6 +1779,7 @@ function renderOb(){
 
   let fh='';
   if(step.type==='question'){const v=obR[step.field]||step.default||'';fh=`<input class="ob-input" id="ob-field" type="text" placeholder="${step.placeholder||''}" value="${esc(String(v))}" onkeydown="if(event.key==='Enter')obNext()">`}
+  if(step.type==='textarea'){const v=obR[step.field]||step.default||'';fh=`<textarea class="ob-input ob-textarea" id="ob-field" placeholder="${step.placeholder||''}" rows="3">${esc(String(v))}</textarea>`}
   if(step.type==='choice'){const c=obR[step.field]||step.default||'';fh=`<div class="ob-options" id="ob-options">`+(step.options||[]).map(o=>`<div class="ob-option${o.value===c?' selected':''}" data-value="${o.value}" onclick="obSel(this,'${step.field}')"><div><div class="ob-opt-label">${o.label}</div>${o.desc?`<div class="ob-opt-desc">${o.desc}</div>`:''}</div></div>`).join('')+`</div>`}
   if(step.type==='multi_choice'){const c=obR[step.field]||step.default||[];fh=`<div class="ob-options ob-multi" id="ob-options">`+(step.options||[]).map(o=>`<div class="ob-option${c.includes(o.value)?' selected':''}" data-value="${o.value}" onclick="obToggle(this,'${step.field}')"><div class="check">${c.includes(o.value)?'\u2713':''}</div><div><div class="ob-opt-label">${o.label}</div></div></div>`).join('')+`</div>`}
 
@@ -1729,10 +1790,48 @@ function renderOb(){
 function obSel(el,f){el.parentElement.querySelectorAll('.ob-option').forEach(e=>e.classList.remove('selected'));el.classList.add('selected');obR[f]=el.dataset.value}
 function obToggle(el,f){el.classList.toggle('selected');if(!obR[f])obR[f]=[];const v=el.dataset.value,ck=el.querySelector('.check');if(el.classList.contains('selected')){if(!obR[f].includes(v))obR[f].push(v);ck.textContent='\u2713'}else{obR[f]=obR[f].filter(x=>x!==v);ck.textContent=''}}
 
-function obNext(){const step=obSteps[obStep];if(step&&step.field){if(step.type==='question'){const inp=document.getElementById('ob-field');obR[step.field]=inp?inp.value.trim()||step.default||'':step.default||''}api('/onboarding/step',{method:'POST',body:JSON.stringify({step_id:step.id,field:step.field,value:obR[step.field]})}).catch(()=>{})}obStep=Math.min(obStep+1,obSteps.length-1);renderOb()}
+function obNext(){const step=obSteps[obStep];if(step&&step.field){if(step.type==='question'||step.type==='textarea'){const inp=document.getElementById('ob-field');obR[step.field]=inp?inp.value.trim()||step.default||'':step.default||''}api('/onboarding/step',{method:'POST',body:JSON.stringify({step_id:step.id,field:step.field,value:obR[step.field]})}).catch(()=>{})}obStep=Math.min(obStep+1,obSteps.length-1);renderOb()}
 function obPrev(){obStep=Math.max(1,obStep-1);renderOb()}
 async function obSkipAll(){obSteps.forEach(s=>{if(s.field&&s.default!==undefined&&!obR[s.field])obR[s.field]=s.default});await obFinalize()}
-async function obFinalize(){try{for(const s of obSteps){if(s.field&&obR[s.field]!==undefined)await api('/onboarding/step',{method:'POST',body:JSON.stringify({step_id:s.id,field:s.field,value:obR[s.field]})})}await api('/onboarding/complete',{method:'POST'})}catch(e){console.error(e)}document.getElementById('onboarding').classList.add('hidden');loadState();loadConversations();document.getElementById('input').focus()}
+async function obFinalize(){
+  const nm=obR.tamagi_name||'Tama',em=obR.tamagi_emoji||'🥚';
+  const card=document.getElementById('ob-card');
+  card.innerHTML=`<div class="ob-complete"><div class="big-emoji">${em}</div><h2>Imagining ${esc(nm)}'s world…</h2><p style="color:var(--text-muted);font-size:11px">This takes a moment.</p></div>`;
+  try{for(const s of obSteps){if(s.field&&obR[s.field]!==undefined)await api('/onboarding/step',{method:'POST',body:JSON.stringify({step_id:s.id,field:s.field,value:obR[s.field]})})}await api('/onboarding/complete',{method:'POST'})}catch(e){console.error(e)}
+  document.getElementById('onboarding').classList.add('hidden');
+  loadState();loadConversations();
+  // World seed is generated server-side during /onboarding/complete — only show overlay if still missing
+  await checkWorldSeed();
+  document.getElementById('input').focus()
+}
+
+// \u2550\u2550\u2550 WORLD SEED \u2550\u2550\u2550
+async function checkWorldSeed(){
+  try{
+    const s=await api('/world/state');
+    if(s&&s.needs_world_seed){
+      document.getElementById('world-seed-overlay').classList.remove('hidden');
+      return true;
+    }
+  }catch{}
+  return false;
+}
+
+async function submitWorldSeed(skip){
+  const st=document.getElementById('ws-status');
+  st.textContent='Imagining your world\u2026';
+  const body=skip?{}:{
+    world_setting:(document.getElementById('ws-setting')||{}).value||'',
+  };
+  try{
+    await api('/world/seed',{method:'POST',body:JSON.stringify(body)});
+    document.getElementById('world-seed-overlay').classList.add('hidden');
+    st.textContent='';
+  }catch(e){
+    st.textContent='Something went wrong \u2014 try again.';
+    console.error(e);
+  }
+}
 
 // ═══ LAYOUT TOGGLE & RESIZE ═══
 function toggleLayout(){
@@ -1826,7 +1925,7 @@ document.addEventListener('DOMContentLoaded',async()=>{initLayout();initResize()
 _rigBones=applyPivotDefaults(PRESETS.default.bones());
 await loadSpriteConfig();
 requestAnimationFrame(_rigTick);
-connectWS();await loadState();loadConversations();await checkOnboarding();setInterval(loadState,30000)});
+connectWS();await loadState();loadConversations();const needsOb=await checkOnboarding();if(!needsOb)await checkWorldSeed();setInterval(loadState,30000)});
 async function loadState(){
   try{
     const d=await api('/state');
@@ -1837,8 +1936,8 @@ async function loadState(){
       const a=await fetch(`${API}/api/auth/status`).then(r=>r.json());
       document.getElementById('logout-btn').style.display=a.enabled?'inline':'none';
     }catch{}
-    try{const dr=await api('/dreams/state');document.getElementById('dream-ind').classList.toggle('on',dr.dreaming===true)}catch{}
-    try{const appr=await api('/aura/deliberation/pending');updateApprovalBadge((appr.pending||[]).length);}catch{}
+    // Pull world context separately and update mood pill + location/focus display
+    try{const ws=await api('/world/state');updateWorldContext(ws)}catch{}
   }catch{setConnected(false)}
 }
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});

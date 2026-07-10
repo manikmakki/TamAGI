@@ -114,24 +114,15 @@ class WebSearchConfig(BaseModel):
 
 
 class AutonomyConfig(BaseModel):
-    """TamAGI's autonomous idle behavior (dream engine)."""
+    """Controls when TamAGI is free to act autonomously (world thread + autonomous actions)."""
     enabled: bool = True
-    interval_minutes: int = 30  # How often TamAGI dreams (0 = disabled)
-    inactive_hours_start: int = 23   # Don't dream before this hour
-    inactive_hours_end: int = 6    # Don't dream after this hour
-    # Which activities are enabled (cleanup self-triggers; excluded from random pool)
-    activities: list[str] = Field(
-        default_factory=lambda: ["dream", "explore", "experiment", "journal", "wander", "plan"]
-    )
-    # Relative weights — journal and wander are dominant to favour self-reflection
-    # and open-ended exploration. plan enables goal-directed autonomous execution.
-    weights: list[int] = Field(
-        default_factory=lambda: [15, 12, 12, 35, 30, 20]
-    )
-    # Goals below this priority threshold are deferred to wander (reflective) rather
-    # than routed to plan (agentic execution). The goal stays queued; priority rises
-    # naturally as entropy recovers between cycles.
-    agentic_priority_min: float = 0.4
+    # Cron expression for the world thread tick (default: every 15 minutes)
+    schedule: str = "*/15 * * * *"
+    # Active window (24h local time). Use 0/24 to run at all hours (no gate).
+    active_hours_start: int = 0
+    active_hours_end: int = 24
+    # Minutes to wait before resuming world thread after a user conversation ends
+    resume_after_conversation: int = 15
 
 
 class AgentConfig(BaseModel):
@@ -170,9 +161,55 @@ class SelfModelConfig(BaseModel):
     save_interval: int = 10  # Save every N interactions
 
 
-class MotivationConfig(BaseModel):
-    tick_interval_seconds: int = 300   # How often the motivation engine ticks during dreams
-    voi_threshold: float = 0.2         # Minimum VOI to generate an exploration goal
+class IdentityFilesConfig(BaseModel):
+    """The three core identity files (IDENTITY.md / SOUL.md / USER.md) are injected
+    into every system prompt in full, so they must stay brief and high-signal.
+
+    Roles:
+      IDENTITY.md — who the TamAGI *is* (name, form, traits, the concrete self)
+      SOUL.md     — *why* the TamAGI is (values, drives, what moves it)
+      USER.md     — source of truth about the user; an index that names supplemental
+                    files (journals, notes) rather than holding their content
+
+    Detail belongs in supplemental files + memory/RAG, not in these three.
+    """
+    file_char_limit: int = 2000  # Hard cap (characters) enforced on each core file
+
+
+class ConsolidationConfig(BaseModel):
+    """Sleep-time consolidation: distills lived world-thread experience into the
+    agent's own identity (SOUL.md + a light IDENTITY.md 'Stage' nudge).
+
+    This is the context-level half of persistence — independent of any weight
+    training. The merge is non-destructive: the current SOUL.md is read and
+    given to the model as the base to extend, and a rewrite is rejected if it
+    would discard the bulk of the existing soul.
+    """
+    enabled: bool = True
+    every_n_ticks: int = 12          # Run after this many new autonomous ticks
+    max_ticks_per_run: int = 60      # Cap on lived-experience ticks fed to the pass
+    state_path: str = "data/consolidation_state.json"
+    min_soul_retention: float = 0.5  # Reject a rewrite shorter than this fraction of current SOUL.md
+
+
+class WorldThreadConfig(BaseModel):
+    """Technical storage settings for the Living World thread."""
+    enabled: bool = True
+    thread_path: str = "data/world_thread.json"
+    state_path: str = "data/world_state.json"
+    thread_max_pairs: int = 5  # Rolling window: keep last N tick pairs in LLM context
+    consolidation: ConsolidationConfig = Field(default_factory=ConsolidationConfig)
+
+
+class RelationalConsolidationConfig(BaseModel):
+    """Relational consolidation: distills conversation history into USER.md (the
+    capped, always-injected source of truth) plus a named, uncapped supplemental
+    relationship file. Conversation-triggered, separate from the world-thread pass.
+    """
+    enabled: bool = True
+    every_n_conversations: int = 3            # Run after this many ended conversations
+    max_dialogue_chars: int = 8000           # Cap on conversation text fed to the pass
+    supplemental_filename: str = "relationship.md"  # Named, uncapped, not injected
 
 
 class TaskBoardConfig(BaseModel):
@@ -217,7 +254,9 @@ class TamAGIConfig(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     orchestrator: OrchestratorConfig = Field(default_factory=OrchestratorConfig)
     self_model: SelfModelConfig = Field(default_factory=SelfModelConfig)
-    motivation: MotivationConfig = Field(default_factory=MotivationConfig)
+    identity_files: IdentityFilesConfig = Field(default_factory=IdentityFilesConfig)
+    world_thread: WorldThreadConfig = Field(default_factory=WorldThreadConfig)
+    relational: RelationalConsolidationConfig = Field(default_factory=RelationalConsolidationConfig)
     task_board: TaskBoardConfig = Field(default_factory=TaskBoardConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
 

@@ -12,6 +12,7 @@ services:
       - ./workspace:/workspace
     environment:
       - TAMAGI_CONFIG=/app/config.yaml
+      - TZ=America/New_York  # Set to your local timezone (e.g. Europe/London, America/Los_Angeles)
     restart: unless-stopped
     # Uncomment to connect to host network (for Ollama on localhost)
     # network_mode: host

@@ -186,8 +186,8 @@ class PlanExecutor:
                 return await self._run_with_tool_loop(step, ctx)
             elif step_type == ActionStepType.COMMUNICATE.value:
                 return await self._run_communicate(step)
-            elif step_type == ActionStepType.QUERY_SELF_MODEL.value:
-                return await self._run_query_self_model(step)
+            elif step_type == ActionStepType.QUERY_WORLD_GRAPH.value:
+                return await self._run_query_world_graph(step)
             elif step_type == ActionStepType.MODIFY_SELF.value:
                 return await self._run_modify_self(step)
             elif step_type == ActionStepType.SUB_GOAL.value:
@@ -244,9 +244,9 @@ class PlanExecutor:
         await self._emit(f"💬 {message}")
         return StepResult(step_id=step.id, success=True, output=message)
 
-    async def _run_query_self_model(self, step: ActionStep) -> StepResult:
+    async def _run_query_world_graph(self, step: ActionStep) -> StepResult:
         if not self._agent.self_model:
-            return StepResult(step_id=step.id, success=False, output="", error="Self-model not available")
+            return StepResult(step_id=step.id, success=False, output="", error="World graph not available")
         query = step.spec.get("query") or step.description
         nodes = self._agent.self_model.search_nodes(query=query, limit=5)
         output = "\n".join(

@@ -25,14 +25,20 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from .self_model.schemas import (
-    CapabilityNode,
-    EdgeType,
-    GoalNode,
-    NodeType,
-    StrategyNode,
-    UncertaintyNode,
-)
+from .self_model.schemas import EdgeType, NodeType
+
+# Compatibility stubs for removed types (planning engine pending world-native rewrite in Phase 6)
+class CapabilityNode:  # type: ignore[no-redef]
+    pass
+
+class GoalNode:  # type: ignore[no-redef]
+    pass
+
+class StrategyNode:  # type: ignore[no-redef]
+    pass
+
+class UncertaintyNode:  # type: ignore[no-redef]
+    pass
 
 if TYPE_CHECKING:
     from .self_model.store import SelfModel
@@ -46,7 +52,7 @@ logger = logging.getLogger("tamagi.reasoning.planning")
 class ActionStepType(enum.Enum):
     GENERATE_CODE = "generate_code"
     EXECUTE_CODE = "execute_code"
-    QUERY_SELF_MODEL = "query_self_model"
+    QUERY_WORLD_GRAPH = "query_world_graph"
     COMMUNICATE = "communicate"
     EXPLORE = "explore"
     MODIFY_SELF = "modify_self"

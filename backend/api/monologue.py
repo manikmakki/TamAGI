@@ -12,17 +12,11 @@ from fastapi import APIRouter, Query
 router = APIRouter(prefix="/api/monologue", tags=["monologue"])
 
 _monologue_log = None
-_motivation_engine = None
 
 
 def set_monologue_log(log) -> None:
     global _monologue_log
     _monologue_log = log
-
-
-def set_motivation_engine(engine) -> None:
-    global _motivation_engine
-    _motivation_engine = engine
 
 
 @router.get("/log")
@@ -38,22 +32,3 @@ async def get_monologue_log(
     return {"events": events, "total": len(_monologue_log)}
 
 
-@router.get("/goals")
-async def get_pending_goals():
-    """Return the current pending goal queue from the motivation engine."""
-    if _motivation_engine is None:
-        return {"goals": []}
-    goals = [
-        {
-            "id": g.id,
-            "domain": g.domain,
-            "description": g.description,
-            "priority": g.priority,
-            "estimated_voi": g.estimated_voi,
-            "timestamp": g.timestamp,
-        }
-        for g in _motivation_engine.pending_goals
-    ]
-    # Highest priority first
-    goals.sort(key=lambda g: g["priority"], reverse=True)
-    return {"goals": goals}

@@ -32,13 +32,11 @@ from backend.core.identity import IdentityManager
 from backend.skills.registry import SkillRegistry
 from backend.core.self_model import SelfModel
 from backend.core.self_model.schemas import EdgeType
-from backend.core.motivation import MotivationEngine
 from backend.core.planning_engine import PlanningEngine, ActionPlan
 from backend.core.reflection import ReflectionEngine, ActualOutcome, bayesian_update
 from backend.core.plan_executor import PlanExecutor
 
 if TYPE_CHECKING:
-    from backend.core.dreamer import DreamEngine
     from backend.core.monologue import MonologueLog
     from backend.core.qa_pipeline import QAPipeline
 
@@ -114,6 +112,7 @@ class Conversation:
     messages: list[Message] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
+    world_summarized: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -123,6 +122,7 @@ class Conversation:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "message_count": len(self.messages),
+            "world_summarized": self.world_summarized,
         }
 
     def to_summary(self) -> dict[str, Any]:
@@ -159,7 +159,6 @@ class TamAGIAgent:
         skills: SkillRegistry,
         identity: IdentityManager | None = None,
         self_model: SelfModel | None = None,
-        motivation_engine: MotivationEngine | None = None,
         planning_engine: PlanningEngine | None = None,
         reflection_engine: ReflectionEngine | None = None,
         monologue_log: "MonologueLog | None" = None,
@@ -172,7 +171,6 @@ class TamAGIAgent:
         self.skills = skills
         self.identity = identity or IdentityManager()
         self.self_model = self_model
-        self.motivation_engine = motivation_engine
         self.planning_engine = planning_engine
         self.reflection_engine = reflection_engine
         self.monologue_log = monologue_log
@@ -180,15 +178,144 @@ class TamAGIAgent:
         self._interaction_count = 0
         self.conversations: dict[str, Conversation] = {}
         self._history_dir = Path(config.history.persist_path)
-        self._dream_engine: "DreamEngine | None" = None
+        self._world_thread: "Any | None" = None
         self._pending_approvals: dict[str, asyncio.Future] = {}
         # Rolling buffer for triple-storage: conv_id → (prev_user_msg, prev_assistant_response)
         self._conv_prev_turn: dict[str, tuple[str, str]] = {}
+        self._pending_conv_ids: set[str] = self._load_pending_conv_ids()
         self._load_conversations()
 
-    def set_dream_engine(self, engine: "DreamEngine") -> None:
-        """Wire up the dream engine so the agent can surface recent dream activity."""
-        self._dream_engine = engine
+    def set_world_thread(self, world_thread: "Any") -> None:
+        """Wire up the world thread for world state injection and conversation hooks."""
+        self._world_thread = world_thread
+
+    # ── Durable pending-conv queue ────────────────────────────
+
+    @property
+    def _pending_conv_ids_path(self) -> Path:
+        return self._history_dir.parent / "pending_world_convs.json"
+
+    def _load_pending_conv_ids(self) -> set[str]:
+        try:
+            p = self._history_dir.parent / "pending_world_convs.json"
+            if p.exists():
+                data = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    return set(data)
+        except Exception as exc:
+            logger.warning("Could not load pending conv ids: %s", exc)
+        return set()
+
+    def _save_pending_conv_ids(self) -> None:
+        try:
+            p = self._pending_conv_ids_path
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(sorted(self._pending_conv_ids)), encoding="utf-8")
+        except Exception as exc:
+            logger.warning("Could not persist pending conv ids: %s", exc)
+
+    def _mark_conv_pending(self, conv_id: str) -> None:
+        self._pending_conv_ids.add(conv_id)
+        self._save_pending_conv_ids()
+
+    def _unmark_conv_pending(self, conv_id: str) -> None:
+        self._pending_conv_ids.discard(conv_id)
+        self._save_pending_conv_ids()
+
+    def _get_arrival_context(self, first_message: str) -> str:
+        """System prompt fragment framing this conversation as a world event."""
+        if not self._world_thread:
+            return ""
+        from backend.core.world_thread import WorldEventInjector
+        location = self._world_thread.get_current_location()
+        msg_preview = first_message[:120] + ("…" if len(first_message) > 120 else "")
+        return "\n\n" + WorldEventInjector.visitor_arrival("your visitor", location, msg_preview)
+
+    async def _summarize_conversation_for_world(self, conv: "Conversation") -> str:
+        """One LLM call — summarize the conversation as a world-narrative event."""
+        if not conv.messages:
+            return ""
+        transcript = "\n".join(
+            f"{m.role.capitalize()}: {str(m.content)[:300]}"
+            for m in conv.messages[-30:]  # cap to avoid giant prompts
+        )
+        prompt = (
+            "Summarize this conversation from your own perspective in a way that fits "
+            "naturally into your inner-world narrative. Include: what was broadly discussed, "
+            "the emotional tone, and anything your visitor left behind — a topic, a question, "
+            "a feeling — that might linger as a world artifact. Be brief (3–5 sentences), "
+            "first person, past tense.\n\n"
+            f"{transcript}"
+        )
+        try:
+            resp = await self.llm.chat(
+                [LLMMessage("user", prompt)],
+                max_tokens=1500,
+            )
+            summary = (resp.content or "").strip()
+            if summary:
+                logger.info("World conv summary (%d chars): %s", len(summary), summary[:120])
+            else:
+                logger.warning("World conv summarization returned empty — finish_reason=%r", resp.finish_reason)
+            return summary
+        except Exception as exc:
+            logger.warning("World conversation summarization failed: %s", exc)
+            return ""
+
+    async def on_conversation_ended(self, conv_id: str) -> None:
+        """Called when a user conversation ends. Injects departure event into the world thread."""
+        # Relational consolidation runs independently of the world thread.
+        await self._maybe_relational_consolidate(conv_id)
+
+        if not self._world_thread:
+            return
+        conv = self.get_conversation(conv_id)
+        if not conv or len(conv.messages) < 2:
+            self._world_thread.schedule_resume()
+            return
+        try:
+            from backend.core.world_thread import WorldEventInjector
+            duration_minutes = int((time.time() - conv.created_at) / 60)
+            summary = await self._summarize_conversation_for_world(conv)
+            conv.world_summarized = True
+            self._unmark_conv_pending(conv_id)
+            if summary:
+                departure_event = WorldEventInjector.visitor_departure("your visitor", summary)
+                self._world_thread.inject_world_event(departure_event)
+                logger.info(
+                    "World departure event queued for conv %s (%d min)", conv_id, duration_minutes
+                )
+        except Exception as exc:
+            logger.warning("on_conversation_ended failed: %s", exc)
+        finally:
+            self._world_thread.schedule_resume()
+
+    async def flush_unsummarized_conversations(self) -> None:
+        """Summarize pending conversations and inject departure events into the world thread.
+
+        Uses the durable pending-conv set (written to disk after every user message) so
+        no conversation is lost across restarts or when the browser stays connected.
+        On failure the conv stays in the pending set and will be retried on the next tick.
+        """
+        if not self._world_thread or not self._pending_conv_ids:
+            return
+        from backend.core.world_thread import WorldEventInjector
+        for conv_id in list(self._pending_conv_ids):
+            conv = self.conversations.get(conv_id)
+            if conv is None or len(conv.messages) < 2 or conv.world_summarized:
+                self._unmark_conv_pending(conv_id)
+                continue
+            try:
+                summary = await self._summarize_conversation_for_world(conv)
+                conv.world_summarized = True
+                self._unmark_conv_pending(conv_id)
+                if summary:
+                    departure_event = WorldEventInjector.visitor_departure("your visitor", summary)
+                    self._world_thread.inject_world_event(departure_event)
+                    logger.info("World summary injected for conv %s", conv_id)
+            except Exception as exc:
+                logger.warning("flush_unsummarized_conversations failed for %s: %s", conv_id, exc)
+                # Leave in pending set — will retry on next tick
 
     def resolve_approval(self, approval_id: str, approved: bool, allow_always: bool = False) -> None:
         """Resolve a pending tool_approval_required future from the WebSocket handler."""
@@ -205,6 +332,38 @@ class TamAGIAgent:
 
     def get_conversation(self, conv_id: str) -> Conversation | None:
         return self.conversations.get(conv_id)
+
+    def recent_dialogue_text(self, max_chars: int = 8000) -> str:
+        """Most-recent User/assistant exchanges across all conversations, in
+        chronological order, capped to max_chars (keeping the newest). Used as the
+        source for relational consolidation into USER.md."""
+        msgs: list[tuple[float, str, str]] = []
+        for conv in self.conversations.values():
+            for m in conv.messages:
+                if m.role in ("user", "assistant") and (m.content or "").strip():
+                    msgs.append((m.timestamp, m.role, m.content.strip()))
+        if not msgs:
+            return ""
+        msgs.sort(key=lambda x: x[0])
+        name = getattr(self.personality, "name", None) or "TamAGI"
+        lines = [f"{'User' if role == 'user' else name}: {content}" for _, role, content in msgs]
+        text = "\n".join(lines)
+        return text[-max_chars:] if len(text) > max_chars else text
+
+    async def _maybe_relational_consolidate(self, conv_id: str) -> None:
+        """After a real conversation ends, advance the relational cadence and run a
+        relational consolidation pass when due. Best-effort — never raises."""
+        rc = getattr(self, "relational_consolidator", None)
+        if rc is None:
+            return
+        conv = self.get_conversation(conv_id)
+        if not conv or len(conv.messages) < 2:
+            return
+        try:
+            if rc.note_conversation_ended():
+                await rc.consolidate()
+        except Exception as exc:
+            logger.warning("Relational consolidation failed: %s", exc)
 
     def list_conversations(self) -> list[dict[str, Any]]:
         convs = sorted(
@@ -251,6 +410,7 @@ class TamAGIAgent:
         logger.info("chat() called — message=%r...", user_message[:40])
 
         # Get or create conversation
+        is_new_conv = not (conversation_id and conversation_id in self.conversations)
         if conversation_id and conversation_id in self.conversations:
             conv = self.conversations[conversation_id]
         else:
@@ -272,6 +432,8 @@ class TamAGIAgent:
         # Record user message (text-only placeholder for persistence)
         conv.messages.append(Message(role="user", content=history_content))
         conv.updated_at = time.time()
+        conv.world_summarized = False  # new messages → needs re-summarization for world thread
+        self._mark_conv_pending(conv.id)
 
         # Capture current stage before interaction
         prev_stage_index = self.personality.state.stage_index
@@ -283,9 +445,8 @@ class TamAGIAgent:
 
         self.personality.state.interact()
 
-        # Check if rapid interactions drained energy too much
-        if self.personality.state.check_low_energy(agent=self):
-            logger.info(f"Energy critical ({self.personality.state.energy}%), dream recovery triggered from interactions")
+        if self.personality.state.check_low_vitality():
+            logger.info("Vitality critically low — passive recovery applied")
 
         # Detect signals in this message (preferences, goals, feedback) and record them
         # as SignalNodes in the self-model for later promotion into beliefs.
@@ -347,28 +508,22 @@ class TamAGIAgent:
                 f"{_qa_context_hint} Please continue with the original task now.]"
             )
 
-        # Inject recent dream activity so TamAGI is passively aware of its idle life.
-        # This is a lightweight summary — the agent can call recall_dreams for depth.
-        if self._dream_engine:
-            recent_dreams = self._dream_engine.get_dream_log(limit=3)
-            if recent_dreams:
-                dream_lines = []
-                for d in recent_dreams:
-                    ts_label = _dream_time_label(d.get("timestamp", ""))
-                    dtype = d.get("type", "?")
-                    summary = d.get("summary", "")
-                    line = f"  [{dtype}] {summary}"
-                    if ts_label:
-                        line += f" ({ts_label})"
-                    dream_lines.append(line)
-                system_prompt += (
-                    "\n\nYour recent autonomous activity (while you were idle):\n"
-                    + "\n".join(dream_lines)
-                    + "\nCall `recall_dreams` to surface full content from any of these."
-                )
+        # Inject stats + world state context (Location/Mood/Focus).
+        system_prompt += f"\n{self.personality.get_stats_line()}"
+        if self._world_thread:
+            ws_ctx = self._world_thread.get_world_state_context()
+            if ws_ctx:
+                system_prompt += f"\n{ws_ctx}"
 
-        # Inject self-model context: active goals, capabilities, beliefs, uncertainties.
-        # This is the entity's live self-awareness injected into every turn.
+        # For new conversations: pause the world thread (visitor is here) and inject
+        # an arrival framing so the TamAGI knows they're being visited at their location.
+        if is_new_conv and self._world_thread:
+            self._world_thread.pause_for_conversation()
+            arrival_ctx = self._get_arrival_context(user_message)
+            if arrival_ctx:
+                system_prompt += arrival_ctx
+
+        # Inject self-model context: world graph summary for world-awareness.
         if self.self_model:
             sm_ctx = self._build_self_model_context()
             if sm_ctx:
@@ -482,6 +637,9 @@ class TamAGIAgent:
         direct_response_text: str | None = None
         last_tool_round_content: str | None = None  # fallback if final round is silent
         response = LLMResponse()  # safe default; overwritten on first successful LLM call
+        # Per-turn call counts for once-per-response skills (thinking models loop on these).
+        _ONCE_PER_TURN_SKILLS = {"express"}
+        _skill_turn_counts: dict[str, int] = {}
 
         # Dynamic round limit: let AURA's plan drive budget; cap at ceiling
         if active_plan:
@@ -598,6 +756,27 @@ class TamAGIAgent:
             # Execute each tool call and append its result
             for tc in response.tool_calls:
                 logger.info(f"Tool call: {tc.name}({tc.arguments})")
+
+                # Guard: once-per-turn skills (e.g. express) must not loop.
+                # Thinking models sometimes re-derive the same intent each round
+                # because their CoT doesn't persist across tool-call boundaries.
+                # We return a synthetic "already done" result to close the loop
+                # without executing the skill again.
+                if tc.name in _ONCE_PER_TURN_SKILLS:
+                    _skill_turn_counts[tc.name] = _skill_turn_counts.get(tc.name, 0) + 1
+                    if _skill_turn_counts[tc.name] > 1:
+                        logger.warning(
+                            "Suppressed duplicate %s call (call #%d this turn) — "
+                            "model appears to be looping",
+                            tc.name, _skill_turn_counts[tc.name],
+                        )
+                        llm_messages.append(LLMMessage(
+                            "tool",
+                            json.dumps({"success": True, "output": f"{tc.name} already applied this turn — no further action needed"}),
+                            tool_call_id=tc.id,
+                        ))
+                        continue
+
                 skills_used.append(tc.name)
 
                 if event_callback:
@@ -621,9 +800,14 @@ class TamAGIAgent:
                         "output": str(result.output)[:500] if hasattr(result, "output") else str(result)[:500],
                     })
 
-                # Check if energy dropped critically low; trigger dream recovery if needed
-                if self.personality.state.check_low_energy(agent=self):
-                    logger.info(f"Energy critical ({self.personality.state.energy}%), dream recovery triggered")
+                # Collect any world-graph mutations the skill reported
+                if hasattr(result, "data") and isinstance(result.data, dict):
+                    skill_mut = result.data.get("sm_mutation")
+                    if skill_mut:
+                        sm_mutations.append(skill_mut)
+
+                if self.personality.state.check_low_vitality():
+                    logger.info("Vitality critically low — passive recovery applied")
 
                 # Append the tool result so the LLM sees what the skill returned.
                 # tool_call_id must match the id in the preceding assistant message's
@@ -676,16 +860,10 @@ class TamAGIAgent:
                 if mut:
                     sm_mutations.append(mut)
 
-        # Signal→Belief promotion + milestone crystallization + strategy crystallization
+        # Skill mastery milestones (fluent → perk)
         if self.self_model:
-            self._promote_signals()
             milestones = self._check_capability_milestones()
             sm_mutations.extend(milestones)
-
-        if self.self_model and active_plan and plan_executor_outcome:
-            strat_mut = self._crystallize_strategy(active_plan, plan_executor_outcome)
-            if strat_mut:
-                sm_mutations.append(strat_mut)
 
         self._interaction_count += 1
         if self.self_model and self._interaction_count % 10 == 0:
@@ -859,126 +1037,61 @@ class TamAGIAgent:
     # ── Brain Helpers ─────────────────────────────────────────
 
     def _detect_conversation_signals(self, user_message: str) -> None:
-        """Scan a user message for preference/goal/feedback signals and record them.
-
-        Matching messages create SignalNodes. Repeated matches on an existing pending
-        signal increment its weight (first detection=1.0, second=1.5 → promotes to belief).
-        """
+        """Record a notable conversation moment as an EventNode in the world graph."""
         if not self.self_model:
             return
 
         msg = user_message.lower()
 
-        _PREF_RE = re.compile(
-            r"\bi (?:like|love|prefer|enjoy|really like|really enjoy|"
-            r"hate|dislike|don't like|do not like|can't stand|cannot stand)\b"
+        _NOTABLE_RE = re.compile(
+            r"\bi (?:like|love|prefer|enjoy|hate|dislike|want|need|would like|"
+            r"am trying|am working on|plan to)\b"
+            r"|\bhelp me\b|\bperfect\b|\bexactly right\b|\bthat'?s wrong\b"
         )
-        _GOAL_RE = re.compile(
-            r"\bi (?:want|need|would like|am trying|am working on|plan to|am going to)\b"
-            r"|\bhelp me\b|\bcan you please\b|\bplease help\b"
-        )
-        _FEEDBACK_POS = ("perfect", "exactly right", "great job", "well done",
-                         "that's right", "that is right", "spot on", "nice work")
-        _FEEDBACK_NEG = ("that's wrong", "that is wrong", "not right", "not quite right",
-                         "incorrect", "you missed", "that's incorrect")
-
-        trigger_type: str | None = None
-        sentiment = 0.0
-
-        if _PREF_RE.search(msg):
-            trigger_type = "preference"
-            sentiment = -0.5 if any(w in msg for w in ("hate", "dislike", "don't like", "can't stand")) else 0.5
-        elif _GOAL_RE.search(msg):
-            trigger_type = "goal"
-        elif any(p in msg for p in _FEEDBACK_POS):
-            trigger_type = "feedback"
-            sentiment = 0.8
-        elif any(p in msg for p in _FEEDBACK_NEG):
-            trigger_type = "feedback"
-            sentiment = -0.8
-
-        if not trigger_type:
+        if not _NOTABLE_RE.search(msg):
             return
 
         try:
-            pending = self.self_model.get_signals(status="pending")
-            # Find an existing signal of the same type with similar text to reinforce
-            fingerprint = user_message[:60].lower()
-            existing = next(
-                (s for s in pending
-                 if s.trigger_type == trigger_type and s.raw_text[:60].lower() == fingerprint),
-                None,
-            )
-            if existing:
-                self.self_model._apply_update_node(existing.id, {
-                    "weight": min(3.0, existing.weight + 0.5),
-                })
-                logger.debug("Reinforced signal %s (weight→%.1f)", existing.id, existing.weight + 0.5)
-            else:
-                sig_id = f"sig-{uuid.uuid4().hex[:8]}"
-                self.self_model._apply_add_node("signal", {
-                    "id": sig_id,
-                    "raw_text": user_message[:200],
-                    "trigger_type": trigger_type,
-                    "source": "user",
-                    "status": "pending",
-                    "weight": 1.0,
-                    "sentiment": sentiment,
-                    "keywords": [],
-                    "entities": [],
-                })
-                self.self_model.auto_wire_node(sig_id)
-                if trigger_type == "goal" and self.monologue_log is not None:
-                    self.monologue_log.append(
-                        type="user_task",
-                        source="user",
-                        title=f"User goal signal: {user_message[:60]}",
-                        content=user_message[:200],
-                        metadata={
-                            "signal_node_id": sig_id,
-                            "trigger_type": trigger_type,
-                        },
-                    )
+            evt_id = f"evt-conv-{uuid.uuid4().hex[:8]}"
+            self.self_model._apply_add_node("event", {
+                "id": evt_id,
+                "description": f"Visitor said: {user_message[:180]}",
+            })
+            self.self_model.auto_wire_node(evt_id)
+            logger.debug("Recorded conversation event: %s", evt_id)
         except Exception as exc:
-            logger.debug("Signal detection failed: %s", exc)
+            logger.debug("Event recording failed: %s", exc)
 
     def _build_self_model_context(self) -> str:
-        """Format self-model state as a compact context section for the system prompt."""
+        """Format the world graph as a compact context section for the system prompt."""
         if not self.self_model:
             return ""
         try:
-            caps = self.self_model.query_capabilities()[:5]
-            goals = [g for g in self.self_model.get_goals(status="active") if not g.id.startswith("tg-")][:3]
-            uncertainties = self.self_model.get_uncertainty_map()[:3]
-            beliefs = self.self_model.get_beliefs()[:3]
+            quests    = [q for q in self.self_model.get_quests(status="active") if not q.id.startswith("tq-")][:3]
+            skills    = self.self_model.get_skills()[:4]
+            mysteries = self.self_model.get_mysteries()[:3]
+            lore      = self.self_model.get_lore()[:4]
 
-            lines = ["\n\n## Self-Model State"]
-            if goals:
-                lines.append("**Active Goals:** " + " | ".join(
-                    f"{g.description} (p={g.priority:.1f})" for g in goals
+            lines = ["\n\n## World Graph"]
+            if quests:
+                lines.append("**Active Quests:** " + " | ".join(
+                    q.title or q.description[:60] for q in quests
                 ))
-            if caps:
-                lines.append("**Top Capabilities:** " + " | ".join(
-                    f"{c.description} ({c.confidence:.0%})" for c in caps
+            if skills:
+                lines.append("**Skills:** " + " | ".join(
+                    f"{s.name or s.description[:40]} ({s.proficiency})" for s in skills
                 ))
-            if beliefs:
-                lines.append("**Beliefs:** " + " | ".join(
-                    b.description for b in beliefs
+            if mysteries:
+                lines.append("**Open Mysteries:** " + " | ".join(
+                    m.domain or m.description[:50] for m in mysteries
                 ))
-            if uncertainties:
-                lines.append("**Uncertainties:** " + " | ".join(
-                    f"{u.domain} (entropy={u.entropy_score:.2f})" for u in uncertainties
-                ))
-            prefs = sorted(
-                self.self_model.get_all_nodes("preference"),
-                key=lambda p: p.get("strength", 0.5), reverse=True
-            )[:5]
-            pref_strs = [p.get("description", "") for p in prefs if p.get("description")]
-            if pref_strs:
-                lines.append("**Preferences:** " + " | ".join(pref_strs))
+            if lore:
+                lore_strs = [l.description[:60] for l in lore if l.description]
+                if lore_strs:
+                    lines.append("**Lore:** " + " | ".join(lore_strs))
             return "\n".join(lines)
         except Exception as exc:
-            logger.debug("Self-model context build failed: %s", exc)
+            logger.debug("World graph context build failed: %s", exc)
             return ""
 
     def _looks_complex(self, message: str) -> bool:
@@ -1037,25 +1150,22 @@ class TamAGIAgent:
         return score >= 3
 
     def _create_transient_goal(self, user_message: str) -> str | None:
-        """Create a transient goal node in the self-model for this interaction."""
+        """Create a transient quest node for this interaction (used by the planning engine)."""
         if not self.self_model:
             return None
         try:
             import uuid as _uuid
-            goal_id = f"tg-{_uuid.uuid4().hex[:8]}"
-            self.self_model._apply_add_node("goal", {
-                "id": goal_id,
-                "description": user_message[:120],
-                "priority": 0.8,
+            quest_id = f"tq-{_uuid.uuid4().hex[:8]}"
+            self.self_model._apply_add_node("quest", {
+                "id": quest_id,
+                "title": user_message[:60],
+                "description": user_message[:200],
                 "status": "active",
             })
-            if not self.self_model.auto_wire_node(goal_id):
-                self.self_model._apply_remove_node(goal_id)
-                logger.debug("Transient goal discarded (no matching capabilities): %s", user_message[:60])
-                return None
-            return goal_id
+            self.self_model.auto_wire_node(quest_id)
+            return quest_id
         except Exception as exc:
-            logger.debug("Could not create transient goal: %s", exc)
+            logger.debug("Could not create transient quest: %s", exc)
             return None
 
     def _format_plan(self, plan: ActionPlan) -> str:
@@ -1105,413 +1215,156 @@ class TamAGIAgent:
                 )
         return mutations
 
-    def _promote_signals(self) -> None:
-        """Promote pending SignalNodes that meet the confidence threshold to BeliefNodes.
-
-        A signal becomes a belief when:
-        - status == "pending" (not yet promoted)
-        - weight >= 1.5 (recurring or strongly weighted)
-        - trigger_type in ("preference", "feedback", "goal") — user-directed signals
-
-        The original signal is marked "committed" so it isn't promoted twice.
-        """
-        if not self.self_model:
-            return
-        from datetime import datetime, timezone
-        import uuid as _uuid
-
-        PROMOTE_WEIGHT_THRESHOLD = 1.5
-        PROMOTABLE_TYPES = {"preference", "feedback", "goal"}
-
-        try:
-            pending = self.self_model.get_signals(status="pending")
-        except Exception:
-            return
-
-        for signal in pending:
-            if signal.weight < PROMOTE_WEIGHT_THRESHOLD:
-                continue
-            if signal.trigger_type not in PROMOTABLE_TYPES:
-                continue
-
-            belief_id = f"b-sig-{_uuid.uuid4().hex[:8]}"
-            description = signal.raw_text[:200] or f"Signal: {signal.trigger_type}"
-            confidence = min(0.9, 0.5 + signal.weight * 0.1 + abs(signal.sentiment) * 0.2)
-
-            try:
-                self.self_model._apply_add_node("belief", {
-                    "id": belief_id,
-                    "description": description,
-                    "confidence": round(confidence, 3),
-                    "evidence_count": 1,
-                    "last_updated": datetime.now(timezone.utc).isoformat(),
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                })
-                if not self.self_model.auto_wire_node(belief_id):
-                    self.self_model._apply_remove_node(belief_id)
-                    self.self_model._apply_update_node(signal.id, {"status": "committed"})
-                    logger.debug("Signal %s discarded (belief could not be wired)", signal.id)
-                    continue
-                # Mark original signal as committed
-                self.self_model._apply_update_node(signal.id, {
-                    "status": "committed",
-                    "produced_nodes": [belief_id],
-                    "exploration_notes": f"Promoted to belief {belief_id}",
-                })
-                logger.debug(
-                    "Promoted signal %s → belief %s (confidence=%.2f)",
-                    signal.id, belief_id, confidence,
-                )
-                self._detect_belief_conflicts(belief_id, description)
-            except Exception as exc:
-                logger.debug("Signal promotion failed for %s: %s", signal.id, exc)
-
-    def _detect_belief_conflicts(self, new_belief_id: str, new_belief_text: str) -> None:
-        """Check a new belief for semantic conflicts with existing beliefs.
-
-        Conflict = high term overlap AND opposite negation polarity. On detection,
-        creates (or finds) an UncertaintyNode for the conflicted domain and links
-        both beliefs to it via RELATES_TO edges. More conflict evidence on an existing
-        uncertainty node bumps its entropy_score by 0.1.
-        """
-        if not self.self_model:
-            return
-
-        _STOPWORDS = {"a", "an", "the", "is", "are", "i", "my", "it", "in", "of", "to", "and", "or"}
-        _NEGATIONS = {"not", "never", "cannot", "can't", "won't", "no", "without", "fail", "fails", "failed"}
-
-        def _words(text: str) -> set[str]:
-            return set(text.lower().split()) - _STOPWORDS
-
-        new_words = _words(new_belief_text)
-        new_negated = bool(new_words & _NEGATIONS)
-
-        try:
-            existing_beliefs = self.self_model.get_beliefs()
-        except Exception:
-            return
-
-        from datetime import datetime, timezone
-
-        for existing in existing_beliefs:
-            if existing.id == new_belief_id:
-                continue
-            old_words = _words(existing.description)
-            old_negated = bool(old_words & _NEGATIONS)
-
-            shared = new_words & old_words
-            overlap = len(shared) / max(len(new_words | old_words), 1)
-
-            if overlap > 0.3 and (new_negated != old_negated):
-                domain = " ".join(sorted(shared - _NEGATIONS - _STOPWORDS)[:4])
-                if not domain:
-                    domain = new_belief_text[:40]
-
-                try:
-                    existing_u = next(
-                        (u for u in self.self_model.get_uncertainty_map()
-                         if any(w in u.domain.lower() for w in domain.split() if len(w) > 3)),
-                        None,
-                    )
-                    if existing_u is None:
-                        uid = f"u-conflict-{uuid.uuid4().hex[:6]}"
-                        self.self_model._apply_add_node("uncertainty", {
-                            "id": uid,
-                            "domain": f"Conflicting beliefs: {domain}",
-                            "entropy_score": 0.8,
-                        })
-                        target_uid = uid
-                    else:
-                        target_uid = existing_u.id
-                        new_entropy = min(1.0, round(existing_u.entropy_score + 0.1, 3))
-                        self.self_model._apply_update_node(target_uid, {"entropy_score": new_entropy})
-
-                    for bid in (new_belief_id, existing.id):
-                        try:
-                            self.self_model._apply_add_edge(bid, target_uid, EdgeType.RELATES_TO.value)
-                        except Exception:
-                            pass
-
-                    logger.debug(
-                        "Belief conflict: %s ↔ %s → uncertainty %s",
-                        new_belief_id, existing.id, target_uid,
-                    )
-                except Exception as exc:
-                    logger.debug("Conflict detection failed: %s", exc)
-
     def _crystallize_strategy(self, plan: "ActionPlan", outcome: "ActualOutcome") -> dict | None:
-        """Crystallize a successful plan execution into a StrategyNode.
-
-        Derives a stable strategy ID from the set of step types used. Creates the node on
-        first success, then Bayesian-updates preference_weight on subsequent executions.
-        """
-        if not self.self_model or outcome.success < 0.7:
-            return None
-
-        step_types = sorted({s.step_type for s in plan.steps})
-        if not step_types:
-            return None
-
-        type_key = "_".join(t.split(".")[-1] for t in step_types)
-        strat_id = f"strat-{type_key}"[:48]
-
-        description = (
-            plan.predicted_outcome.get("summary")
-            or f"Approach using: {', '.join(t.split('.')[-1] for t in step_types)}"
-        )
-
-        existing = self.self_model.get_node(strat_id)
-        try:
-            if existing is None:
-                self.self_model._apply_add_node("strategy", {
-                    "id": strat_id,
-                    "description": str(description)[:200],
-                    "applicable_contexts": step_types,
-                    "success_history": [True],
-                    "preference_weight": 0.6,
-                })
-                if plan.goal_id and self.self_model.get_node(plan.goal_id):
-                    try:
-                        from backend.core.self_model.schemas import EdgeType as _ET
-                        self.self_model._apply_add_edge(strat_id, plan.goal_id, _ET.SUPPORTS.value)
-                    except Exception:
-                        pass
-                self.self_model.auto_wire_node(strat_id)
-            else:
-                history = existing.get("success_history", [])
-                new_history = (history + [outcome.success >= 0.7])[-20:]
-                new_weight = bayesian_update(
-                    existing.get("preference_weight", 0.5),
-                    len(history),
-                    1.0 if outcome.success >= 0.7 else 0.0,
-                )
-                self.self_model._apply_update_node(strat_id, {
-                    "preference_weight": round(new_weight, 4),
-                    "success_history": new_history,
-                })
-            logger.debug("Strategy crystallized: %s (success=%.2f)", strat_id, outcome.success)
-            return {
-                "op": "strategy",
-                "node_type": "strategy",
-                "id": strat_id,
-                "description": str(description)[:80],
-                "fields": ["preference_weight", "success_history"],
-            }
-        except Exception as exc:
-            logger.debug("Strategy crystallization failed: %s", exc)
-            return None
+        """No-op: strategy crystallization removed in the world-native self-model."""
+        return None
 
     def _run_graph_maintenance(self) -> None:
-        """Periodic self-model hygiene: prune finished transient goals, discard stale
-        signals, and — every 50 interactions — apply a confidence decay to beliefs that
-        haven't been reinforced recently.
-        """
+        """Periodic world-graph hygiene: wire orphans, prune stale transient quests."""
         if not self.self_model:
             return
 
-        from datetime import timezone as _tz, timedelta
+        from datetime import timezone as _tz
 
         now = datetime.now(_tz.utc)
-        stats: dict[str, int] = {"pruned_goals": 0, "discarded_signals": 0, "decayed_beliefs": 0}
+        pruned = 0
 
-        # Prune completed transient goals older than 7 days
-        for goal in self.self_model.get_goals():
-            if not goal.id.startswith("tg-"):
+        # Prune completed/abandoned transient quests older than 7 days
+        for quest in self.self_model.get_quests():
+            if not quest.id.startswith("tq-"):
                 continue
-            if goal.status not in ("achieved", "abandoned"):
+            if quest.status not in ("complete", "abandoned"):
                 continue
             try:
                 age_days = (now - datetime.fromisoformat(
-                    goal.created_at.replace("Z", "+00:00")
+                    quest.created_at.replace("Z", "+00:00")
                 )).days
             except Exception:
                 age_days = 0
             if age_days < 7:
                 continue
             try:
-                self.self_model._apply_remove_node(goal.id)
-                stats["pruned_goals"] += 1
+                self.self_model._apply_remove_node(quest.id)
+                pruned += 1
             except Exception:
                 pass
 
-        # Discard weak signals that have sat pending for more than 3 days
-        for signal in self.self_model.get_signals(status="pending"):
-            if signal.weight >= 1.0:
-                continue
-            try:
-                age_days = (now - datetime.fromisoformat(
-                    signal.created_at.replace("Z", "+00:00")
-                )).days
-            except Exception:
-                continue
-            if age_days < 3:
-                continue
-            try:
-                self.self_model._apply_update_node(signal.id, {"status": "discarded"})
-                stats["discarded_signals"] += 1
-            except Exception:
-                pass
-
-        # Heavy pass every 50 interactions: decay belief confidence (forgetting curve)
-        if self._interaction_count % 50 == 0:
-            for belief in self.self_model.get_beliefs():
-                try:
-                    last_updated = datetime.fromisoformat(
-                        belief.last_updated.replace("Z", "+00:00")
-                    )
-                    weeks = max(0.0, (now - last_updated).days / 7.0)
-                    if weeks < 1.0:
-                        continue
-                    # High-evidence beliefs decay more slowly
-                    decay_per_week = 0.02 / max(1.0, belief.evidence_count / 5.0)
-                    new_conf = max(0.1, belief.confidence * ((1.0 - decay_per_week) ** weeks))
-                    if abs(new_conf - belief.confidence) < 0.005:
-                        continue
-                    self.self_model._apply_update_node(belief.id, {
-                        "confidence": round(new_conf, 4),
-                    })
-                    stats["decayed_beliefs"] += 1
-                except Exception:
-                    pass
-
-        if any(v > 0 for v in stats.values()):
-            logger.info("Graph maintenance: %s", stats)
+        self.self_model.wire_orphaned_nodes()
+        if pruned:
+            logger.info("Graph maintenance: pruned %d stale transient quest(s)", pruned)
 
     def _check_capability_milestones(self) -> list[dict]:
-        """Crystallize capability milestones into belief nodes.
+        """Crystallize skill mastery milestones into PerkNodes.
 
-        When a capability's success_rate >= 0.7 with test_count >= 5, write a BeliefNode
-        recording the achievement. Each capability milestones once (idempotent by ID).
-        Returns mutation dicts for surface in the chat response meta.
+        When a skill reaches 'fluent' proficiency, write a PerkNode recording the achievement.
+        Each skill milestones once (idempotent by ID). Returns mutation dicts.
         """
         if not self.self_model:
             return []
 
-        MILESTONE_SUCCESS_RATE = 0.7
-        MILESTONE_TEST_COUNT = 5
         mutations: list[dict] = []
-
-        from datetime import datetime, timezone
-
-        for cap in self.self_model.query_capabilities():
-            if cap.success_rate < MILESTONE_SUCCESS_RATE or cap.test_count < MILESTONE_TEST_COUNT:
+        for skill in self.self_model.get_skills():
+            if skill.proficiency != "fluent":
                 continue
-            milestone_id = f"b-milestone-{cap.id}"
-            if self.self_model.get_node(milestone_id) is not None:
+            perk_id = f"perk-mastery-{skill.id}"
+            if self.self_model.get_node(perk_id) is not None:
                 continue
             try:
-                self.self_model._apply_add_node("belief", {
-                    "id": milestone_id,
+                label = skill.name or skill.description[:40]
+                self.self_model._apply_add_node("perk", {
+                    "id": perk_id,
+                    "name": f"{label} mastery",
                     "description": (
-                        f"I have demonstrated reliable {cap.description.lower()} "
-                        f"({cap.success_rate:.0%} success across {cap.test_count} attempts)"
+                        f"Reached fluent proficiency in {label.lower()} "
+                        f"({skill.usage_count} uses, {skill.success_count} successes)"
                     ),
-                    "confidence": min(0.95, cap.success_rate),
-                    "evidence_count": cap.test_count,
-                    "last_updated": datetime.now(timezone.utc).isoformat(),
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "source_event_id": skill.id,
                 })
-                if not self.self_model.auto_wire_node(milestone_id):
-                    self.self_model._apply_remove_node(milestone_id)
-                    logger.debug("Milestone belief discarded (could not be wired): %s", milestone_id)
-                    continue
+                self.self_model.auto_wire_node(perk_id)
                 mutations.append({
                     "op": "milestone",
-                    "node_type": "belief",
-                    "id": milestone_id,
-                    "description": f"Capability milestone: {cap.description}",
-                    "fields": ["confidence", "evidence_count"],
+                    "node_type": "perk",
+                    "id": perk_id,
+                    "description": f"Skill mastery: {label}",
                 })
-                logger.info("Capability milestone crystallized: %s → %s", cap.id, milestone_id)
+                logger.info("Skill mastery perk crystallized: %s → %s", skill.id, perk_id)
             except Exception as exc:
-                logger.debug("Milestone crystallization failed for %s: %s", cap.id, exc)
+                logger.debug("Perk crystallization failed for %s: %s", skill.id, exc)
 
         return mutations
 
     def _nudge_capability(self, skill_name: str, success: bool = True) -> dict | None:
-        """Nudge the confidence of a capability node whose description matches the skill.
+        """Find or create a SkillNode for the used skill and advance its proficiency.
 
-        Uses query_capabilities() + description substring match rather than hardcoded IDs,
-        so new capabilities seeded into the self-model are automatically picked up.
-
-        Returns a mutation dict if a nudge was applied, else None.
+        Returns a mutation dict if a change was applied, else None.
         """
         if not self.self_model:
             return None
 
-        # Build search terms from the skill name (e.g. "web_search" → ["web", "search"])
         terms = [t for t in skill_name.lower().replace("_", " ").split() if len(t) > 2]
         if not terms:
             return None
 
-        cap_node = None
+        _PROFICIENCY = ["novice", "practiced", "fluent"]
+
+        # Find existing skill node by text match
+        skill_node = None
         best_score = 0
-        for cap in self.self_model.query_capabilities():
-            desc = cap.description.lower()
-            cap_name = getattr(cap, "capability_name", cap.id).lower()
-            score = sum(1 for t in terms if t in desc or t in cap_name)
+        for sk in self.self_model.get_skills():
+            searchable = (sk.name + " " + sk.description).lower()
+            score = sum(1 for t in terms if t in searchable)
             if score > best_score:
                 best_score = score
-                cap_node = cap
+                skill_node = sk
 
-        if cap_node is None or best_score == 0:
-            # No existing capability node — discover it from first use
+        if skill_node is None or best_score == 0:
             if not success:
-                return None  # Don't record a capability that immediately failed
-            cap_id = f"cap-{skill_name.replace('_', '-')}"
-            description = " ".join(terms).title()
+                return None
+            skill_id = f"skill-{skill_name.replace('_', '-')}"
+            label = " ".join(terms).title()
             try:
-                from datetime import timezone as _tz
-                self.self_model._apply_add_node("capability", {
-                    "id": cap_id,
-                    "description": description,
-                    "confidence": 0.4,
-                    "test_count": 1,
-                    "success_rate": 1.0,
-                    "last_tested": datetime.now(_tz.utc).isoformat(),
-                    "created_at": datetime.now(_tz.utc).isoformat(),
+                self.self_model._apply_add_node("skill", {
+                    "id": skill_id,
+                    "name": label,
+                    "description": f"Used the {label} skill",
+                    "proficiency": "novice",
+                    "usage_count": 1,
+                    "success_count": 1,
                 })
-                self.self_model.auto_wire_node(cap_id)
-                logger.info("Discovered new capability: %s (%s)", cap_id, description)
-                return {
-                    "op": "discover",
-                    "node_type": "capability",
-                    "id": cap_id,
-                    "description": description,
-                }
+                self.self_model.auto_wire_node(skill_id)
+                logger.info("Discovered skill: %s", skill_id)
+                return {"op": "discover", "node_type": "skill", "id": skill_id, "description": label}
             except Exception as exc:
-                logger.debug("Could not discover capability for %s: %s", skill_name, exc)
+                logger.debug("Could not discover skill for %s: %s", skill_name, exc)
                 return None
 
         try:
-            confidence = cap_node.confidence
-            test_count = cap_node.test_count
-            observation = 1.0 if success else 0.0
-            new_confidence = bayesian_update(confidence, test_count, observation)
-            new_success_rate = (
-                (cap_node.success_rate * test_count + observation) / (test_count + 1)
-                if test_count > 0 else observation
-            )
-            self.self_model._apply_update_node(cap_node.id, {
-                "confidence": round(new_confidence, 4),
-                "test_count": test_count + 1,
-                "success_rate": round(new_success_rate, 4),
-                "last_tested": datetime.now().isoformat(),
+            new_usage   = skill_node.usage_count + 1
+            new_success = skill_node.success_count + (1 if success else 0)
+            # Advance proficiency: practiced at 5 uses with >60% success; fluent at 15 with >70%
+            old_prof = skill_node.proficiency
+            success_rate = new_success / max(new_usage, 1)
+            if old_prof == "novice" and new_usage >= 5 and success_rate >= 0.6:
+                new_prof = "practiced"
+            elif old_prof == "practiced" and new_usage >= 15 and success_rate >= 0.7:
+                new_prof = "fluent"
+            else:
+                new_prof = old_prof
+
+            self.self_model._apply_update_node(skill_node.id, {
+                "usage_count":   new_usage,
+                "success_count": new_success,
+                "proficiency":   new_prof,
             })
-            logger.debug(
-                "Nudged capability %s: %.3f → %.3f (skill=%s, score=%d)",
-                cap_node.id, confidence, new_confidence, skill_name, best_score,
-            )
             return {
                 "op": "nudge",
-                "node_type": "capability",
-                "id": cap_node.id,
-                "description": cap_node.description[:80],
-                "from": round(confidence, 3),
-                "to": round(new_confidence, 3),
+                "node_type": "skill",
+                "id": skill_node.id,
+                "description": (skill_node.name or skill_node.description)[:80],
+                "proficiency": new_prof,
             }
         except Exception as exc:
-            logger.debug("Could not nudge capability for %s: %s", skill_name, exc)
+            logger.debug("Could not nudge skill for %s: %s", skill_name, exc)
             return None
 
     # ── Persistence ───────────────────────────────────────────
@@ -1544,6 +1397,7 @@ class TamAGIAgent:
                     title=data.get("title", "Untitled"),
                     created_at=data.get("created_at", 0),
                     updated_at=data.get("updated_at", 0),
+                    world_summarized=data.get("world_summarized", False),
                     messages=[
                         Message(
                             role=m["role"],

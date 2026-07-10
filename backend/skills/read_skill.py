@@ -45,7 +45,9 @@ class ReadSkill(Skill):
         tool = super().to_openai_tool()
         workspace = get_config().workspace.path
         tool["function"]["parameters"]["properties"]["path"]["description"] = (
-            f"Path to the file to read (relative to {workspace}, or absolute if in allowed paths)"
+            f"Filename or relative path within {workspace} (e.g. 'IDENTITY.md' or 'notes/foo.md'). "
+            f"Do NOT prepend '{workspace}/' — it is already the base. "
+            f"Absolute paths are allowed if they fall under an allowed directory."
         )
         return tool
 

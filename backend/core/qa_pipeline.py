@@ -267,12 +267,12 @@ class QAPipeline:
         except Exception:
             pass
 
-        # Create BeliefNodes and wire them into the self-model
+        # Create KnownNodes from extracted beliefs and wire them into the world graph
         created_belief_ids: list[str] = []
         for b in beliefs:
             try:
-                bid = f"b-qa-{uuid.uuid4().hex[:8]}"
-                self._self_model._apply_add_node("belief", {
+                bid = f"knw-qa-{uuid.uuid4().hex[:8]}"
+                self._self_model._apply_add_node("known", {
                     "id": bid,
                     "description": b["description"],
                     "confidence": b["confidence"],
@@ -280,7 +280,7 @@ class QAPipeline:
                 })
                 if not self._self_model.auto_wire_node(bid):
                     self._self_model._apply_remove_node(bid)
-                    logger.debug("Q&A pipeline: belief discarded (could not be wired): %s", b["description"][:60])
+                    logger.debug("Q&A pipeline: known discarded (could not be wired): %s", b["description"][:60])
                     continue
                 created_belief_ids.append(bid)
             except Exception as exc:

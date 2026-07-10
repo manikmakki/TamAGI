@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.config import get_config
+from backend.core.identity import CORE_IDENTITY_FILES, CORE_FILE_ROLES
 from backend.skills.base import Skill, SkillResult
 
 
@@ -57,7 +58,9 @@ class WriteSkill(Skill):
             f"Writes to allowed directories only ({workspace} by default)."
         )
         tool["function"]["parameters"]["properties"]["path"]["description"] = (
-            f"Path to write to (relative to {workspace}, or absolute if in allowed paths)"
+            f"Filename or relative path within {workspace} (e.g. 'SOUL.md' or 'notes/foo.md'). "
+            f"Do NOT prepend '{workspace}/' — it is already the base. "
+            f"Absolute paths are allowed if they fall under an allowed directory."
         )
         return tool
 
@@ -95,6 +98,32 @@ class WriteSkill(Skill):
                     "Use task(action='add'/'start'/'complete'/'remove') to update it."
                 ),
             )
+
+        # The three core identity files are injected into the system prompt in full,
+        # every turn, so they must stay brief and high-signal. Enforce a hard char
+        # cap and steer overflow into supplemental files / memory.
+        if resolved.name in CORE_IDENTITY_FILES:
+            limit = config.identity_files.file_char_limit
+            projected = content
+            if mode == "append" and resolved.exists():
+                try:
+                    projected = resolved.read_text(encoding=encoding) + content
+                except OSError:
+                    projected = content
+            char_count = len(projected)
+            if char_count > limit:
+                role = CORE_FILE_ROLES.get(resolved.name, "")
+                return SkillResult(
+                    success=False,
+                    error=(
+                        f"{resolved.name} must stay under {limit} characters — it is injected into "
+                        f"your mind in full, every time you think, so it has to stay brief and "
+                        f"grounding. This version is {char_count} characters "
+                        f"({char_count - limit} over). {resolved.name} is {role}. "
+                        f"Read it, distill to the essentials, and move detail into a supplemental "
+                        f"file (named in USER.md) or memory — then write the trimmed version."
+                    ),
+                )
 
         # Check if path is allowed
         if not self._is_allowed(resolved, config.guardrails.allowed_write_paths):
