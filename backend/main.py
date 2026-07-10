@@ -48,6 +48,7 @@ from backend.api.sprites import router as sprites_router
 from backend.api.secrets import router as secrets_router
 from backend.api.mcp import router as mcp_router
 from backend.api.world import router as world_router
+from backend.api.evolution import router as evolution_router
 from backend.core.monologue import MonologueLog
 
 # ── Logging ───────────────────────────────────────────────────
@@ -418,6 +419,7 @@ app.include_router(self_model_router)
 app.include_router(monologue_router)
 app.include_router(sprites_router)
 app.include_router(world_router)
+app.include_router(evolution_router)
 
 # Serve user sprite PNGs — directory is created eagerly so the mount always succeeds.
 _sprites_data_dir = Path("data/sprites")

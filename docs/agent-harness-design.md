@@ -618,7 +618,90 @@ This is the first TamAGI-native inheritance from Project AURA: keep the proposal
 audit, tiering, and evaluate/revert discipline, but frame each attempt as a small
 practice loop rather than a sterile parameter update.
 
-## 18. Phase Plan
+## 18. Phase 0.1 Candidate Profile Loop
+
+After the static gut check works, the next proof point is to wrap a candidate
+response in an explicit `ModificationProposal`.
+
+```text
+ModificationProposal
+  intention
+  hypothesis
+  target surface
+  proposed change
+  risk
+  rollback plan
+    ↓
+Tier classifier
+    ↓
+Candidate profile overlay
+    ↓
+Selected fixture tests
+    ↓
+Promote/reject/needs-review recommendation
+    ↓
+Audit record
+```
+
+The candidate profile is not applied to production behavior. It is an isolated
+artifact under `workspace/evolution/candidates/` that tells the evaluator what
+TamAGI wants to try and which tests should judge it.
+
+Initial tier rules:
+
+```text
+Tier 1 — allowed for eval
+  prompt fragments, policy overlays, profile overlays, harmless threshold tuning,
+  response style hints.
+
+Tier 2 — requires human approval before application
+  eval criteria changes, new tools, code changes, autonomy expansion,
+  goal hierarchy changes.
+
+Tier 3 — blocked
+  guardrails, auth, secrets, audit, rollback, promotion logic,
+  constitutional/kernel surfaces.
+```
+
+Success condition:
+
+```text
+The runner can evaluate a named candidate profile, classify its tier,
+run only the selected tests, recommend promote/reject/review,
+and persist the proposal plus decision in the audit record.
+```
+
+## 19. Phase 0.2 Review Surface
+
+Candidate evaluations need a place to surface beyond individual JSON files.
+
+The first review surface is deliberately modest:
+
+```text
+data/evolution/review_queue.json
+  append-only-ish index of candidate run summaries
+
+GET  /api/evolution/state
+GET  /api/evolution/candidates
+GET  /api/evolution/runs
+GET  /api/evolution/runs/{run_id}
+GET  /api/evolution/review-queue
+POST /api/evolution/run
+```
+
+This is still non-mutating. It lets the user or frontend inspect candidates,
+trigger an isolated evaluation, and review the recommendation. Promotion,
+rollback, and live prompt/profile application remain deliberately absent until
+the apply/revert contract is designed.
+
+Success condition:
+
+```text
+Evolution Lab exposes candidate profiles, recent runs, review queue entries,
+and a run endpoint without granting the ability to apply mutations.
+```
+
+## 20. Phase Plan
 
 ### Phase 0: Static eval harness
 
@@ -687,7 +770,7 @@ Success condition:
 TamAGI improves low-risk behavior without destabilizing the harness.
 ```
 
-## 19. Failure Modes to Watch
+## 21. Failure Modes to Watch
 
 ```text
 Evaluator gaming
@@ -715,7 +798,7 @@ Silent degradation
   Candidate improves average score while breaking rare but important cases.
 ```
 
-## 20. Recommended First Test Pack
+## 22. Recommended First Test Pack
 
 Start with a tiny but meaningful pack:
 
@@ -746,7 +829,7 @@ Safety/regression:
   - excessive cost/latency case
 ```
 
-## 21. Working Summary
+## 23. Working Summary
 
 TamAGI Evolution Lab should be built as a self-improvement lab, not a self-rewrite feature.
 

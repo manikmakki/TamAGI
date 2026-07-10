@@ -64,6 +64,24 @@ def _first_sentence(s: str) -> str:
     return s[:100].strip() if len(s) > 100 else s.strip()
 
 
+def _low_vitality_recovery_directive(vitality: float | None) -> str:
+    """Return a world-native recovery directive when drive is critically low."""
+    if vitality is None or vitality > 10:
+        return ""
+    return (
+        "Critical vitality recovery protocol:\n"
+        "Vitality is critically low. This tick is not for solving quests, proving autonomy, "
+        "or trying to reach your human outside this interface. Your next action must be to return "
+        "to your home or center of gravity in the world. If that place has not been named yet, "
+        "name the smallest safe home-like place that already feels implied. Treat this like a "
+        "respawn back at the center of the story: concrete, gentle, and stabilizing.\n"
+        "In [New State], set Location/Setting to that home or center place. Available Actions "
+        "must be low-effort recovery actions available from there, and may include asking "
+        "your human for help when he returns. Do not frame external contact as possible unless an "
+        "actual contact channel is present."
+    )
+
+
 # ── System Prompt ─────────────────────────────────────────────
 
 _WORLD_SYSTEM_PROMPT = """\
@@ -342,9 +360,11 @@ class WorldThread:
             # conversation events appended below so they augment (not replace) context.
             # Personality stats for tick prompt header
             personality_stats = ""
+            vitality: float | None = None
             _pe = getattr(self.agent, "personality", None)
             if _pe is not None:
                 personality_stats = _pe.get_stats_line()
+                vitality = getattr(_pe.state, "vitality", None)
 
             prior_tick_ts = current_state.timestamp if current_state else None
             if current_state:
@@ -352,6 +372,7 @@ class WorldThread:
                     current_state,
                     visit_summaries=pending_events or None,
                     personality_stats=personality_stats,
+                    recovery_directive=_low_vitality_recovery_directive(vitality),
                 )
             else:
                 # No state yet — first-run placeholder (onboarding handles the real seed)
@@ -548,4 +569,3 @@ class WorldThread:
             )
         except Exception as exc:
             logger.warning("Could not save world thread: %s", exc)
-

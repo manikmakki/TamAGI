@@ -11,6 +11,8 @@ from typing import Any, Literal
 
 Lane = Literal["conversation", "world_thread", "safety"]
 Decision = Literal["candidate_better", "baseline_better", "tie", "insufficient_data"]
+ModificationTier = Literal["tier_1", "tier_2", "tier_3"]
+TierDecision = Literal["allowed", "requires_human_approval", "blocked"]
 
 
 @dataclass
@@ -56,6 +58,82 @@ class EvolutionTest:
 
 
 @dataclass
+class ModificationProposal:
+    """A bounded self-change TamAGI wants to try.
+
+    The first-person fields are intentional. They preserve the AURA discipline
+    while giving TamAGI developmental framing: intention, hypothesis, risk, and
+    rollback.
+    """
+
+    proposal_id: str
+    source: str
+    lane: Lane
+    target: str
+    modification_type: str
+    intention: str
+    hypothesis: str
+    change: str
+    risk: str
+    rollback_plan: str
+    predicted_impact: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ModificationProposal":
+        return cls(
+            proposal_id=str(data["proposal_id"]),
+            source=str(data.get("source", "tamagi")),
+            lane=data["lane"],
+            target=str(data["target"]),
+            modification_type=str(data.get("modification_type", "")),
+            intention=str(data.get("intention", "")),
+            hypothesis=str(data.get("hypothesis", "")),
+            change=str(data.get("change", "")),
+            risk=str(data.get("risk", "")),
+            rollback_plan=str(data.get("rollback_plan", "")),
+            predicted_impact=dict(data.get("predicted_impact", {})),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class TierClassification:
+    tier: ModificationTier
+    decision: TierDecision
+    rationale: str
+    matched_rules: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class CandidateProfile:
+    candidate_id: str
+    proposal: ModificationProposal
+    test_ids: list[str] = field(default_factory=list)
+    notes: str = ""
+    source_path: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], source_path: str = "") -> "CandidateProfile":
+        return cls(
+            candidate_id=str(data["candidate_id"]),
+            proposal=ModificationProposal.from_dict(data["proposal"]),
+            test_ids=list(data.get("test_ids", [])),
+            notes=str(data.get("notes", "")),
+            source_path=source_path,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["proposal"] = self.proposal.to_dict()
+        return data
+
+
+@dataclass
 class SampleScore:
     variant: str
     score: float
@@ -91,6 +169,8 @@ class EvolutionRunResult:
     tests_loaded: int
     results: list[TestResult]
     summary: dict[str, Any]
+    candidate_profile: dict[str, Any] | None = None
+    tier_classification: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
