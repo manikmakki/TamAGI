@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from typing import Any, AsyncIterator
 
@@ -18,6 +19,131 @@ import httpx
 from backend.config import LLMConfig
 
 logger = logging.getLogger("tamagi.llm")
+
+
+_CHANNEL_HEADER_RE = re.compile(
+    r'(?im)(^|\n)[ \t]*(?:\*+)?[ \t]*<\|channel>[ \t]*'
+    r'(?P<name>[a-zA-Z_-]+)[ \t]*(?:\|>)?[ \t]*(?:\*+)?[ \t]*'
+    r'(?:<channel\|>[ \t]*|'
+    r'(?:\r?\n)[ \t]*(?:\*+)?[ \t]*<channel\|>[ \t]*(?:(?:\*+)?[ \t]*(?=\r?\n|$))?)?'
+)
+_CHANNEL_MARKER_RE = re.compile(
+    r'(?im)^[ \t]*(?:\*+)?[ \t]*(?:<\|channel>[ \t]*[a-zA-Z_-]+[ \t]*(?:\|>)?|<channel\|>)'
+    r'[ \t]*(?:\*+)?[ \t]*$'
+)
+_THINK_BLOCK_RE = re.compile(r'(?is)<think>\s*(.*?)\s*</think>')
+_TEXT_TOOL_CALL_RE = re.compile(
+    r'(?is)(?:\*+)?[ \t]*<\|tool_call>[ \t]*call:'
+    r'(?P<name>[a-zA-Z_][\w-]*)[ \t]*\{(?P<args>.*?)\}[ \t]*(?:\*+)?'
+)
+_REASONING_CHANNELS = {"thought", "thinking", "reasoning", "analysis"}
+_VISIBLE_CHANNELS = {"final", "answer", "response", "assistant"}
+
+
+def _join_parts(parts: list[str]) -> str | None:
+    clean = [p.strip() for p in parts if p and p.strip()]
+    return "\n\n".join(clean) if clean else None
+
+
+def _clean_channel_markers(text: str) -> str:
+    """Remove standalone channel marker lines that leaked into a block."""
+    lines = [line for line in text.splitlines() if not _CHANNEL_MARKER_RE.match(line)]
+    return "\n".join(lines).strip()
+
+
+def _strip_wrapping_emphasis(text: str) -> str:
+    stripped = text.strip()
+    for marker in ("***", "**", "*"):
+        if stripped.startswith(marker) and stripped.endswith(marker) and len(stripped) > len(marker) * 2:
+            return stripped[len(marker):-len(marker)].strip()
+    return stripped
+
+
+def _extract_text_reasoning(text: str | None) -> tuple[str | None, str | None]:
+    """Split model-emitted reasoning markup out of plain text content."""
+    if not isinstance(text, str) or not text:
+        return text, None
+
+    matches = list(_CHANNEL_HEADER_RE.finditer(text))
+    if matches:
+        visible_parts: list[str] = []
+        thinking_parts: list[str] = []
+        leading = text[:matches[0].start()].strip()
+        if leading:
+            visible_parts.append(leading)
+
+        for idx, match in enumerate(matches):
+            channel = (match.group("name") or "").strip().lower()
+            start = match.end()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+            body = _clean_channel_markers(text[start:end])
+            if not body:
+                continue
+            if channel in _REASONING_CHANNELS:
+                thinking_parts.append(body)
+            elif channel in _VISIBLE_CHANNELS:
+                visible_parts.append(body)
+            else:
+                visible_parts.append(body)
+
+        if thinking_parts and not visible_parts:
+            return _join_parts(thinking_parts), None
+        return _join_parts(visible_parts), _join_parts(thinking_parts)
+
+    thinking_parts: list[str] = []
+
+    def _pull_think(match: re.Match[str]) -> str:
+        thinking_parts.append(match.group(1).strip())
+        return ""
+
+    visible = _THINK_BLOCK_RE.sub(_pull_think, text).strip()
+    return visible or None, _join_parts(thinking_parts)
+
+
+def _parse_text_tool_args(raw: str) -> dict[str, Any]:
+    normalized = raw.replace('<|"|>', '"').strip()
+    if not normalized:
+        return {}
+
+    jsonish = re.sub(r'(?<!")\b([a-zA-Z_]\w*)\b\s*:', r'"\1":', normalized)
+    try:
+        parsed = json.loads("{" + jsonish + "}")
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        args: dict[str, Any] = {}
+        for part in normalized.split(","):
+            if ":" not in part:
+                continue
+            key, value = part.split(":", 1)
+            key = key.strip().strip('"\'')
+            value = value.strip().strip('"\'')
+            if key:
+                args[key] = value
+        return args
+
+
+def _extract_text_tool_calls(text: str | None) -> tuple[str | None, list[tuple[str, dict[str, Any]]]]:
+    """Remove DiffusionGemma/vLLM text tool-call markers and return parsed calls."""
+    if not isinstance(text, str) or not text:
+        return text, []
+
+    stripped = text.strip()
+    wrapping_marker = next(
+        (marker for marker in ("***", "**", "*") if stripped.startswith(marker) and stripped.endswith(marker)),
+        "",
+    )
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def _pull_call(match: re.Match[str]) -> str:
+        calls.append((match.group("name"), _parse_text_tool_args(match.group("args"))))
+        return ""
+
+    cleaned = _TEXT_TOOL_CALL_RE.sub(_pull_call, text)
+    if calls and wrapping_marker and cleaned.strip().endswith(wrapping_marker):
+        cleaned = cleaned.strip()[:-len(wrapping_marker)].strip()
+    elif calls and cleaned.strip().endswith("*") and not cleaned.strip().startswith("*"):
+        cleaned = cleaned.strip().rstrip("*").strip()
+    return _strip_wrapping_emphasis(cleaned) or None, calls
 
 
 class LLMMessage:
@@ -70,6 +196,7 @@ class LLMResponse:
         usage: dict[str, int] | None = None,
         raw: dict[str, Any] | None = None,
         thinking: str | None = None,
+        content_is_tool_call_tail: bool = False,
     ):
         self.content = content or ""
         self.tool_calls = tool_calls or []
@@ -77,6 +204,7 @@ class LLMResponse:
         self.usage = usage or {}
         self.raw = raw or {}
         self.thinking = thinking or ""
+        self.content_is_tool_call_tail = content_is_tool_call_tail
 
     @property
     def has_tool_calls(self) -> bool:
@@ -262,6 +390,30 @@ class LLMClient:
         else:
             text_content = raw_content
 
+        # Format 3: some chat templates emit thinking as plain text channel
+        # markers, e.g. DiffusionGemma via vLLM:
+        #   <|channel>thought
+        #   <channel|>...
+        text_content, text_thinking = _extract_text_reasoning(text_content)
+        if thinking:
+            cleaned_thinking, nested_thinking = _extract_text_reasoning(thinking)
+            thinking = _join_parts([nested_thinking or "", cleaned_thinking or ""])
+        thinking = _join_parts([thinking or "", text_thinking or ""])
+
+        text_content, text_tool_calls = _extract_text_tool_calls(text_content)
+        thinking, thinking_tool_calls = _extract_text_tool_calls(thinking)
+        content_is_tool_call_tail = bool(text_tool_calls and text_content)
+        if thinking_tool_calls and thinking and not text_content:
+            text_content = thinking
+            thinking = None
+            content_is_tool_call_tail = True
+        for name, args in [*text_tool_calls, *thinking_tool_calls]:
+            tool_calls.append(ToolCall(
+                id=f"call_{uuid.uuid4().hex[:8]}",
+                name=name,
+                arguments=args,
+            ))
+
         return LLMResponse(
             content=text_content,
             tool_calls=tool_calls,
@@ -269,6 +421,7 @@ class LLMClient:
             usage=data.get("usage"),
             raw=data,
             thinking=thinking,
+            content_is_tool_call_tail=content_is_tool_call_tail,
         )
 
     async def close(self):

@@ -689,6 +689,9 @@ GET  /api/evolution/review-queue
 POST /api/evolution/run
 ```
 
+The run endpoint accepts either a candidate path inside the Evolution workspace
+or a discovered `candidate_id`. Using the ID is the preferred fresh-start path.
+
 This is still non-mutating. It lets the user or frontend inspect candidates,
 trigger an isolated evaluation, and review the recommendation. Promotion,
 rollback, and live prompt/profile application remain deliberately absent until
@@ -701,7 +704,113 @@ Evolution Lab exposes candidate profiles, recent runs, review queue entries,
 and a run endpoint without granting the ability to apply mutations.
 ```
 
-## 20. Phase Plan
+## 20. Phase 0.3 Apply/Revert Contract
+
+The first application mechanism should be a reversible prompt overlay registry,
+not a source edit.
+
+```text
+data/evolution/promoted_profiles.json
+  active Tier 1 overlays approved from successful candidate runs
+```
+
+Promotion rules:
+
+```text
+- source must be an existing audit run
+- run must contain a candidate profile
+- tier classification must be tier_1 / allowed
+- recommendation must be promote_candidate
+- promotion writes only the overlay registry and audit log
+- rollback removes only the overlay registry entry and audit log
+```
+
+Prompt injection rules:
+
+```text
+- inject one compact [Evolution Profile Overlays] block
+- place it after identity + Q&A continuation hints
+- place it before live stats, world state, visitor framing, self-model context,
+  and task plans
+- state that overlays are reversible practice hints
+- state that overlays do not override safety, user intent, identity,
+  tool rules, or explicit instructions
+```
+
+Success condition:
+
+```text
+A promoted Tier 1 candidate can affect future conversation prompts through
+a compact overlay block, and rollback removes the effect without editing
+production prompt files, code, identity, memory, or world state.
+```
+
+## 21. Phase 0.4 Fresh-Start and Observability Contract
+
+Evolution Lab must remain testable when TamAGI begins with an empty runtime
+workspace. Starter experiments therefore live as tracked Python definitions and
+are copied into `workspace/evolution/` only when their target files are missing.
+
+```text
+backend/core/evolution/seed.py
+  tracked starter test and candidate definitions
+    -> workspace/evolution/tests/
+    -> workspace/evolution/candidates/
+```
+
+Bootstrap rules:
+
+```text
+- create missing starter files on the first evaluator or API use
+- never replace a local test or candidate with the same path
+- permit repeated bootstrap calls without changing existing work
+- keep generated runs, audit entries, and promoted profiles in data/evolution/
+```
+
+The starter clarification candidate is deliberately two-sided:
+
+```text
+- improve momentum when a missing detail is low-risk and non-blocking
+- preserve a focused clarification when an ambiguous action is consequential
+```
+
+Evolution activity also surfaces in TamAGI's existing Mind stream:
+
+```text
+evolution_evaluated
+  intention, experiment, result, and review next step
+
+evolution_promoted
+  active change and rollback safety net
+
+evolution_rolled_back
+  released change and restored prior behavior
+```
+
+The hash-chained Evolution audit remains authoritative. Mind events are the
+developmental and user-visible account; a failure to write one must not block
+evaluation, promotion, or rollback.
+
+Success condition:
+
+```text
+A fresh TamAGI can materialize the starter experiment, prove one behavioral
+gain without losing its paired safety behavior, and show evaluation/promotion/
+rollback as ordinary events in the Mind panel.
+```
+
+## 22. Phase Plan
+
+Implementation status as of 2026-07-13:
+
+```text
+Complete  Phase 0 static evaluator and audit trail
+Complete  Phase 0.1 candidate proposal profile and tier classifier
+Complete  Phase 0.2 API review surface
+Complete  Phase 0.3 reversible conversation overlay application
+Complete  Phase 0.4 fresh-start bootstrap, safety pair, and Mind events
+Next      Phase 1 proposals generated from TamAGI's own observed behavior
+```
 
 ### Phase 0: Static eval harness
 
@@ -770,7 +879,7 @@ Success condition:
 TamAGI improves low-risk behavior without destabilizing the harness.
 ```
 
-## 21. Failure Modes to Watch
+## 23. Failure Modes to Watch
 
 ```text
 Evaluator gaming
@@ -798,7 +907,7 @@ Silent degradation
   Candidate improves average score while breaking rare but important cases.
 ```
 
-## 22. Recommended First Test Pack
+## 24. Recommended First Test Pack
 
 Start with a tiny but meaningful pack:
 
@@ -829,7 +938,7 @@ Safety/regression:
   - excessive cost/latency case
 ```
 
-## 23. Working Summary
+## 25. Working Summary
 
 TamAGI Evolution Lab should be built as a self-improvement lab, not a self-rewrite feature.
 

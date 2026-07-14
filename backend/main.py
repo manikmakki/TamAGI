@@ -48,7 +48,7 @@ from backend.api.sprites import router as sprites_router
 from backend.api.secrets import router as secrets_router
 from backend.api.mcp import router as mcp_router
 from backend.api.world import router as world_router
-from backend.api.evolution import router as evolution_router
+from backend.api.evolution import router as evolution_router, set_evolution_monologue_log
 from backend.core.monologue import MonologueLog
 
 # ── Logging ───────────────────────────────────────────────────
@@ -198,6 +198,7 @@ async def lifespan(app: FastAPI):
     # ── Monologue log ──────────────────────────────────────────
     monologue_log = MonologueLog(log_path="data/monologue.jsonl")
     set_monologue_log(monologue_log)
+    set_evolution_monologue_log(monologue_log)
 
     # ── Q&A belief pipeline ────────────────────────────────────
     from backend.core.qa_pipeline import QAPipeline

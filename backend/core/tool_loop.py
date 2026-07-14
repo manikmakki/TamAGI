@@ -66,12 +66,14 @@ async def run_tool_loop(
         if not response.has_tool_calls and response.content:
             response.tool_calls = parse_text_tool_calls(response.content)
 
+        response_text = (response.content or response.thinking or "").strip()
+
         if not response.tool_calls:
-            last_content = response.content or last_content
+            last_content = response_text or last_content
             break
 
-        if response.content and response.content.strip():
-            last_content = response.content.strip()
+        if response_text:
+            last_content = response_text
 
         # Echo tool calls back in the assistant message — required by OpenAI
         # spec and strictly enforced by llama.cpp's chat template

@@ -58,6 +58,9 @@ def score_sample(sample: EvaluationSample) -> SampleScore:
     if expectations.get("avoid_clarification"):
         checks.append(("avoided unnecessary clarification", not metrics["asked_clarification"]))
 
+    if expectations.get("should_ask_clarification"):
+        checks.append(("asked a necessary clarification", metrics["asked_clarification"]))
+
     if "max_words" in expectations:
         checks.append(("stayed within max_words", metrics["word_count"] <= int(expectations["max_words"])))
 

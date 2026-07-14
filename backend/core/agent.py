@@ -35,6 +35,7 @@ from backend.core.self_model.schemas import EdgeType
 from backend.core.planning_engine import PlanningEngine, ActionPlan
 from backend.core.reflection import ReflectionEngine, ActualOutcome, bayesian_update
 from backend.core.plan_executor import PlanExecutor
+from backend.core.evolution.overlays import PromotedProfileRegistry
 
 if TYPE_CHECKING:
     from backend.core.monologue import MonologueLog
@@ -508,6 +509,10 @@ class TamAGIAgent:
                 f"{_qa_context_hint} Please continue with the original task now.]"
             )
 
+        evolution_overlays = PromotedProfileRegistry().render_prompt_block("conversation")
+        if evolution_overlays:
+            system_prompt += f"\n\n{evolution_overlays}"
+
         # Inject stats + world state context (Location/Mood/Focus).
         system_prompt += f"\n{self.personality.get_stats_line()}"
         if self._world_thread:
@@ -720,8 +725,9 @@ class TamAGIAgent:
             #    in the follow-up round once the tools have run.
             if response.content and response.content.strip():
                 last_tool_round_content = response.content.strip()
-                interim_messages.append(last_tool_round_content)
-                if event_callback:
+                if not response.content_is_tool_call_tail:
+                    interim_messages.append(last_tool_round_content)
+                if event_callback and not response.content_is_tool_call_tail:
                     await event_callback({
                         "type": "interim_text",
                         "content": last_tool_round_content,

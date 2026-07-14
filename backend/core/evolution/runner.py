@@ -9,6 +9,7 @@ from pathlib import Path
 
 from backend.core.evolution.audit import EvolutionAuditLog
 from backend.core.evolution.classifier import classify_proposal
+from backend.core.evolution.seed import bootstrap_evolution_workspace
 from backend.core.evolution.schemas import (
     CandidateProfile,
     EvolutionRunResult,
@@ -26,12 +27,15 @@ class EvolutionRunner:
         tests_root: str | Path = "workspace/evolution/tests",
         audit_root: str | Path = "data/evolution",
         candidate_path: str | Path | None = None,
+        monologue_log=None,
     ) -> None:
         self.tests_root = Path(tests_root)
         self.audit = EvolutionAuditLog(audit_root)
         self.candidate_path = Path(candidate_path) if candidate_path else None
+        self.monologue_log = monologue_log
 
     def run(self) -> tuple[EvolutionRunResult, Path]:
+        bootstrap_evolution_workspace(self.tests_root.parent)
         candidate = self.load_candidate() if self.candidate_path else None
         classification = classify_proposal(candidate.proposal) if candidate else None
         tests = self.load_tests()
@@ -52,7 +56,38 @@ class EvolutionRunner:
             tier_classification=classification.to_dict() if classification else None,
         )
         run_path = self.audit.persist_run(run.to_dict())
+        self._record_monologue(run)
         return run, run_path
+
+    def _record_monologue(self, run: EvolutionRunResult) -> None:
+        if self.monologue_log is None or run.candidate_profile is None:
+            return
+        candidate = run.candidate_profile
+        proposal = candidate.get("proposal") or {}
+        recommendation = str(run.summary.get("recommendation", "unknown"))
+        try:
+            self.monologue_log.append(
+                type="evolution_evaluated",
+                source="self",
+                title=f"Tested a change to {proposal.get('target', 'my behavior')}",
+                content=(
+                    f"[Intention]\n{proposal.get('intention', '')}\n\n"
+                    f"[Experiment]\n{proposal.get('change', '')}\n\n"
+                    f"[Result]\n{run.summary.get('recommendation_reason', recommendation)}\n\n"
+                    "[Next Step]\nReview the evidence before applying or releasing this change."
+                ),
+                metadata={
+                    "run_id": run.run_id,
+                    "candidate_id": candidate.get("candidate_id"),
+                    "recommendation": recommendation,
+                    "candidate_wins": run.summary.get("candidate_wins", 0),
+                    "baseline_wins": run.summary.get("baseline_wins", 0),
+                    "ties": run.summary.get("ties", 0),
+                },
+            )
+        except Exception:
+            # Monologue visibility must never make evaluation fail.
+            return
 
     def load_tests(self) -> list[EvolutionTest]:
         if not self.tests_root.exists():
