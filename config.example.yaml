@@ -34,13 +34,32 @@ memory:
   # Minimum cosine similarity to include a result (0.0 = permissive, 1.0 = exact)
   relevance_threshold: 0.5
 
+  # Passive conversation context (Elasticsearch backend only). TamAGI injects
+  # one high-confidence turn window and exposes the next candidates as handles
+  # that can be expanded on demand. Fusion/reranking happens inside TamAGI and
+  # uses only Elasticsearch Basic-compatible kNN, match, and filter queries.
+  context:
+    enabled: true
+    candidate_pool: 20
+    candidate_handles: 3
+    relevance_threshold: 0.58
+    # Elasticsearch cosine kNN _score floor; prevents a weak lexical overlap
+    # from making an otherwise unrelated conversation eligible for injection.
+    minimum_semantic_score: 0.60
+    semantic_weight: 0.70
+    lexical_weight: 0.20
+    recency_weight: 0.10
+    recency_half_life_days: 90
+    max_injected_chars: 2400
+    handle_snippet_chars: 160
+    exclude_current_conversation: true
+
   chromadb:
     persist_directory: "./data/chromadb"
     collection_name: "tamagi_memory"
 
   # Elasticsearch backend — switch backend to "elasticsearch" to activate.
   # Requires: pip install elasticsearch sentence-transformers
-  # Or start the bundled service: docker compose --profile elasticsearch up -d elasticsearch
   elasticsearch:
     url: "http://localhost:9200"            # ES endpoint (env: TAMAGI_ES_URL)
     index: "tamagi_memory"                  # Index name  (env: TAMAGI_ES_INDEX)

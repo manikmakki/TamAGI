@@ -40,6 +40,7 @@ from backend.api.chat import router as chat_router, set_agent
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
 from backend.skills.recall_memory_skill import RecallMemorySkill
+from backend.skills.expand_conversation_memory_skill import ExpandConversationMemorySkill
 from backend.skills.read_world_graph_skill import ReadWorldGraphSkill
 from backend.api.auth import router as auth_router
 from backend.api.self_model import router as self_model_router
@@ -239,6 +240,7 @@ async def lifespan(app: FastAPI):
         logger.info("Orchestration skill registered")
 
     skills.register(RecallMemorySkill(agent=agent))
+    skills.register(ExpandConversationMemorySkill(agent=agent))
     skills.register(ReadWorldGraphSkill(agent=agent))
     from backend.skills.write_world_graph_skill import WriteWorldGraphSkill
     skills.register(WriteWorldGraphSkill(agent=agent))

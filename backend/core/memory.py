@@ -133,7 +133,12 @@ class MemoryStore:
         metadata = {
             "memory_type": entry.memory_type.value,
             "timestamp": entry.timestamp,
-            **{k: str(v) for k, v in entry.metadata.items()},
+            # search_text is an Elasticsearch-only embedding representation;
+            # avoid duplicating it into Chroma metadata.
+            **{
+                k: str(v) for k, v in entry.metadata.items()
+                if k != "search_text"
+            },
         }
 
         self._collection.upsert(
@@ -221,6 +226,29 @@ class MemoryStore:
             logger.error(f"Error forgetting memory {memory_id}: {e}")
             return False
 
+    async def get_by_id(self, memory_id: str) -> MemoryEntry | None:
+        """Fetch a single exact memory for pointer-based expansion."""
+        if self._using_fallback:
+            return next((m for m in self._memories if m.id == memory_id), None)
+        try:
+            results = self._collection.get(ids=[memory_id])
+        except Exception as e:
+            logger.error(f"Error fetching memory {memory_id}: {e}")
+            return None
+        if not results or not results.get("documents"):
+            return None
+        metadata = results.get("metadatas", [{}])[0] or {}
+        return MemoryEntry(
+            content=results["documents"][0],
+            memory_type=MemoryType(metadata.get("memory_type", "fact")),
+            metadata={
+                k: v for k, v in metadata.items()
+                if k not in ("memory_type", "timestamp")
+            },
+            id=results["ids"][0],
+            timestamp=float(metadata.get("timestamp", 0)),
+        )
+
     async def get_stats(self) -> dict[str, Any]:
         """Get memory store statistics."""
         if self._using_fallback:
@@ -237,14 +265,14 @@ class MemoryStore:
         }
 
     async def get_all_memories(
-        self, memory_type: MemoryType | None = None, limit: int = 50
+        self, memory_type: MemoryType | None = None, limit: int | None = 50
     ) -> list[MemoryEntry]:
         """Get all memories, optionally filtered by type."""
         if self._using_fallback:
             mems = self._memories
             if memory_type:
                 mems = [m for m in mems if m.memory_type == memory_type]
-            return mems[:limit]
+            return mems[:limit] if limit is not None else mems
 
         where_filter = None
         if memory_type:
@@ -255,10 +283,10 @@ class MemoryStore:
             if count == 0:
                 return []
 
-            results = self._collection.get(
-                where=where_filter,
-                limit=min(limit, count),
-            )
+            get_kwargs: dict[str, Any] = {"where": where_filter}
+            if limit is not None:
+                get_kwargs["limit"] = min(limit, count)
+            results = self._collection.get(**get_kwargs)
         except Exception as e:
             logger.error(f"Error getting all memories: {e}")
             return []
@@ -287,5 +315,9 @@ def create_memory_store(config: MemoryConfig) -> "MemoryStore":
     """
     if config.backend == "elasticsearch":
         from backend.core.memory_elasticsearch import ElasticsearchMemoryStore
-        return ElasticsearchMemoryStore(config.elasticsearch)  # type: ignore[return-value]
+        return ElasticsearchMemoryStore(  # type: ignore[return-value]
+            config.elasticsearch,
+            retrieval_limit=config.retrieval_limit,
+            relevance_threshold=config.relevance_threshold,
+        )
     return MemoryStore(config)

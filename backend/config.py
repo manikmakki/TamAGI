@@ -54,10 +54,32 @@ class ElasticsearchConfig(BaseModel):
     embedding_model: str = "all-MiniLM-L6-v2"
 
 
+class MemoryContextConfig(BaseModel):
+    """Controls passive, high-confidence conversation recall.
+
+    Retrieval uses only Elasticsearch Basic-compatible primitives. Semantic and
+    lexical result sets are fused and reranked in the application process.
+    """
+
+    enabled: bool = True
+    candidate_pool: int = 20
+    candidate_handles: int = 3
+    relevance_threshold: float = 0.58
+    minimum_semantic_score: float = 0.60
+    semantic_weight: float = 0.70
+    lexical_weight: float = 0.20
+    recency_weight: float = 0.10
+    recency_half_life_days: float = 90.0
+    max_injected_chars: int = 2400
+    handle_snippet_chars: int = 160
+    exclude_current_conversation: bool = True
+
+
 class MemoryConfig(BaseModel):
     backend: str = "chromadb"
     chromadb: ChromaDBConfig = Field(default_factory=ChromaDBConfig)
     elasticsearch: ElasticsearchConfig = Field(default_factory=ElasticsearchConfig)
+    context: MemoryContextConfig = Field(default_factory=MemoryContextConfig)
     retrieval_limit: int = 5
     relevance_threshold: float = 0.5
 

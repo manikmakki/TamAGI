@@ -139,12 +139,23 @@ auth:
   enabled: false                            
   password_hash: ""                         
 memory:
-  backend: "chromadb"                       
+  backend: "elasticsearch"
+  retrieval_limit: 5
+  relevance_threshold: 0.5
   chromadb:
-    retrieval_limit: 5                      
-    relevance_threshold: 0.5                
     persist_directory: "./data/chromadb"
     collection_name: "tamagi_memory"
+  elasticsearch:
+    url: "http://localhost:9200"
+    index: "tamagi_memory"
+    embedding_model: "all-MiniLM-L6-v2"
+  context:
+    enabled: true
+    candidate_pool: 20
+    candidate_handles: 3
+    relevance_threshold: 0.58
+    minimum_semantic_score: 0.60
+    recency_half_life_days: 90
 guardrails:
   allowed_read_paths:                       
     - "/workspace"
@@ -212,6 +223,7 @@ TamAGI comes with built-in skills, MCP server tools, and an extensible framework
 | `exec` | Execute allowlisted shell commands |
 | `web_search` | Search the web (DuckDuckGo free, Brave, or SearXNG) |
 | `recall_memory` | Semantic search over long-term memory |
+| `expand_conversation_memory` | Expand an exact conversation-memory pointer |
 | `recall_dreams` | Browse autonomous dream/journal logs |
 | `orchestrate_task` | Spawn and coordinate parallel subagents |
 | *(MCP tools)* | Any tool exposed by a configured MCP server |
@@ -433,12 +445,24 @@ The resolved key is injected into the subprocess environment at server spawn tim
 
 ## Memory System
 
-TamAGI uses ChromaDB for persistent vector memory:
+TamAGI supports ChromaDB and Elasticsearch for persistent vector memory. With
+the Elasticsearch backend, conversation context uses a high-precision two-tier
+retrieval flow:
 
-- Automatic embedding and semantic search
-- Memory types: conversation, fact, knowledge, skill, preference
-- Conversation summarization/compaction in `config.yaml`
-- Fallback to in-memory keyword matching if ChromaDB is unavailable
+- One relevant three-message conversation window is injected as quoted history.
+- Up to three diverse candidate pointers can be expanded on demand with
+  `expand_conversation_memory`.
+- Semantic kNN and lexical BM25 searches are fused, recency-weighted, thresholded,
+  and diversified inside TamAGI.
+- The Elasticsearch implementation uses free Basic-license primitives only:
+  caller-generated `dense_vector` embeddings, kNN, ordinary text search, filters,
+  and exact document lookup. It does not require server-side RRF or Elastic ML.
+- Archived context segments are stored separately from turn windows so they do
+  not pollute passive conversation recall.
+
+See `memory.context` in `config.example.yaml` for thresholds, weights, candidate
+counts, recency decay, and prompt-size controls. ChromaDB remains available for
+general memory search, with an in-memory keyword fallback when it is unavailable.
 
 ## Dream Engine (Autonomy)
 
