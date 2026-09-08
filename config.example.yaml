@@ -155,6 +155,11 @@ autonomy:
 world_thread:
   enabled: true
   thread_max_pairs: 5  # Rolling window: last N tick pairs kept in LLM context
+  # On the first user-facing turn, summarize this many completed world ticks once,
+  # cache the digest on the conversation, and keep it in that conversation's system prompt.
+  conversation_context_turns: 5
+  conversation_context_source_chars: 12000
+  conversation_context_max_chars: 1800
 
   # Sleep-time consolidation: periodically distills accumulated lived experience
   # (world-thread monologue + self-model graph) into the agent's own SOUL.md, and

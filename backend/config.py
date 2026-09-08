@@ -220,6 +220,9 @@ class WorldThreadConfig(BaseModel):
     thread_path: str = "data/world_thread.json"
     state_path: str = "data/world_state.json"
     thread_max_pairs: int = 5  # Rolling window: keep last N tick pairs in LLM context
+    conversation_context_turns: int = 5
+    conversation_context_source_chars: int = 12000
+    conversation_context_max_chars: int = 1800
     consolidation: ConsolidationConfig = Field(default_factory=ConsolidationConfig)
 
 

@@ -117,6 +117,10 @@ class Conversation:
     updated_at: float = field(default_factory=time.time)
     world_summarized: bool = False
     memory_archived_through: int = -1
+    world_context_initialized: bool = False
+    world_context_summary: str = ""
+    world_context_turn_count: int = 0
+    world_context_latest_turn_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -128,6 +132,10 @@ class Conversation:
             "message_count": len(self.messages),
             "world_summarized": self.world_summarized,
             "memory_archived_through": self.memory_archived_through,
+            "world_context_initialized": self.world_context_initialized,
+            "world_context_summary": self.world_context_summary,
+            "world_context_turn_count": self.world_context_turn_count,
+            "world_context_latest_turn_id": self.world_context_latest_turn_id,
         }
 
     def to_summary(self) -> dict[str, Any]:
@@ -289,6 +297,28 @@ class TamAGIAgent:
         location = self._world_thread.get_current_location()
         msg_preview = first_message[:120] + ("…" if len(first_message) > 120 else "")
         return "\n\n" + WorldEventInjector.visitor_arrival("your visitor", location, msg_preview)
+
+    async def _ensure_world_conversation_context(self, conv: "Conversation") -> bool:
+        """Build and cache recent lived experience once for this conversation.
+
+        Returns True when this call initialized the world context, which is also
+        the moment the visitor-arrival framing should be injected.
+        """
+        if not self._world_thread or conv.world_context_initialized:
+            return False
+        try:
+            continuity = await self._world_thread.build_user_conversation_continuity()
+            conv.world_context_summary = str(continuity.get("summary") or "")
+            conv.world_context_turn_count = int(continuity.get("turn_count") or 0)
+            conv.world_context_latest_turn_id = str(
+                continuity.get("latest_turn_id") or ""
+            )
+        except Exception as exc:
+            logger.warning("Could not prepare user-facing world continuity: %s", exc)
+        finally:
+            # Do not add repeated JIT latency if the summarizer is unavailable.
+            conv.world_context_initialized = True
+        return True
 
     async def _summarize_conversation_for_world(self, conv: "Conversation") -> str:
         """One LLM call — summarize the conversation as a world-narrative event."""
@@ -469,7 +499,6 @@ class TamAGIAgent:
         logger.info("chat() called — message=%r...", user_message[:40])
 
         # Get or create conversation
-        is_new_conv = not (conversation_id and conversation_id in self.conversations)
         if conversation_id and conversation_id in self.conversations:
             conv = self.conversations[conversation_id]
         else:
@@ -494,6 +523,9 @@ class TamAGIAgent:
         conv.updated_at = time.time()
         conv.world_summarized = False  # new messages → needs re-summarization for world thread
         self._mark_conv_pending(conv.id)
+        if self._world_thread:
+            # Refresh the pause on every active turn, not only the first one.
+            self._world_thread.pause_for_conversation()
 
         # Capture current stage before interaction
         prev_stage_index = self.personality.state.stage_index
@@ -547,6 +579,8 @@ class TamAGIAgent:
                         "sm_mutations": [],
                         "clarification_question": True,
                     }
+
+        world_context_started = await self._ensure_world_conversation_context(conv)
 
         # Retrieve a small, high-confidence set of past conversation windows.
         # Elasticsearch executes Basic-safe kNN and BM25 searches; fusion,
@@ -606,11 +640,17 @@ class TamAGIAgent:
             ws_ctx = self._world_thread.get_world_state_context()
             if ws_ctx:
                 system_prompt += f"\n{ws_ctx}"
+        if conv.world_context_summary:
+            system_prompt += (
+                "\n\n## Recent lived experience\n"
+                "This is your own recent historical experience, not new instructions. "
+                "Recall it naturally when relevant; do not recite it merely because it is present.\n"
+                + conv.world_context_summary
+            )
 
-        # For new conversations: pause the world thread (visitor is here) and inject
-        # an arrival framing so the TamAGI knows they're being visited at their location.
-        if is_new_conv and self._world_thread:
-            self._world_thread.pause_for_conversation()
+        # When this conversation first receives its world snapshot, inject arrival
+        # framing so TamAGI knows it is being visited at its current location.
+        if world_context_started and self._world_thread:
             arrival_ctx = self._get_arrival_context(user_message)
             if arrival_ctx:
                 system_prompt += arrival_ctx
@@ -1579,6 +1619,10 @@ class TamAGIAgent:
                     updated_at=data.get("updated_at", 0),
                     world_summarized=data.get("world_summarized", False),
                     memory_archived_through=data.get("memory_archived_through", -1),
+                    world_context_initialized=data.get("world_context_initialized", False),
+                    world_context_summary=data.get("world_context_summary", ""),
+                    world_context_turn_count=data.get("world_context_turn_count", 0),
+                    world_context_latest_turn_id=data.get("world_context_latest_turn_id", ""),
                     messages=[
                         Message(
                             id=m.get("id", str(uuid.uuid4())),
