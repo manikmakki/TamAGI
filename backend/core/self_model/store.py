@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -420,8 +421,15 @@ class SelfModel:
         out_path = Path(path) if path else self._data_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
         data = self.snapshot()
-        with open(out_path, "w") as f:
-            json.dump(data, f, indent=2, default=str)
+        # Write to a temp file and swap it in, so a failed write never truncates the existing graph
+        tmp_path = out_path.with_name(out_path.name + ".tmp")
+        try:
+            with open(tmp_path, "w") as f:
+                json.dump(data, f, indent=2, default=str)
+            os.replace(tmp_path, out_path)
+        except BaseException:
+            tmp_path.unlink(missing_ok=True)
+            raise
         logger.info("Self-model saved (%d nodes, %d edges)", data["node_count"], data["edge_count"])
         return out_path
 
