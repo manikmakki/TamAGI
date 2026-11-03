@@ -31,6 +31,9 @@ MonologueEventType = Literal[
     "action_completed", # Dream activity finished
     "reflection",       # Journal or post-cycle reflection
     "user_task",        # Goal/task surfaced from user conversation
+    "evolution_evaluated",  # A bounded candidate was compared with baseline
+    "evolution_promoted",   # An approved reversible overlay became active
+    "evolution_rolled_back", # A promoted overlay was removed
 ]
 
 # Who originated this event

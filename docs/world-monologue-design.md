@@ -150,6 +150,7 @@ autonomy:
 world_thread:
   enabled: true              # Toggle independently of autonomy
   thread_max_pairs: 5        # Rolling window: keep last N tick pairs in LLM context
+  conversation_context_turns: 5  # Completed ticks summarized for a new visitor conversation
   thread_path: "data/world_thread.json"
   state_path: "data/world_state.json"
 ```
@@ -316,6 +317,21 @@ tick fires
 The world thread is stored as a message list at `data/world_thread.json`. The thread is kept as a **rolling window of the last 5 tick pairs** (10 messages). Older pairs are dropped in-place on each append — no LLM compaction call. The graph and memory system (RAG) provide deeper historical context when needed; the thread's job is short-term continuity, not long-term archival.
 
 *Design note: LLM-based compaction was considered but replaced with the rolling window. Compaction introduced a race condition (compaction LLM call during a tick), added latency, and a poorly-tuned compaction prompt risks losing narrative continuity silently. The rolling window is simpler, predictable, and relies on graph + RAG for depth — which is more reliable than an LLM summarizing its own inner monologue.*
+
+### User/World Cross-Thread Continuity
+
+When a new user-facing conversation begins, the completed assistant side of up to
+the last five world ticks is compacted to Action, Outcome, Mood, and Focus, then
+summarized once as recent lived experience. That digest is cached on the persisted
+user conversation and included alongside the canonical Location/Mood/Focus block
+in every reconstructed system prompt for that conversation. It is not regenerated
+on every user message.
+
+The reverse path remains narrative: when the visitor leaves, the conversation is
+summarized into a departure event for the next world tick. Pending departure events
+are persisted in `data/world_pending_events.json` and are acknowledged only after a
+tick commits a valid new state, so a failed tick or process restart does not silently
+break continuity.
 
 ---
 

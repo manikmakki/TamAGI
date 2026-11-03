@@ -128,7 +128,7 @@ _ACTIONS_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _NEW_STATE_BLOCK_RE = re.compile(
-    r"\[New State\](.*?)(?=\[|$)",
+    r"\[New State\](.*?)(?=\n(?:\*\*\*|\[(?:Action|Outcome|New State)\])|$)",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -185,6 +185,7 @@ def build_tick_prompt(
     state: WorldState,
     visit_summaries: list[str] | None = None,
     personality_stats: str = "",
+    recovery_directive: str = "",
 ) -> str:
     """Build the [user] message for each world thread tick.
 
@@ -219,7 +220,10 @@ def build_tick_prompt(
     if personality_stats:
         temporal_line += f"\n{personality_stats}"
 
-    return f"{temporal_line}\n\n{state.raw_state_block}"
+    prompt = f"{temporal_line}\n\n{state.raw_state_block}"
+    if recovery_directive:
+        prompt += f"\n\n{recovery_directive.strip()}"
+    return prompt
 
 
 # ── Helpers ───────────────────────────────────────────────────

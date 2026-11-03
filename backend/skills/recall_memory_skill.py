@@ -1,9 +1,9 @@
 """
 Recall Memory Skill — lets TamAGI explicitly search its vector memory store.
 
-Complements the passive auto-injection (top-2 docs added to every system prompt)
-with intentional, targeted retrieval. TamAGI can call this when the question at
-hand requires deeper context than what was automatically surfaced.
+Complements high-confidence conversation context with intentional, open-ended
+retrieval. Exact conversation pointers should use expand_conversation_memory;
+this skill is for searches where no pointer is already available.
 
 Works with both ChromaDB and Elasticsearch backends. The optional `data_type`
 filter maps to ES's free-form `data.type` keyword; on ChromaDB it is mapped to

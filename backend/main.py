@@ -40,6 +40,7 @@ from backend.api.chat import router as chat_router, set_agent
 from backend.api.skills import router as skills_router
 from backend.api.onboarding import router as onboarding_router
 from backend.skills.recall_memory_skill import RecallMemorySkill
+from backend.skills.expand_conversation_memory_skill import ExpandConversationMemorySkill
 from backend.skills.read_world_graph_skill import ReadWorldGraphSkill
 from backend.api.auth import router as auth_router
 from backend.api.self_model import router as self_model_router
@@ -48,6 +49,7 @@ from backend.api.sprites import router as sprites_router
 from backend.api.secrets import router as secrets_router
 from backend.api.mcp import router as mcp_router
 from backend.api.world import router as world_router
+from backend.api.evolution import router as evolution_router, set_evolution_monologue_log
 from backend.core.monologue import MonologueLog
 
 # ── Logging ───────────────────────────────────────────────────
@@ -197,6 +199,7 @@ async def lifespan(app: FastAPI):
     # ── Monologue log ──────────────────────────────────────────
     monologue_log = MonologueLog(log_path="data/monologue.jsonl")
     set_monologue_log(monologue_log)
+    set_evolution_monologue_log(monologue_log)
 
     # ── Q&A belief pipeline ────────────────────────────────────
     from backend.core.qa_pipeline import QAPipeline
@@ -237,6 +240,7 @@ async def lifespan(app: FastAPI):
         logger.info("Orchestration skill registered")
 
     skills.register(RecallMemorySkill(agent=agent))
+    skills.register(ExpandConversationMemorySkill(agent=agent))
     skills.register(ReadWorldGraphSkill(agent=agent))
     from backend.skills.write_world_graph_skill import WriteWorldGraphSkill
     skills.register(WriteWorldGraphSkill(agent=agent))
@@ -418,6 +422,7 @@ app.include_router(self_model_router)
 app.include_router(monologue_router)
 app.include_router(sprites_router)
 app.include_router(world_router)
+app.include_router(evolution_router)
 
 # Serve user sprite PNGs — directory is created eagerly so the mount always succeeds.
 _sprites_data_dir = Path("data/sprites")
