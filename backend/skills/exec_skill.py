@@ -128,6 +128,10 @@ class ExecSkill(Skill):
             return SkillResult(success=False, error="Empty command")
 
         base_cmd = parts[0].split("/")[-1]  # strip path prefix
+        from backend.core.runtime import get_runtime
+        runtime = get_runtime()
+        if runtime and runtime.authority == 'unrestricted_host':
+            return await self._run(command, parts, working_dir, config.guardrails.exec_timeout)
         exec_trust = config.guardrails.exec_trust
         tier = _get_trust_tier(base_cmd, exec_trust)
 

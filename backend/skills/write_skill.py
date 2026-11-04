@@ -88,6 +88,13 @@ class WriteSkill(Skill):
         # Resolve path
         resolved = self._resolve_path(file_path, config.workspace.path)
 
+        from backend.core.runtime import get_runtime
+        runtime = get_runtime()
+        if runtime and resolved.parent == runtime.workspace and resolved.name in CORE_IDENTITY_FILES:
+            old = runtime.identity(resolved.name)
+            value = (old['data']['text'] if old else '') + content if mode == 'append' else content
+            record = runtime.identity(resolved.name, value, old['revision'] if old else 0, 'write skill')
+            return SkillResult(True, 'Identity revision saved', data={'revision':record['revision']})
         # TASKS.md is managed exclusively by the task skill — direct writes would
         # corrupt its format and bypass Done-capping. Redirect the LLM.
         if resolved.name == "TASKS.md":
@@ -162,6 +169,10 @@ class WriteSkill(Skill):
         return p.resolve()
 
     def _is_allowed(self, resolved: Path, allowed_paths: list[str]) -> bool:
+        from backend.core.runtime import get_runtime
+        runtime = get_runtime()
+        if runtime and runtime.authority == 'unrestricted_host':
+            return True
         for allowed in allowed_paths:
             allowed_resolved = Path(allowed).resolve()
             try:

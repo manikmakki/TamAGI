@@ -12,7 +12,6 @@ Provides embedding-based storage and retrieval for:
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import time
 from enum import Enum

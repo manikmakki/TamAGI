@@ -7,7 +7,6 @@ Initializes all subsystems and starts the FastAPI server.
 from __future__ import annotations
 
 import logging
-import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -74,7 +73,7 @@ BANNER = r"""
 ║      ╚═╝   ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝    ║
 ║                                                       ║
 ║              Your Local-First AI Companion            ║
-║                         v0.1                          ║
+║                         v0.3                          ║
 ╚═══════════════════════════════════════════════════════╝
 """
 
@@ -87,8 +86,10 @@ async def lifespan(app: FastAPI):
     print(BANNER)
 
     # Load config
-    config = load_config()
+    from backend.core.runtime.bootstrap import configure_instance, initialize_runtime
+    config = configure_instance(load_config())
     set_config(config)
+    runtime = initialize_runtime(config, Path(__file__).resolve().parents[1]) if config.runtime.enabled else None
     logger.info(f"Config loaded — LLM: {config.llm.base_url} model={config.llm.model}")
 
     # Ensure workspace exists
@@ -96,10 +97,17 @@ async def lifespan(app: FastAPI):
 
     # Initialize LLM client
     llm = LLMClient(config.llm)
+    if runtime:
+        from backend.core.runtime import GovernedLLM
+        llm = GovernedLLM(llm, runtime)
     logger.info("LLM client initialized")
 
     # Initialize memory store (chromadb or elasticsearch, per config.memory.backend)
-    memory = create_memory_store(config.memory)
+    if runtime:
+        from backend.core.runtime.memory import CanonicalMemory
+        memory = CanonicalMemory(runtime, create_memory_store(config.memory) if config.runtime.index_projection else None)
+    else:
+        memory = create_memory_store(config.memory)
     await memory.initialize()
 
     # Initialize personality engine (loads from tamagi_state.json or uses defaults).
@@ -228,7 +236,32 @@ async def lifespan(app: FastAPI):
         monologue_log=monologue_log,
         qa_pipeline=qa_pipeline,
     )
+    agent.runtime = runtime
     set_agent(agent)
+    if runtime:
+        from backend.core.runtime.companions import Companions
+        from backend.core.runtime.adaptation import Adaptation
+        from backend.skills.runtime_skill import install_runtime_skills
+        runtime.companions = Companions(runtime, llm, skills)
+        install_runtime_skills(runtime, skills, runtime.companions)
+        runtime.adaptation = Adaptation(runtime, skills)
+        runtime.adaptation.reconcile()
+        from backend.core.runtime.backup import PortableBackup
+        from backend.core.runtime.deployment import DeploymentManager
+        runtime.backups = PortableBackup(runtime)
+        async def transfer_housekeeping():
+            import asyncio
+            while True:
+                await asyncio.sleep(300)
+                runtime.backups.expire()
+        import asyncio
+        runtime.transfer_housekeeping=asyncio.create_task(transfer_housekeeping())
+        runtime.deployments = DeploymentManager(runtime)
+        from backend.core.runtime.live_evaluation import install_evaluator
+        install_evaluator(runtime, llm)
+        from backend.skills.runtime_skill import install_development_skills
+        install_development_skills(runtime, skills)
+
 
     # Initialize multi-agent orchestration
     orchestrator = None
@@ -245,6 +278,8 @@ async def lifespan(app: FastAPI):
     from backend.skills.write_world_graph_skill import WriteWorldGraphSkill
     skills.register(WriteWorldGraphSkill(agent=agent))
 
+    if runtime:
+        runtime.adaptation.core_names = set(skills._skills) - runtime.adaptation.managed
     # Initialize the Living World thread (replaces dream + motivation engines)
     world_thread = WorldThread(
         agent=agent,
@@ -294,7 +329,7 @@ async def lifespan(app: FastAPI):
     # auto-generate a seed from identity context so the world thread has a starting point.
     from backend.core.world_state import WorldStateStore
     _ws_store = WorldStateStore()
-    if _ws_store.load() is None and not identity.needs_onboarding:
+    if not runtime and _ws_store.load() is None and not identity.needs_onboarding:
         logger.info("No world state found — generating first-run world seed from identity")
         try:
             from backend.core.world_seed import OnboardingInput, generate_world_seed
@@ -312,10 +347,13 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning("Auto world seed failed: %s — frontend will prompt for seed", exc)
 
+    if runtime:
+        from backend.core.runtime.learning import LearningConsolidator
+        agent.consolidation = LearningConsolidator(runtime, llm, config.world_thread.consolidation.every_n_ticks)
     world_thread.start()
     logger.info("World thread started — Living World is active")
 
-    logger.info(f"═══ TamAGI is awake! ═══")
+    logger.info("═══ TamAGI is awake! ═══")
     logger.info(f"    Open http://localhost:{config.server.port} in your browser")
 
     yield
@@ -334,6 +372,21 @@ async def lifespan(app: FastAPI):
     if orchestrator is not None:
         await orchestrator.close()
     await llm.close()
+    if runtime:
+        await memory.close()
+    if runtime:
+        for task in list(getattr(runtime,'evaluation_tasks',set())):
+            task.cancel()
+        if getattr(runtime,'evaluation_tasks',None):
+            import asyncio
+            await asyncio.gather(*runtime.evaluation_tasks,return_exceptions=True)
+        runtime.transfer_housekeeping.cancel()
+        await asyncio.gather(runtime.transfer_housekeeping,return_exceptions=True)
+        runtime.backups.cleanup()
+        runtime.store.close()
+        if hasattr(runtime,"instance_lock"): runtime.instance_lock.close()
+        from backend.core.runtime import set_runtime
+        set_runtime(None)
 
 
 # ── FastAPI App ───────────────────────────────────────────────
@@ -341,7 +394,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="TamAGI",
     description="Your local-first AI companion",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -366,7 +419,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Always allow: auth endpoints and the login page itself
         public_prefixes = ("/api/auth",)
-        public_exact = {"/login", "/manifest.json", "/sw.js"}
+        public_exact = {"/login", "/manifest.json", "/sw.js", "/api/health/ready"}
         if path.startswith(public_prefixes) or path in public_exact:
             return await call_next(request)
 
@@ -382,11 +435,43 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return RedirectResponse("/login")
 
 
+class RuntimeMutationMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        from backend.core.runtime import get_runtime, current_execution
+        runtime = get_runtime()
+        transfer = request.url.path.startswith(('/api/backups', '/api/restores'))
+        if runtime and request.method in {'POST', 'PUT', 'PATCH', 'DELETE'} and request.url.path.startswith('/api/') and not request.url.path.startswith('/api/auth/'):
+            if runtime.maintenance:
+                return JSONResponse({'detail':'Checkpoint or deployment in progress'}, status_code=503)
+            # Recheck operator authentication before creating any executable activation.
+            if not request.session.get('authenticated'):
+                return JSONResponse({'detail':'Operator login required'}, status_code=401)
+            origin = request.headers.get('origin')
+            if origin and origin != str(request.base_url).rstrip('/'):
+                return JSONResponse({'detail':'Cross-origin mutation refused'}, status_code=403)
+            if not transfer and request.url.path != "/api/world/tick" and current_execution.get() is None:
+                async with runtime.execution('user'):
+                    return await call_next(request)
+        return await call_next(request)
+
+app.add_middleware(RuntimeMutationMiddleware)
+
+@app.get('/api/health/ready')
+async def readiness():
+    from backend.core.runtime import get_runtime
+    runtime = get_runtime()
+    return {'alive':True, 'data_ready':runtime is not None if get_config().runtime.enabled else True,
+            'release':Path(__file__).resolve().parents[2].name,
+            'hydration':'source_records_available' if runtime else 'legacy',
+            'model_availability':runtime.store.meta('model_availability', {'status':'unknown'}) if runtime else {'status':'unknown'}}
+
+
 # ── Middleware stack (added in reverse order of execution) ────────────────────
 # add_middleware() wraps: last-added is outermost. Execution order:
 #   CORS (outermost) → Session (decodes cookie) → Auth (checks session) → app
 
-_config = get_config()
+from backend.core.runtime.bootstrap import configure_instance
+_config = configure_instance(get_config())
 _data_dir = str(Path(_config.history.persist_path).parent)
 
 # 1. Auth — added first so it runs innermost (after session decodes the cookie)
@@ -423,9 +508,11 @@ app.include_router(monologue_router)
 app.include_router(sprites_router)
 app.include_router(world_router)
 app.include_router(evolution_router)
+from backend.api.runtime import router as runtime_router
+app.include_router(runtime_router)
 
 # Serve user sprite PNGs — directory is created eagerly so the mount always succeeds.
-_sprites_data_dir = Path("data/sprites")
+_sprites_data_dir = Path(_config.history.persist_path).parent / "sprites"
 _sprites_data_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/sprites", StaticFiles(directory=str(_sprites_data_dir)), name="sprites")
 
@@ -446,6 +533,10 @@ if frontend_path.exists():
     @app.get("/login")
     async def login_page():
         return FileResponse(frontend_path / "login.html")
+
+    @app.get("/home")
+    async def home_page():
+        return FileResponse(frontend_path / "home.html")
 
     @app.get("/settings")
     async def settings_page():

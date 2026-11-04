@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from backend.core.planning_engine import ActionPlan, ActionStep, ActionStepType
@@ -360,7 +360,7 @@ class PlanExecutor:
 
     async def _skill(self, name: str, **kwargs) -> Any:
         return await self._agent.skills.execute(
-            name=name,
+            name,
             _event_callback=self._cb,
             _pending_approvals=self._agent._pending_approvals,
             _is_autonomous=self._is_autonomous,

@@ -26,3 +26,8 @@ Thumbs.db
 backend/skills/custom/
 *phase1*
 AI_ENV*
+
+# Runtime build and recovery artifacts
+.platform/
+config.platform.yaml
+*.tamagi.tar.gz.gpg

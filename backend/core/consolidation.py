@@ -401,6 +401,12 @@ class ConsolidationEngine:
 
     @staticmethod
     def _atomic_write(path: Path, content: str) -> None:
+        from backend.core.runtime import get_runtime
+        runtime=get_runtime()
+        if runtime and path.resolve().parent == runtime.workspace and path.name in {'IDENTITY.md','SOUL.md','USER.md'}:
+            old=runtime.identity(path.name)
+            runtime.identity(path.name,content,old['revision'] if old else 0,'relational consolidation')
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".soul_", suffix=".md")
         try:

@@ -1,5 +1,5 @@
 // TamAGI Service Worker — PWA offline support
-const CACHE_NAME = 'tamagi-v1';
+const CACHE_NAME = 'tamagi-platform-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -33,6 +33,20 @@ self.addEventListener('fetch', (event) => {
   // API calls: always network
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws')) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  if (['/home','/settings','/login'].includes(url.pathname)) { event.respondWith(fetch(event.request)); return; }
+
+  // Refresh the application shell after a release, with an offline fallback.
+  if (event.request.mode === 'navigate' || ['/', '/index.html'].includes(url.pathname)) {
+    event.respondWith(fetch(event.request).then((response) => {
+      if (response.ok && !response.redirected) {
+        const copy = response.clone();
+        event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)));
+      }
+      return response;
+    }).catch(() => caches.match(event.request)));
     return;
   }
 

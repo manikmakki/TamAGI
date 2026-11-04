@@ -30,7 +30,6 @@ from typing import TYPE_CHECKING, Any
 from croniter import croniter
 
 from backend.core.world_state import (
-    WorldState,
     WorldStateStore,
     build_tick_prompt,
     parse_new_state,
@@ -226,6 +225,12 @@ class WorldThread:
         self._paused_until: float = 0.0  # unix timestamp
         self._pending_world_events: list[str] = []  # conversation departure events queued for next tick
         self._load_pending_world_events()
+        runtime=getattr(self.agent,'runtime',None)
+        if runtime:
+            source=runtime.store.get('world_thread','current')
+            if source:self._thread=source['data'].get('messages',[])
+            pending=runtime.store.get('pending_events','world')
+            if pending:self._pending_world_events=pending['data'].get('events',[])
 
     # ── Lifecycle ─────────────────────────────────────────────
 
@@ -259,6 +264,9 @@ class WorldThread:
     def pause_for_conversation(self) -> None:
         """Pause the thread while a user conversation is active."""
         self._paused_until = time.time() + self._resume_minutes * 60
+        runtime = getattr(self.agent,'runtime',None)
+        if runtime:
+            runtime.store.set_meta('decompression_until',self._paused_until)
         logger.debug(
             "World thread paused for %d minutes (conversation active).",
             self._resume_minutes,
@@ -267,6 +275,9 @@ class WorldThread:
     def schedule_resume(self) -> None:
         """Schedule resume after a conversation ends (decompression window)."""
         self._paused_until = time.time() + self._resume_minutes * 60
+        runtime = getattr(self.agent,'runtime',None)
+        if runtime:
+            runtime.store.set_meta('decompression_until',self._paused_until)
         logger.info(
             "World thread will resume in %d minutes.",
             self._resume_minutes,
@@ -301,6 +312,21 @@ class WorldThread:
 
     async def build_user_conversation_continuity(self) -> dict[str, Any]:
         """Summarize recent completed world turns once for a new user conversation."""
+        runtime=getattr(self.agent,'runtime',None)
+        if runtime:
+            turns=runtime.store.list('world_turn',runtime.actor_id,limit=100000)[-max(1,self.config.conversation_context_turns):]
+            lines=[]
+            for record in turns:
+                data=record['data']
+                reports=[]
+                for reference in data.get('receipts',[])[:3]:
+                    receipt=runtime.store.receipt(reference)
+                    if receipt and receipt['actor']==runtime.actor_id:reports.append(receipt['tool']+': '+receipt['status'])
+                lines.append('Activity: '+data['status']+'. Location: '+data.get('location','Home')+'. '+
+                    ('Narrative (imaginative self-report): '+data.get('text','')[:240] if data.get('text') else '')+
+                    (' Tool reports: '+', '.join(reports) if reports else ''))
+            return {'summary':'\n'.join(lines)[-self.config.conversation_context_max_chars:],
+              'turn_count':len(turns),'latest_turn_id':turns[-1]['id'] if turns else ''}
         limit = max(0, self.config.conversation_context_turns)
         assistant_entries = [
             entry for entry in self._thread if entry.get("role") == "assistant"
@@ -354,11 +380,19 @@ class WorldThread:
 
     def get_current_location(self) -> str:
         """Return the TamAGI's current location for visitor arrival framing."""
+        runtime=getattr(self.agent,'runtime',None)
+        if runtime:
+            activity=runtime.store.get('activity',runtime.actor_id)['data']
+            location=runtime.store.get('world_object',activity.get('location','home'))
+            return location['data']['name'] if location else 'Home'
         ws = self._state_store.load()
         return ws.location if ws else ""
 
     def inject_world_event(self, event_text: str) -> None:
         """Queue a world event to be appended to the next tick's prompt."""
+        runtime = getattr(self.agent,'runtime',None)
+        if runtime:
+            runtime.wake('visitor_departure')
         self._pending_world_events.append(event_text)
         self._save_pending_world_events()
         logger.info(
@@ -370,15 +404,19 @@ class WorldThread:
         """Trigger a tick manually (for API/testing use)."""
         if self._tick_running:
             logger.info("tick_now: tick already in progress, skipping.")
+            if getattr(self.agent, "runtime", None):
+                return {"status": "waiting", "reason": "busy", "detail": "An activation is already running", "activation_started": False}
             return None
-        return await self._tick_once()
+        return await self._tick_once(manual=True)
 
     # ── Main Loop ─────────────────────────────────────────────
 
     async def _run_loop(self) -> None:
         try:
             while self._running:
-                now = datetime.now(timezone.utc)
+                from zoneinfo import ZoneInfo
+                runtime = getattr(self.agent,'runtime',None)
+                now = datetime.now(ZoneInfo(runtime.config.timezone)) if runtime else datetime.now(timezone.utc)
 
                 # Compute seconds until next cron firing
                 cron = croniter(self._schedule, now)
@@ -386,7 +424,16 @@ class WorldThread:
                 sleep_secs = max(1.0, (next_fire - now).total_seconds())
 
                 logger.debug("World thread sleeping %.0fs until next cron fire.", sleep_secs)
-                await asyncio.sleep(sleep_secs)
+                if runtime:
+                    state=runtime.store.get('activity',runtime.actor_id)['data']
+                    deadlines=[state.get('wake_at'),runtime.store.meta('decompression_until')]
+                    future=[deadline-time.time() for deadline in deadlines if deadline and deadline>time.time()]
+                    if future:sleep_secs=max(0.01,min(sleep_secs,*future))
+                    try:await asyncio.wait_for(runtime.wake_signal.wait(),sleep_secs)
+                    except asyncio.TimeoutError:pass
+                    runtime.wake_signal.clear()
+                else:
+                    await asyncio.sleep(sleep_secs)
 
                 if not self._running:
                     break
@@ -394,7 +441,7 @@ class WorldThread:
                 # Check active hours (0/24 = no gate)
                 start_h, end_h = self._active_hours
                 if not (start_h == 0 and end_h == 24):
-                    current_hour = datetime.now().hour
+                    current_hour = datetime.now(ZoneInfo(runtime.config.timezone)).hour if runtime else datetime.now().hour
                     if start_h <= end_h:
                         in_hours = start_h <= current_hour < end_h
                     else:
@@ -417,7 +464,7 @@ class WorldThread:
                     logger.info("World thread: previous tick still running, skipping.")
                     continue
 
-                await self._tick_once()
+                await asyncio.create_task(self._tick_once())
 
         except asyncio.CancelledError:
             pass
@@ -427,10 +474,12 @@ class WorldThread:
 
     # ── Tick ──────────────────────────────────────────────────
 
-    async def _tick_once(self) -> dict[str, Any] | None:
-        from backend.core.llm import LLMMessage
+    async def _tick_once(self, *, manual=False) -> dict[str, Any] | None:
         from backend.core.tool_loop import run_tool_loop
 
+        if getattr(self.agent, 'runtime', None):
+            from backend.core.runtime.world import tick
+            return await tick(self, manual=manual)
         self._tick_running = True
         tick_start = time.time()
 
@@ -656,6 +705,11 @@ class WorldThread:
         self._save_thread()
 
     def _load_thread(self) -> None:
+        runtime=getattr(self.agent,'runtime',None)
+        if runtime:
+            source=runtime.store.get('world_thread','current')
+            self._thread=source['data'].get('messages',[]) if source else []
+            return
         if not self._thread_path.exists():
             return
         try:
@@ -669,6 +723,9 @@ class WorldThread:
             logger.warning("Could not load world thread: %s", exc)
 
     def _save_thread(self) -> None:
+        runtime=getattr(self.agent,'runtime',None)
+        if runtime:
+            runtime.store.put('world_thread','current',runtime.actor_id,{'messages':self._thread},category='imagination')
         self._thread_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             self._thread_path.write_text(
@@ -695,6 +752,9 @@ class WorldThread:
             logger.warning("Could not load pending world events: %s", exc)
 
     def _save_pending_world_events(self) -> None:
+        runtime=getattr(self.agent,'runtime',None)
+        if runtime:
+            runtime.store.put('pending_events','world',runtime.actor_id,{'events':self._pending_world_events},category='platform')
         self._pending_events_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             tmp_path = self._pending_events_path.with_suffix(".tmp")

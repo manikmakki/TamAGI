@@ -5,7 +5,10 @@ Onboarding API — Endpoints for TamAGI's first-run identity setup.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.core.world_state import WorldState
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -74,7 +77,10 @@ async def complete_onboarding():
     # Auto-generate world seed if not yet created
     world_setting = result.get("identity", {}).get("world_setting", "")
     await _maybe_generate_world_seed(agent, world_setting)
-
+    runtime=getattr(agent,'runtime',None)
+    if runtime and not runtime.store.meta('pilot'):
+        from backend.runtime_cli import pilot
+        pilot(runtime,'start')
     return result
 
 
@@ -83,7 +89,12 @@ async def _maybe_generate_world_seed(agent: Any, world_setting: str) -> None:
     from backend.core.world_seed import OnboardingInput, generate_world_seed
     from backend.core.world_state import WorldState, WorldStateStore, parse_new_state
 
-    store = WorldStateStore()
+    runtime = getattr(agent,'runtime',None)
+    if runtime:
+        runtime.reconcile_identity()
+        runtime.world_action('revise','home',{'description':world_setting})
+        return
+    store = WorldStateStore(agent.config.world_thread.state_path)
     if store.load() is not None:
         return  # already seeded
 

@@ -98,6 +98,10 @@ class MonologueLog:
             metadata=metadata or {},
         )
         d = event.to_dict()
+        from backend.core.runtime import get_runtime
+        runtime=get_runtime()
+        if runtime:
+            runtime.store.put('monologue',event.id,runtime.scope(),d,category='imagination' if source=='autonomous' else 'interpretation')
         self._events.append(d)
         try:
             with self._path.open("a", encoding="utf-8") as f:
@@ -147,6 +151,11 @@ class MonologueLog:
     # ── Internal ──────────────────────────────────────────────
 
     def _load(self) -> None:
+        from backend.core.runtime import get_runtime
+        runtime=get_runtime()
+        if runtime:
+            self._events=[r['data'] for r in runtime.store.list('monologue',limit=100000)][-self._max_entries:]
+            return
         if not self._path.exists():
             return
         try:

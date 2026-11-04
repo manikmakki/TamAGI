@@ -1,6 +1,6 @@
 [project]
 name = "tamagi"
-version = "0.2.0"
+version = "0.3.0"
 description = "TamAGI — Your local-first AI companion"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -13,14 +13,25 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "pyyaml>=6.0.2",
     "httpx>=0.27.0",
-    "chromadb>=0.5.0",
     "python-multipart>=0.0.12",
     "aiofiles>=24.1.0",
     "jinja2>=3.1.4",
+    "networkx>=3.0",
+    "croniter>=2.0",
+    "itsdangerous>=2.2.0",
+    "cryptography>=42.0.0",
+    "keyring>=25.0.0",
+    "mcp>=1.0.0",
+    "ddgs>=7.0.0",
 ]
+
+[project.optional-dependencies]
+chroma = ["chromadb>=0.5.0"]
+elasticsearch = ["elasticsearch[async]>=8.0.0", "sentence-transformers>=3.0.0"]
 
 [project.scripts]
 tamagi = "backend.main:main"
+tamagi-platform = "backend.runtime_cli:main"
 
 [build-system]
 requires = ["setuptools>=75.0"]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -264,8 +264,26 @@ class MCPConfig(BaseModel):
     servers: list[MCPServerConfig] = Field(default_factory=list)
 
 
+class RuntimeConfig(BaseModel):
+    enabled: bool = False  # Existing instances remain untouched until provisioned cutover.
+    instance_dir: str = "./data/instances/new"
+    canonical_repo: str | None = None
+    authority: Literal["guarded", "unrestricted_host"] = "guarded"
+    timezone: str = "America/New_York"
+    provider_concurrency: int = Field(default=1, ge=1, le=4)
+    background_calls_per_activation: int = Field(default=8, ge=1, le=64)
+    companion_calls: int = Field(default=3, ge=1, le=8)
+    daily_background_calls: int = Field(default=96, ge=1)
+    daily_evaluation_calls: int = Field(default=32, ge=1)
+    user_calls: int = Field(default=20, ge=1, le=128)
+    index_projection: bool = False
+    automatic_deployment: bool = False
+    model_input_bytes: int = Field(default=65536, ge=8192, le=1048576)
+
+
 class TamAGIConfig(BaseModel):
     """Root configuration model."""
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     tamagi: TamagiIdentity = Field(default_factory=TamagiIdentity)
     server: ServerConfig = Field(default_factory=ServerConfig)

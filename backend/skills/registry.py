@@ -12,6 +12,8 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import logging
+import asyncio
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -63,24 +65,147 @@ class SkillRegistry:
 
     def get_openai_tools(self) -> list[dict[str, Any]]:
         """Get all skills as OpenAI function calling tool definitions."""
-        return [s.to_openai_tool() for s in self._skills.values()]
+        tools = [s.to_openai_tool() for s in self._skills.values()]
+        from backend.core.runtime import get_runtime
+
+        runtime = get_runtime()
+        if runtime and runtime.authority == "unrestricted_host":
+            for tool in tools:
+                if tool["function"]["name"] in {"read", "write", "exec"}:
+                    tool["function"]["description"] = {
+                        "read": "Read a host file as root. Relative paths use the active workspace; absolute host paths are supported.",
+                        "write": "Write a host file as root. Relative paths use the active workspace. Core identity and task documents have structured revision tools.",
+                        "exec": "Execute a shell command on the host as UID 0, using the active workspace by default. Local host operations have no command-tier approval. Publishing, messaging and purchases still need operator authorization.",
+                    }[tool["function"]["name"]]
+                    for field in ("path", "working_dir"):
+                        if field in tool["function"]["parameters"]["properties"]:
+                            tool["function"]["parameters"]["properties"][field][
+                                "description"
+                            ] = "Relative to the active workspace, or an absolute host path."
+        if runtime:
+            for tool in tools:
+                tool["function"]["parameters"]["properties"]["repair_of_receipt_id"] = {
+                    "type": "string",
+                    "description": "Optional reference to your earlier failed receipt when making a corrected attempt with this same tool and changed arguments. The platform validates the reference; it grants no extra authority.",
+                }
+        return tools
 
     async def execute(self, name: str, /, **kwargs: Any) -> SkillResult:
         """Execute a skill by name."""
+        from backend.core.runtime import get_runtime, current_execution
+
+        runtime = get_runtime()
+        context = current_execution.get()
+        if runtime and context is None:
+            async with runtime.execution("user"):
+                return await self.execute(name, **kwargs)
+        if runtime and context:
+            if context.allowed_tools is not None and name not in context.allowed_tools:
+                return SkillResult(
+                    False, error="Tool is not available in this activation"
+                )
+            if context.depth and name in {"orchestrate_task", "consult_companion"}:
+                return SkillResult(
+                    False, error="Descendant orchestration is unavailable"
+                )
         skill = self._skills.get(name)
         if not skill:
-            return SkillResult(
-                success=False,
-                error=f"Unknown skill: {name}. Available: {list(self._skills.keys())}",
+            return SkillResult(False, error=f"Unknown skill: {name}")
+        if runtime and getattr(skill, "external_effect", False):
+            scope = skill.external_scope
+            grant = runtime.store.get("external_grant", scope)
+            if (
+                not grant
+                or not grant["data"].get("enabled")
+                or grant["data"].get("expires_at", 0) <= runtime.store.clock()
+            ):
+                return SkillResult(
+                    False,
+                    error="Operator authorization is needed for this external service action",
+                    data={"authorization_scope": scope},
+                )
+        call_key = kwargs.pop("_call_id", None)
+        repair_reference = kwargs.pop("repair_of_receipt_id", None) if runtime else None
+        receipt = None
+        if runtime and context:
+            receipt, fresh = runtime.store.begin_receipt(
+                context,
+                name,
+                call_key,
+                {k: v for k, v in kwargs.items() if not k.startswith("_")},
+                repair_of_receipt_id=repair_reference,
             )
+            if not fresh:
+                prior = receipt["payload"].get("result")
+                if prior and receipt["status"] in {"succeeded", "failed"}:
+                    return SkillResult(
+                        bool(prior.get("success")),
+                        prior.get("output", ""),
+                        prior.get("error"),
+                        {**prior.get("data", {}), "receipt_id": receipt["id"]},
+                    )
+                return SkillResult(
+                    False,
+                    error="Previous dispatch outcome is unknown; inspect before retrying",
+                )
+        if runtime and receipt and repair_reference is not None:
+            from backend.core.runtime.store import encoded
 
+            earlier = (
+                runtime.store.receipt(repair_reference)
+                if isinstance(repair_reference, str)
+                else None
+            )
+            arguments_hash = hashlib.sha256(
+                encoded(
+                    {k: v for k, v in kwargs.items() if not k.startswith("_")}
+                ).encode()
+            ).hexdigest()
+            if (
+                not earlier
+                or earlier["actor"] != context.actor_id
+                or earlier["tool"] != name
+                or earlier["status"] != "failed"
+                or earlier["payload"]
+                .get("result", {})
+                .get("data", {})
+                .get("dispatch_rejected")
+                or earlier["payload"].get("arguments_hash") == arguments_hash
+            ):
+                result = SkillResult(
+                    False,
+                    error="A repair reference must identify your earlier failed attempt with this same tool and changed arguments",
+                    data={"dispatch_rejected": True},
+                )
+                runtime.store.finish_receipt(receipt["id"], "failed", result.to_dict())
+                runtime.growth.observe_receipt(runtime.store.receipt(receipt["id"]))
+                result.data["receipt_id"] = receipt["id"]
+                return result
         try:
-            logger.info(f"Executing skill: {name} with args: {list(kwargs.keys())}")
             result = await skill.execute(**kwargs)
-            return result
-        except Exception as e:
-            logger.error(f"Skill execution error ({name}): {e}", exc_info=True)
-            return SkillResult(success=False, error=str(e))
+        except asyncio.CancelledError:
+            if receipt:
+                runtime.store.finish_receipt(
+                    receipt["id"],
+                    "outcome_unknown",
+                    {
+                        "success": False,
+                        "error": "interrupted; effects may have occurred",
+                    },
+                )
+            raise
+        except Exception as exc:
+            logger.error("Skill execution failed: %s (%s)", name, type(exc).__name__)
+            result = SkillResult(False, error=str(exc))
+        if receipt:
+            runtime.store.finish_receipt(
+                receipt["id"],
+                "succeeded" if result.success else "failed",
+                result.to_dict(),
+            )
+            runtime.growth.observe_receipt(runtime.store.receipt(receipt["id"]))
+            result.data = {**result.data, "receipt_id": receipt["id"]}
+        return result
 
     def discover_custom_skills(self, custom_dir: str | Path | None = None) -> int:
         """
@@ -88,6 +213,13 @@ class SkillRegistry:
         If custom_dir is provided, it is stored for subsequent reload calls.
         Returns the number of skills discovered.
         """
+        from backend.core.runtime import get_runtime
+
+        if get_runtime() is not None:
+            logger.info(
+                "Platform tools use versioned subprocess definitions; skipping in-process custom imports"
+            )
+            return 0
         if custom_dir is not None:
             self._custom_dir = Path(custom_dir)
         custom_path = self._custom_dir or Path(get_config().workspace.path) / "skills"

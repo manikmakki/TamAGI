@@ -72,6 +72,17 @@ class SubAgent:
 
     async def run(self, task: str) -> SubAgentResult:
         """Execute task autonomously. Returns a structured result."""
+        from backend.core.runtime import get_runtime, current_terminal
+        runtime=get_runtime()
+        if runtime:
+            from backend.core.runtime.store import uid
+            from backend.core.tool_loop import run_tool_loop
+            allowed=set(self.config.allowed_skills or self.skills._skills)-_FORBIDDEN_SUBAGENT_SKILLS-{'consult_companion','companion'}
+            async with runtime.execution('companion',actor_id=uid('worker'),allowed_tools=allowed,max_calls=self.config.max_tool_rounds) as execution:
+                text,used=await run_tool_loop(self.llm,self.skills,[LLMMessage('system',self._build_system_prompt()),LLMMessage('user',task)],max_rounds=self.config.max_tool_rounds)
+                terminal=current_terminal.get() or {'status':'completed'}
+                success=terminal['status']=='completed'
+                return SubAgentResult(self.config.name,task,success,text,used,runtime.store.run(execution.execution_id)['calls'],None if success else terminal['status'])
         messages: list[LLMMessage] = [
             LLMMessage("system", self._build_system_prompt()),
             LLMMessage("user", task),
@@ -108,7 +119,11 @@ class SubAgent:
                 for tc in response.tool_calls:
                     logger.debug(f"[{self.config.name}] tool call: {tc.name}({tc.arguments})")
                     skills_used.append(tc.name)
-                    result = await self.skills.execute(name=tc.name, **tc.arguments)
+                    if tc.name in _FORBIDDEN_SUBAGENT_SKILLS or (self.config.allowed_skills is not None and tc.name not in self.config.allowed_skills):
+                        from backend.skills.base import SkillResult
+                        result=SkillResult(False,error='Tool is unavailable to this worker')
+                    else:
+                        result = await self.skills.execute(tc.name, **{k:v for k,v in tc.arguments.items() if not k.startswith('_')})
                     messages.append(LLMMessage(
                         "tool",
                         json.dumps(result.to_dict() if hasattr(result, "to_dict") else result),
@@ -130,7 +145,7 @@ class SubAgent:
         return SubAgentResult(
             agent_name=self.config.name,
             task=task,
-            success=True,
+            success=not response.tool_calls,
             output=response.content or "",
             skills_used=skills_used,
             rounds_taken=rounds_taken,
@@ -191,19 +206,29 @@ class Orchestrator:
             self._subagent_llm = llm
             self._owns_subagent_llm = False
 
+        from backend.core.runtime import get_runtime, GovernedLLM
+        runtime=get_runtime()
+        if runtime and self._owns_subagent_llm:
+            self._subagent_llm=GovernedLLM(self._subagent_llm,runtime)
+
     async def close(self) -> None:
         """Release the subagent LLM client if it was separately created."""
         if self._owns_subagent_llm:
             await self._subagent_llm.close()
 
-    async def run_workflow(self, goal: str, context: str = "", event_callback: Any = None) -> str:
+    async def run_workflow(self, goal: str, context: str = "", event_callback: Any = None, companion_ids: list[str] | None = None) -> str:
         """Full orchestration cycle. Returns synthesized final text."""
         logger.info(f"[orchestrator] starting workflow: {goal[:80]}")
 
         # Phase 1: Plan
-        await _emit(event_callback, f"Planning workflow…")
+        await _emit(event_callback, "Planning workflow…")
         task_plan = await self._plan(goal, context)
-        task_plan = task_plan[: self.config.max_subagents]
+        if len(task_plan)>self.config.max_subagents:
+            raise ValueError('Workflow exceeds its worker limit; replan a bounded workflow')
+        validate_workflow(task_plan)
+        if companion_ids:
+            for task,actor_id in zip(task_plan,companion_ids):
+                task['companion_id']=actor_id
         logger.info(f"[orchestrator] plan: {[t['name'] for t in task_plan]}")
         plan_names = ", ".join(f"**{t['name']}**" for t in task_plan)
         await _emit(event_callback, f"Subtasks: {plan_names}")
@@ -276,6 +301,7 @@ class Orchestrator:
         - Tasks with no unsatisfied deps run in parallel via asyncio.gather()
         - Each wave injects upstream outputs into dependent task descriptions
         """
+        validate_workflow(tasks)
         completed: dict[str, SubAgentResult] = {}
         results: list[SubAgentResult] = []
         remaining = list(tasks)
@@ -286,9 +312,13 @@ class Orchestrator:
                 if all(d in completed for d in t.get("depends_on", []))
             ]
             if not ready:
-                logger.warning("[orchestrator] dependency deadlock — running remaining tasks sequentially")
-                ready = remaining[:1]
+                raise ValueError('Workflow dependency cycle')
 
+            blocked=[t for t in ready if any(not completed[d].success for d in t.get('depends_on',[]))]
+            for task in blocked:
+                result=SubAgentResult(task.get('agent',task['name']),task['task'],False,'',error='Prerequisite did not complete')
+                completed[task['name']]=result;results.append(result);remaining.remove(task)
+            ready=[t for t in ready if t not in blocked]
             # Enrich dependent tasks with upstream context
             for t in ready:
                 deps = t.get("depends_on", [])
@@ -301,9 +331,13 @@ class Orchestrator:
                         t["task"] = t["task"] + f"\n\nContext from prior agents:\n{dep_ctx}"
 
             logger.info(f"[orchestrator] running batch: {[t['name'] for t in ready]}")
-            batch: list[SubAgentResult] = list(
-                await asyncio.gather(*[self._run_single_task(t, event_callback) for t in ready])
-            )
+            jobs=[asyncio.create_task(self._run_single_task(t,event_callback)) for t in ready]
+            try:
+                batch=list(await asyncio.gather(*jobs))
+            except BaseException:
+                for job in jobs:job.cancel()
+                await asyncio.gather(*jobs,return_exceptions=True)
+                raise
 
             for t, r in zip(ready, batch):
                 completed[t["name"]] = r
@@ -320,6 +354,11 @@ class Orchestrator:
             task_preview += "…"
         await _emit(event_callback, f"▶ **{agent_name}**: {task_preview}")
 
+        from backend.core.runtime import get_runtime
+        runtime=get_runtime()
+        if runtime and task_def.get('companion_id'):
+            reply=await runtime.companions.consult(task_def['companion_id'],task_def['task'],'task',allowed_tools=task_def.get('skills'))
+            return SubAgentResult(reply['speaker'],task_def['task'],reply['status']=='completed',reply['text'],reply['skills_used'],error=None if reply['status']=='completed' else reply['status'])
         subagent = SubAgent(
             config=SubAgentConfig(
                 name=agent_name,
@@ -333,25 +372,7 @@ class Orchestrator:
 
         result = await subagent.run(task_def["task"])
 
-        # One retry on failure
-        if not result.success and result.error:
-            logger.info(f"[orchestrator] retrying {task_def['name']}: {result.error[:100]}")
-            await _emit(event_callback, f"↻ **{agent_name}** failed, retrying: {result.error[:120]}")
-            retry_task = (
-                task_def["task"]
-                + f"\n\nNote: A previous attempt failed with: {result.error}. "
-                "Please try a different approach."
-            )
-            result = await subagent.run(retry_task)
-
-        verdict = await self._review(task_def, result)
-        if verdict == "retry" and result.success:
-            logger.info(f"[orchestrator] quality retry for {task_def['name']}")
-            await _emit(event_callback, f"↻ **{agent_name}** improving response…")
-            result = await subagent.run(
-                task_def["task"] + "\n\nPlease provide a more complete and detailed response."
-            )
-
+        # Completed effects are never blindly replayed for a failure or a short answer.
         if result.success and result.output.strip():
             preview = result.output[:200].replace("\n", " ")
             if len(result.output) > 200:
@@ -375,29 +396,7 @@ class Orchestrator:
         Returns "accept", "retry", or "skip".
         Fast heuristic first — only invoke LLM for suspiciously short outputs.
         """
-        if not result.success:
-            return "skip"  # already retried in _run_single_task
-        if len(result.output.strip()) > 80:
-            return "accept"
-
-        try:
-            response = await self.llm.chat(
-                [
-                    LLMMessage("system", "You are a quality reviewer. Reply with exactly one word."),
-                    LLMMessage(
-                        "user",
-                        f"Task: {task_def['task'][:300]}\n"
-                        f"Agent output: {result.output}\n\n"
-                        "Is this output sufficient? Reply: accept, retry, or skip.",
-                    ),
-                ],
-                temperature=0.1,
-                max_tokens=10,
-            )
-            verdict = (response.content or "accept").strip().lower().split()[0]
-            return verdict if verdict in ("accept", "retry", "skip") else "accept"
-        except Exception:
-            return "accept"
+        return 'accept' if result.success else 'skip'
 
     # ── Phase 4: Synthesize ───────────────────────────────────
 
@@ -423,7 +422,7 @@ class Orchestrator:
                         "system",
                         "You are synthesizing the work of several specialized agents into "
                         "a clear, cohesive final answer. Preserve important details; "
-                        "eliminate redundancy. Write in first person as if you did the work.",
+                        "eliminate redundancy. Attribute findings to their actual speakers. Distinguish reported results from verified tool receipts; never claim another actor’s work as your own.",
                     ),
                     LLMMessage(
                         "user",
@@ -456,3 +455,18 @@ async def _emit(callback: Any, message: str) -> None:
             await callback({"type": "interim_text", "content": message})
         except Exception:
             pass  # never let a callback error break the workflow
+
+
+def validate_workflow(tasks):
+    names=[t.get('name') for t in tasks]
+    if any(not isinstance(n,str) or not n for n in names) or len(set(names))!=len(names):
+        raise ValueError('Workflow task names must be unique and nonempty')
+    known=set(names)
+    for task in tasks:
+        if not isinstance(task.get('task'),str) or not isinstance(task.get('depends_on',[]),list) or any(d not in known for d in task.get('depends_on',[])):
+            raise ValueError('Workflow has invalid tasks or missing prerequisites')
+    done=set()
+    while len(done)<len(tasks):
+        ready={t['name'] for t in tasks if t['name'] not in done and set(t.get('depends_on',[]))<=done}
+        if not ready:raise ValueError('Workflow contains a dependency cycle')
+        done|=ready

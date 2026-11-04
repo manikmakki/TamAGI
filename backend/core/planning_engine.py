@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from .self_model.schemas import EdgeType, NodeType
+from .self_model.schemas import EdgeType
 
 # Compatibility stubs for removed types (planning engine pending world-native rewrite in Phase 6)
 class CapabilityNode:  # type: ignore[no-redef]

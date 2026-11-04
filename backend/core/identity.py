@@ -374,7 +374,7 @@ class IdentityManager:
             emoji=emoji,
             stage="egg (just hatched!)",
         )
-        self.identity_path.write_text(identity_content)
+        self._write_revision(self.identity_path, identity_content)
 
         # Generate SOUL.md
         values_str = "\n".join(f"- **{v.title()}**" for v in values)
@@ -393,7 +393,7 @@ class IdentityManager:
             extra_principles="",
             what_matters=f"Being a great {creature} for {user_name}. Growing together through every conversation.",
         )
-        self.soul_path.write_text(soul_content)
+        self._write_revision(self.soul_path, soul_content)
 
         # Generate USER.md
         user_content = DEFAULT_USER.format(
@@ -404,7 +404,7 @@ class IdentityManager:
             comm_pref=user_comm_pref,
             notes="Just met! Getting to know each other.",
         )
-        self.user_path.write_text(user_content)
+        self._write_revision(self.user_path, user_content)
 
         # Clean up bootstrap
         if self.bootstrap_path.exists():
@@ -446,6 +446,10 @@ class IdentityManager:
         return result
 
     def get_system_prompt_context(self) -> str:
+        from backend.core.runtime import get_runtime
+        runtime = get_runtime()
+        if runtime:
+            runtime.reconcile_identity()
         """
         Build system prompt context from identity files.
         This is injected before every LLM call.
@@ -566,7 +570,7 @@ class IdentityManager:
             if line.startswith(f"- **{field.title()}**"):
                 lines[i] = f"- **{field.title()}**: {value}"
                 break
-        self.identity_path.write_text("\n".join(lines))
+        self._write_revision(self.identity_path, "\n".join(lines))
 
     def update_user_field(self, field: str, value: str) -> None:
         """Update a single field in USER.md."""
@@ -584,4 +588,13 @@ class IdentityManager:
             if line.startswith(f"- **{target}**"):
                 lines[i] = f"- **{target}**: {value}"
                 break
-        self.user_path.write_text("\n".join(lines))
+        self._write_revision(self.user_path, "\n".join(lines))
+
+    def _write_revision(self,path,content):
+        from backend.core.runtime import get_runtime
+        runtime=get_runtime()
+        if runtime:
+            old=runtime.identity(path.name)
+            runtime.identity(path.name,content,old['revision'] if old else 0,'identity service')
+        else:
+            path.write_text(content)

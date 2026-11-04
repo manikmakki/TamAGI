@@ -93,6 +93,25 @@ class TaskSkill(Skill):
     # ── Public execute ────────────────────────────────────────
 
     async def execute(self, **kwargs: Any) -> SkillResult:
+        from backend.core.runtime import get_runtime
+        runtime = get_runtime()
+        if runtime:
+            action=kwargs.get('action','list')
+            records=runtime.pursuit('list')
+            if action=='list':
+                return SkillResult(True, str([{'id':r['id'],**r['data']} for r in records]))
+            if action=='add':
+                record=runtime.pursuit('create',attributes={'title':kwargs.get('text',''),'origin':'task tool','commitment':True})
+            else:
+                item=str(kwargs.get('item',''))
+                record=next((r for r in records if r['id']==item or item.lower() in r['data']['title'].lower()),None)
+                if record is None:
+                    return SkillResult(False,error='Use a stable pursuit ID or matching title')
+                status={'start':'active','complete':'completed','remove':'abandoned'}.get(action)
+                if status is None:
+                    return SkillResult(False,error='Unknown task operation')
+                record=runtime.pursuit('revise',record['id'],{'status':status},record['revision'])
+            return SkillResult(True,str(record),data={'pursuit_id':record['id']})
         action = kwargs.get("action", "").strip().lower()
         text = kwargs.get("text", "") or ""
         item = kwargs.get("item", "") or ""

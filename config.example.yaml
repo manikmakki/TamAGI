@@ -301,3 +301,21 @@ mcp:
   # - name: my-remote-tools
   #   transport: sse
   #   url: "http://my-mcp-server:8080/sse"
+
+# Home platform: use `python -m backend.runtime_cli archive` and `fresh` first.
+# Provisioning generates a separate instance config; do not point this at the old life.
+runtime:
+  enabled: false
+  instance_dir: "./data/instances/new"
+  canonical_repo: null
+  authority: "guarded"  # unrestricted_host requires actual UID 0 on the host
+  timezone: "America/New_York"
+  provider_concurrency: 1
+  background_calls_per_activation: 8
+  companion_calls: 3
+  daily_background_calls: 96
+  daily_evaluation_calls: 32
+  user_calls: 20
+  index_projection: false
+  automatic_deployment: false
+  model_input_bytes: 65536       # Bounded model text views; full receipts remain in SQLite.

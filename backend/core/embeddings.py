@@ -11,7 +11,6 @@ This is the same model ChromaDB uses internally, so quality is on par.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 logger = logging.getLogger("tamagi.embeddings")
 

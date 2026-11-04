@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .planning_engine import ActionPlan
-from .self_model.schemas import EdgeType, NodeType
+from .self_model.schemas import EdgeType
 from .self_model.store import ModificationProposal
 
 # Compatibility stubs for removed types (reflection engine pending world-native rewrite in Phase 6)

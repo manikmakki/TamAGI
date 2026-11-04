@@ -17,12 +17,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 import networkx as nx
 
 from .schemas import (
-    EDGE_CONSTRAINTS,
     NODE_TYPE_MAP,
     EdgeType,
     EventNode,
@@ -31,9 +29,7 @@ from .schemas import (
     LoreNode,
     MysteryNode,
     NodeType,
-    PerkNode,
     QuestNode,
-    QuestStatus,
     SkillNode,
     SkillProficiency,
     node_from_dict,
@@ -405,6 +401,9 @@ class SelfModel:
     # ══════════════════════════════════════════════════════════
 
     def snapshot(self) -> dict:
+        from backend.core.runtime import get_runtime
+        runtime=get_runtime()
+        if runtime:runtime.project_graph(self)
         nodes = [dict(attrs) for _, attrs in self._graph.nodes(data=True)]
         edges = [{"source": u, "target": v, **data} for u, v, data in self._graph.edges(data=True)]
         return {
@@ -420,6 +419,10 @@ class SelfModel:
         out_path = Path(path) if path else self._data_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
         data = self.snapshot()
+        from backend.core.runtime import get_runtime
+        runtime = get_runtime()
+        if runtime:
+            runtime.store.put('graph','world',runtime.actor_id,data)
         with open(out_path, "w") as f:
             json.dump(data, f, indent=2, default=str)
         logger.info("Self-model saved (%d nodes, %d edges)", data["node_count"], data["edge_count"])
@@ -427,8 +430,14 @@ class SelfModel:
 
     def load(self, path: str | Path | None = None) -> None:
         in_path = Path(path) if path else self._data_path
-        with open(in_path, "r") as f:
-            data = json.load(f)
+        from backend.core.runtime import get_runtime
+        runtime = get_runtime()
+        source = runtime.store.get('graph','world') if runtime else None
+        if source:
+            data = source['data']
+        else:
+            with open(in_path, "r") as f:
+                data = json.load(f)
 
         version = data.get("version", 1)
         if version < 2:

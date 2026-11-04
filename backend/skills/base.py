@@ -68,6 +68,11 @@ class Skill(ABC):
                 "type": param_def.get("type", "string"),
                 "description": param_def.get("description", ""),
             }
+            for schema_key in ('items', 'properties', 'additionalProperties'):
+                if schema_key in param_def:
+                    prop[schema_key] = param_def[schema_key]
+            if prop['type'] == 'array' and 'items' not in prop:
+                prop['items'] = {'type':'string'}
             if "enum" in param_def:
                 prop["enum"] = param_def["enum"]
             if "default" in param_def:

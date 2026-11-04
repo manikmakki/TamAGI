@@ -121,7 +121,35 @@ class WriteWorldGraphSkill(Skill):
         if not sm:
             return SkillResult(success=False, error="Self-model not available", output="World graph is not initialized.")
 
+        from backend.core.runtime import get_runtime
+        runtime=get_runtime()
         action = str(kwargs.get("action", "")).strip()
+        if runtime:
+            node_id=kwargs.get('node_id','')
+            node_type=kwargs.get('node_type','')
+            attrs=dict(kwargs.get('attributes') or {})
+            if node_type=='quest' and action=='add_node':
+                record=runtime.pursuit('create',attributes={'title':attrs.get('title') or attrs.get('description','A pursuit'),
+                  'next_step':attrs.get('description','')})
+                runtime.project_graph(sm)
+                return SkillResult(True,'Pursuit saved',data={'node_id':record['id'],'pursuit_id':record['id']})
+            if node_type=='location' and action=='add_node':
+                record=runtime.world_action('create',attributes={'kind':'place','name':attrs.get('name') or attrs.get('description','A place'),
+                  'description':attrs.get('description','')})
+                runtime.project_graph(sm)
+                return SkillResult(True,'Place saved',data={'node_id':'world:'+record['id']})
+            if runtime.store.get('pursuit',node_id) and action in {'update_node','delete_node'}:
+                status=attrs.get('status')
+                if status=='complete':attrs['status']='completed'
+                if action=='delete_node':attrs={'status':'abandoned'}
+                record=runtime.pursuit('revise',node_id,attrs)
+                runtime.project_graph(sm)
+                return SkillResult(True,'Pursuit revised',data={'node_id':record['id'],'value':record})
+            if node_id.startswith('world:') and action in {'update_node','delete_node'}:
+                if action=='delete_node':return SkillResult(False,error='Persistent places are revised through world_action')
+                record=runtime.world_action('revise',node_id[6:],attrs)
+                runtime.project_graph(sm)
+                return SkillResult(True,'Place revised',data={'node_id':'world:'+record['id']})
 
         if action == "add_node":
             return await self._add_node(sm, kwargs)
@@ -135,7 +163,7 @@ class WriteWorldGraphSkill(Skill):
             return SkillResult(
                 success=False,
                 error=f"Unknown action: {action!r}",
-                output=f"Valid actions: add_node, update_node, add_edge, delete_node.",
+                output="Valid actions: add_node, update_node, add_edge, delete_node.",
             )
 
     def _find_name_match(self, sm, node_type: str, attrs: dict) -> dict | None:

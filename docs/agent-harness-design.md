@@ -1,3 +1,5 @@
+> Historical design: the [accepted platform ADRs](adrs/README.md) supersede incompatible assumptions. Narrative is not execution evidence; chosen rest is valid; host-root controls are cooperative rather than tamper-proof.
+
 # TamAGI Evolution Lab: Plan for a Bounded Self-Improvement Harness
 
 ## 1. Purpose

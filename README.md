@@ -8,6 +8,17 @@
 
 ---
 
+## Home platform (v0.3)
+
+The new platform adds a persistent home/workshop, durable companions, actor-scoped memory, action receipts, genuine rest, versioned tools, tested application releases, and encrypted portable backups. The existing avatar, chat, rig editor and PWA remain available.
+
+Start with the [implementation and recovery guide](docs/platform-roadmap.md) and [architecture decisions](docs/adrs/README.md). Existing configurations remain in legacy mode until a predecessor archive and separate fresh instance are provisioned. The dedicated `unrestricted_host` profile is actual host root; container root does not qualify. Automatic deployment is initially disabled until recovery qualification passes. Keep a portable backup elsewhere for independent recovery.
+
+Deterministic **Growth** recognizes sustained conversation, continuity, and adaptation. The avatar shows progress toward the next level and age separately; **Why this level?** explains the retained evidence. [ADR-0015](docs/adrs/0015-growth-through-sustained-behavior.md) records the rules and their acceptance status.
+
+The seven-day behavioral pilot is an operational gate; passing unit tests is not evidence of sustained autonomous improvement.
+
+
 ## What is TamAGI?
 
 TamAGI is a self-hosted, fully local virtual assistant/agent that:
@@ -15,7 +26,7 @@ TamAGI is a self-hosted, fully local virtual assistant/agent that:
 - **Lives on your machine** — No cloud APIs required (but supported). You own everything.
 - **Grows with you** — Persistent memory via vector database (ChromaDB/Elasticsearch). It remembers, learns, and adapts.
 - **Creates its own tools** — Extensible skill/plugin system. Your TamAGI can build new capabilities with your guidance.
-- **Has personality** — Mood, energy, experience levels. Neglect it and it gets sad. Feed it knowledge and it thrives.
+- **Has personality** — Expressive moods, playful stages, and Growth from sustained behavior. Familiar routines, creative play, and rest are part of its life.
 - **Runs anywhere** — Container or bare metal. PWA frontend works in Brave, Chrome, Firefox on Windows, Android, and Linux.
 
 ## Architecture
@@ -48,38 +59,50 @@ TamAGI is a self-hosted, fully local virtual assistant/agent that:
 ## Quick Start
 
 ### Prerequisites
-- Python 3.11+
-- A local LLM server (Ollama, vLLM, etc.) OR an API key for OpenAI/Anthropic
+- Python 3.13 for the locked Linux environment
+- GnuPG (`gpg`) for portable backups
+- A local or compatible LLM endpoint
 
 ### Install & Run
+
+For an existing resident, follow the [archive and cutover guide](docs/platform-roadmap.md#installation-preservation-and-recovery) first. A fresh start creates a separate identity and never overwrites an existing instance.
 
 ```bash
 # Clone and enter
 git clone https://github.com/manikmakki/TamAGI.git
-cd tamagi
+cd TamAGI
 
-# Install dependencies
-pip install -r requirements.txt
+# Install the tested core environment
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.lock
+pip install --no-deps -e .
 
-# Copy and edit config
-cp config.example.yaml config.yaml
-# Edit config.yaml with your LLM endpoint
+# Provision a new home using the guarded application policy
+python -m backend.runtime_cli fresh --authority guarded \
+  --instance "$PWD/data/instances/home" --port 7741
+# Edit data/instances/home/config.yaml with your LLM endpoint
 
-# Run TamAGI
-python -m backend.main
+python -m backend.runtime_cli serve --config "$PWD/data/instances/home/config.yaml"
 ```
 
-Open `http://localhost:7741` in your browser. That's it!
+Open `http://localhost:7741/login` to set your password and begin onboarding. Use an unprivileged account for the guarded profile; its path policies are application controls. The dedicated host-root profile and supervised installation are described in the guide.
+
+SQLite provides persistent memory without embeddings. Optional retrieval indexes use `pip install -e '.[chroma]'` or `pip install -e '.[elasticsearch]'`. Existing legacy configurations still run with `python -m backend.main`; install the extra for their selected memory backend to retain vector retrieval.
 
 ### Docker
+
+The supplied Compose file retains the legacy configuration layout and requires a configured `config.yaml`. The image includes ChromaDB by default for that profile. Build with `--build-arg TAMAGI_MEMORY_EXTRA=none` for the core SQLite platform, or `TAMAGI_MEMORY_EXTRA=elasticsearch` for the alternate legacy backend. Containers support the guarded profile; container root does not qualify as unrestricted host root.
 
 ```bash
 docker compose up -d
 ```
 
-### Running as a systemd service (bare metal)
+### Running the legacy profile as a systemd service
 
-This keeps TamAGI running after you log out and brings it back up automatically after a reboot.
+For the new home platform, use the supervised installation in the [platform guide](docs/platform-roadmap.md#installation-preservation-and-recovery), which selects an instance configuration and versioned release.
+
+This legacy setup keeps TamAGI running after you log out and brings it back up automatically after a reboot.
 
 **1. Create a dedicated system user**
 

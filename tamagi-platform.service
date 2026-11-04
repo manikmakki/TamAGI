@@ -1,0 +1,21 @@
+[Unit]
+Description=TamAGI home platform supervisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Dedicated-host profile: real host UID 0. Root can change this supervisor too.
+User=root
+Group=root
+WorkingDirectory=/opt/TamAGI
+ExecStart=/usr/bin/python3 /opt/TamAGI/.platform/bootstrap.py --root /opt/TamAGI/.platform --port 7742
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

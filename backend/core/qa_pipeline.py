@@ -101,6 +101,13 @@ class QAPipeline:
 
     def load(self) -> None:
         """Load pending clarifications from disk."""
+        from backend.core.runtime import get_runtime
+        runtime=get_runtime()
+        if runtime:
+            source=runtime.store.get('working_state','qa_pending')
+            if source:
+                self._pending={k:PendingClarification.from_dict(v) for k,v in source['data'].items()}
+            return
         if not self._data_path.exists():
             return
         try:
@@ -113,6 +120,9 @@ class QAPipeline:
 
     def save(self) -> None:
         """Persist pending clarifications to disk."""
+        from backend.core.runtime import get_runtime
+        runtime=get_runtime()
+        if runtime:runtime.store.put('working_state','qa_pending',runtime.actor_id,{k:v.to_dict() for k,v in self._pending.items()})
         try:
             self._data_path.parent.mkdir(parents=True, exist_ok=True)
             self._data_path.write_text(

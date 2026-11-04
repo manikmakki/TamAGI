@@ -174,6 +174,18 @@ async def recall_memories(request: MemoryQueryRequest):
 @router.websocket("/ws")
 async def websocket_chat(websocket: WebSocket):
     """WebSocket endpoint for real-time chat."""
+    config=get_config()
+    if config.auth.enabled and not websocket.session.get('authenticated'):
+        await websocket.close(code=1008)
+        return
+    origin=websocket.headers.get('origin')
+    if origin:
+        from urllib.parse import urlsplit
+        expected_scheme='https' if websocket.url.scheme=='wss' else 'http'
+        parsed=urlsplit(origin)
+        if parsed.netloc!=websocket.headers.get('host') or parsed.scheme!=expected_scheme:
+            await websocket.close(code=1008)
+            return
     await websocket.accept()
     agent = get_agent()
 

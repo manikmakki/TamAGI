@@ -245,6 +245,11 @@
     .pill.lv .val { color: var(--accent-tertiary); }
     .pill.mood .val { color: var(--accent-secondary); }
     .pill.xp .val { color: var(--accent); }
+    .growth-detail { margin-top: 6px; color: var(--text-muted); font-size: 9px; }
+    .growth-detail progress { display: block; width: 100%; height: 5px; margin: 5px 0; accent-color: var(--accent); }
+    .growth-meta { display: flex; gap: 12px; justify-content: space-between; }
+    .growth-meta a { color: var(--accent-tertiary); text-decoration: none; }
+    .growth-meta a:hover { text-decoration: underline; }
 
     .btn-icon {
       position: relative;
@@ -887,6 +892,7 @@
   </div>
 
   <div class="drawer-nav">
+    <a href="/home" class="drawer-nav-link">⌂ Home &amp; Workshop</a>
     <a href="/rig-editor" onclick="closeDrawer()" class="drawer-nav-link">▦ Rig Editor</a>
     <a href="/self-model" onclick="closeDrawer()" class="drawer-nav-link">&#x25C8; World Model</a>
     <a href="/settings"   onclick="closeDrawer()" class="drawer-nav-link">⚙ Settings</a>
@@ -905,7 +911,7 @@
       <div class="top-pills">
         <div class="pill lv"><span>LV</span> <span class="val" id="p-lv">1</span></div>
         <div class="pill mood"><span id="p-mood-dot">&#9679;</span> <span class="val" id="p-mood">...</span></div>
-        <div class="pill xp"><span>XP</span> <span class="val" id="p-xp">0</span></div>
+        <div class="pill xp" title="Growth from sustained behavior"><span>Growth</span> <span class="val" id="p-xp">0</span></div>
         <button class="layout-toggle" id="layout-toggle" onclick="toggleLayout()" title="Toggle layout">&#x25EB;</button>
         <div class="dot" id="conn-dot" title="Disconnected"></div>
         <button id="logout-btn" onclick="logout()" title="Sign out" style="display:none;background:none;border:none;color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:1px;cursor:pointer;padding:2px 5px;border-radius:3px;transition:color 0.15s;" onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='var(--text-muted)'">OUT</button>
@@ -921,9 +927,14 @@
         <div class="avatar-name-block">
           <div class="avatar-name" id="a-name">Tama</div>
           <div class="avatar-subtitle" id="a-subtitle">EGG &mdash; Level 1</div>
+          <div class="growth-detail" id="growth-detail" hidden>
+            <span id="growth-next"></span>
+            <progress id="growth-progress" max="1" value="0" aria-label="Growth toward the next level"></progress>
+            <div class="growth-meta"><span id="resident-age"></span><a href="/home#growth">Why this level?</a></div>
+          </div>
         </div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Vitality <span class="stat-help">&#9432;</span></span><span id="s-vitality-v">80</span></div><div class="stat-bar"><div class="stat-fill vitality" id="s-vitality-f" style="width:80%"></div></div><div class="stat-tip">Activation and drive. Drifts toward a time-of-day baseline — high midday, low at night. Costs a little per conversation turn and skill use.</div></div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F52D; Curiosity <span class="stat-help">&#9432;</span></span><span id="s-curiosity-v">60</span></div><div class="stat-bar"><div class="stat-fill curiosity" id="s-curiosity-f" style="width:60%"></div></div><div class="stat-tip">Intellectual hunger — builds when unstimulated, satisfied by using tools, exploring, and interesting conversations. High curiosity steers the world thread toward discovery.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Vitality <span class="stat-help">&#9432;</span></span><span id="s-vitality-v">80</span></div><div class="stat-bar"><div class="stat-fill vitality" id="s-vitality-f" style="width:80%"></div></div><div class="stat-tip">A playful illustration of daily rhythm. Drifts toward a time-of-day baseline — high midday, low at night.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F52D; Curiosity <span class="stat-help">&#9432;</span></span><span id="s-curiosity-v">60</span></div><div class="stat-bar"><div class="stat-fill curiosity" id="s-curiosity-f" style="width:60%"></div></div><div class="stat-tip">A playful illustration of curiosity. An illustrative character stat; it does not measure wellbeing or determine available computation.</div></div>
         <div class="world-context" id="world-context" style="display:none">
           <div class="wc-row"><span class="wc-label">&#x1F4CD;</span><span class="wc-val" id="wc-location">—</span></div>
           <div class="wc-row"><span class="wc-label">&#x25CB;</span><span class="wc-val" id="wc-mood">—</span></div>
@@ -1457,7 +1468,22 @@ function setPose(parts){
 }
 
 function firstSentence(s){if(!s)return'';const m=s.match(/^(.+?)(?:\.\s|\.$|\n)/);if(m&&m[1].length<=100)return m[1].trim();return s.length>80?s.slice(0,80).trim()+'\u2026':s.trim()}
-function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-xp',s.experience||0);if(s.pose_parts)setPose(s.pose_parts);setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-vitality',s.vitality??s.energy??80);setBar('s-curiosity',s.curiosity??50)}
+function residentAge(seconds){const hours=Math.floor(Math.max(0,Number(seconds)||0)/3600),days=Math.floor(hours/24);return days?`${days}d ${hours%24}h old`:`${hours}h old`;}
+function updateState(s){
+  if(!s)return;
+  const growth=s.growth,level=growth?.level??s.level??1,stage=growth?.stage??s.stage??'egg';
+  setText('p-lv',level);setText('p-xp',growth?.total??s.experience??0);
+  if(s.pose_parts)setPose(s.pose_parts);
+  setText('a-name',s.name||'Tama');setText('a-subtitle',`${String(stage).toUpperCase()} \u2014 Level ${level}`);
+  setBar('s-vitality',s.vitality??s.energy??80);setBar('s-curiosity',s.curiosity??50);
+  const detail=document.getElementById('growth-detail');detail.hidden=!growth;
+  if(growth){
+    setText('growth-next',`${growth.points_to_next} Growth to Level ${level+1}`);
+    setText('resident-age',residentAge(growth.age_seconds));
+    const progress=document.getElementById('growth-progress');progress.value=Math.max(0,Math.min(1,Number(growth.progress)||0));
+    progress.setAttribute('aria-valuetext',`${growth.total} Growth; ${growth.points_to_next} to Level ${level+1}`);
+  }
+}
 function updateWorldContext(ws){if(!ws||ws.needs_world_seed)return;const loc=firstSentence(ws.location||'');const mood=firstSentence(ws.mood||'');const focus=firstSentence(ws.focus||'');const md=document.getElementById('p-mood-dot');const mp=document.getElementById('p-mood');if(mp)mp.textContent=mood.toUpperCase()||'...';if(md)md.style.color='var(--accent-secondary)';const wc=document.getElementById('world-context');if(wc&&(loc||mood||focus)){wc.style.display='flex';setText('wc-location',loc||'\u2014');setText('wc-mood',mood||'\u2014');setText('wc-focus',focus||'\u2014')}}
 // Previous stat values — null on first load so the initial updateState() call
 // establishes a baseline without spawning spurious indicators.
@@ -1709,10 +1735,15 @@ async function triggerDream(){
   btn.textContent='\u23F3 Ticking...';btn.disabled=true;
   try{
     const r=await api('/world/tick',{method:'POST'});
-    if(r&&r.location)addMsg('assistant',`\u{1F30D} *World tick complete*\n\nNow at: ${r.location}${r.mood?`\nMood: ${r.mood}`:''}`);
-    else if(r&&r.detail)addMsg('assistant',`\u26A0 World tick: ${r.detail}`);
+    if(r){
+      const wake=r.next_wake_at?` Next opportunity: ${new Date(r.next_wake_at*1000).toLocaleString()}.`:'';
+      if(r.activation_started===false)addMsg('assistant',`World Thread: ${r.detail||r.status}.${wake}`.replace('..','.'));
+      else if(r.status==='resting'||r.status==='waiting')addMsg('assistant',`World Thread: ${r.status==='resting'?'chose to rest':'waiting'}.${r.detail?' '+r.detail:''}${wake}`);
+      else if(r.status==='completed'||r.status==='ok')addMsg('assistant',`\u{1F30D} *World tick complete*${r.location?`\n\nNow at: ${r.location}`:''}${r.mood?`\nMood: ${r.mood}`:''}`);
+      else addMsg('assistant',`World Thread: ${(r.status||'unknown').replaceAll('_',' ')}.${r.detail?' '+r.detail:''}`);
+    }
     await loadMindPanel();await loadState();
-  }catch(e){console.error(e);}
+  }catch(e){console.error(e);addMsg('assistant',`World Thread request failed: ${e.message}`);}
   btn.textContent='\u25B6 Tick Now';btn.disabled=false;
 }
 
