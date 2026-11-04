@@ -75,7 +75,7 @@ class SkillRegistry:
                     tool["function"]["description"] = {
                         "read": "Read a host file as root. Relative paths use the active workspace; absolute host paths are supported.",
                         "write": "Write a host file as root. Relative paths use the active workspace. Core identity and task documents have structured revision tools.",
-                        "exec": "Execute a shell command on the host as UID 0, using the active workspace by default. Local host operations have no command-tier approval. Publishing, messaging and purchases still need operator authorization.",
+                        "exec": "Execute a command using non-login Bash with pipefail on the host as UID 0. Pipes, redirects, &&, variables and cd work normally. Use curl -sS to retain download errors. The active workspace is the default directory. Local host operations have no command-tier approval. Publishing, messaging and purchases still need operator authorization.",
                     }[tool["function"]["name"]]
                     for field in ("path", "working_dir"):
                         if field in tool["function"]["parameters"]["properties"]:

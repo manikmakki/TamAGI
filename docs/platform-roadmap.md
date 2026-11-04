@@ -6,7 +6,7 @@ The [fifteen accepted ADRs](adrs/README.md) define the direction. Their parent-c
 
 | Milestone | Implementation | Evidence and remaining gate |
 |---|---|---|
-| A — Decisions and baseline | Fourteen ADRs, historical-design notices, one dependency definition, Python 3.13/Linux runtime lock. | Original 16 tests pass; extended suite currently has 82 passing tests, including 23 growth cases. |
+| A — Decisions and baseline | Fourteen ADRs, historical-design notices, one dependency definition, Python 3.13/Linux runtime lock. | Original 16 tests pass; extended suite currently has 89 passing tests, including 23 growth cases. |
 | B — Preservation and portability | Operator-only predecessor archive, logical memory export, encrypted tar/gzip downloads, validated upload/preview/commit, CLI recovery. | A predecessor snapshot with 43 logical Elasticsearch records is retained locally. Automated tests exercise encrypted round trips, wrong passwords, tampering, unsafe paths, and application-level upload/download. Keep an exported copy elsewhere for independent recovery. |
 | C — Runtime foundation | SQLite/WAL source records, actor/execution context, revision history, receipts, restart recovery, shared inference budgets, canonical conversation and memory adapters. | Tests cover interrupted/unknown effects, call-ID replay, nested allowances, user interruption, actor isolation, and identity conflicts. |
 | D — A livable home | Persistent places/objects/properties, pursuits, shared notebook, genuine rest/wait, optional reflection, Home UI. | Tests exercise successful work without a formatted narrative, quiet rest, wake conditions, practical learning, and retained next steps. |
@@ -15,7 +15,7 @@ The [fifteen accepted ADRs](adrs/README.md) define the direction. Their parent-c
 | G — Autonomous core deployment | Candidate worktrees, exact-source builds, frozen baseline checks, copied-state boot checks, supervisor switching/verification/rollback, portable state separate from code. | Mechanical recovery tests pass, including a real supervisor process that rejects a broken release and commits a healthy release while the model endpoint is unavailable. Automatic activation is gated on recovery qualification; keeping a backup elsewhere provides independent recovery. |
 | H — Fresh resident and qualification | Fresh instance provisioning, operator setup, onboarding, seven-day observation recorder. | Onboarding and seven real days remain operational gates. The pilot starts after the first introduction; missing observations remain untested capabilities. |
 
-[ADR-0015](adrs/0015-growth-through-sustained-behavior.md) adds deterministic Growth recognition for sustained conversation, continuity, and adaptation. Its implementation passes the 82-test suite, including 23 growth-specific checks and application-level verification that sixteen chat exchanges require exactly sixteen provider calls.
+[ADR-0015](adrs/0015-growth-through-sustained-behavior.md) adds deterministic Growth recognition for sustained conversation, continuity, and adaptation. Its implementation passes the 89-test suite, including 23 growth-specific checks and application-level verification that sixteen chat exchanges require exactly sixteen provider calls.
 
 This table distinguishes implemented mechanics from live behavioral evidence. Test fixtures and mocked providers do not establish improved autonomous behavior, happiness, or subjective welfare.
 
@@ -27,6 +27,8 @@ Cognition is bounded and attributed. All provider attempts, including planner, r
 
 Normal tool dispatch records attempts and results before any narrative interpretation. A crash after dispatch produces `outcome_unknown`; it is not an instruction to retry. External effects cannot be rolled back by selecting old application code. A malformed or absent narrative cannot erase a completed operation.
 
+In `unrestricted_host`, `exec` runs non-login Bash with `pipefail`, so pipes, redirects, command chaining, variables, and `cd` have their advertised shell meaning. A failing pipeline remains a failed receipt. Timeout and interruption stop the command's process group, including children; interruption retains an unknown-outcome receipt because earlier effects may already exist. Guarded installations retain direct argument execution and their command-tier approvals. Seven subprocess regression checks exercise these behaviors without model or network calls.
+
 Every companion has its own continuity. Shared conversations and selected notebook entries are attributed. Operator inspection can access all actors. The primary does not receive private peer receipts or memory through automatic context construction. Unrestricted host root can bypass application-level privacy; the normal protocol still respects it.
 
 ## Autonomous context and recovery
@@ -37,7 +39,7 @@ Tool receipts retain their full results in SQLite. Model prompts use bounded rec
 
 Waiting states report an explicit cause and next retry. A context-limit rejection is distinguished from model-service unavailability and chosen rest. Manual Tick Now can retry a system-error backoff while preserving chosen sleep and event waits. Rolling model-call allowances continue across retries and restarts.
 
-The 82-test suite includes eight context/recovery regressions, including a retained oversized shell diagnostic, within-turn output growth, source paging, legacy error-backoff identification, preserved conversation/tool protocol, and clearing an old error backoff when recovery reaches its normal call allowance. These address the 2026-11-03 incident in which a roughly 340,000-character failed shell result repeatedly overflowed the model's context window.
+The 89-test suite includes eight context/recovery regressions, including a retained oversized shell diagnostic, within-turn output growth, source paging, legacy error-backoff identification, preserved conversation/tool protocol, and clearing an old error backoff when recovery reaches its normal call allowance. These address the 2026-11-03 incident in which a roughly 340,000-character failed shell result repeatedly overflowed the model's context window.
 
 ## Growth and stage progression
 
