@@ -45,7 +45,7 @@ def install_runtime_skills(runtime, registry, companions):
             "receipt_id": param("string", required=True),
             "section": param("string", enum=["output", "error", "data", "arguments"]),
             "offset": param("integer"),
-            "limit": param("integer", "1–1000 characters; default 512"),
+            "limit": param("integer", "1–65536 characters; default 8192. Read larger sources in pages."),
         },
         runtime.inspect_receipt,
     )

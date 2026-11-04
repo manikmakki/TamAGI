@@ -146,7 +146,9 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(view["success"])
         self.assertTrue(view["receipt_id"])
         self.assertTrue(view["context_truncated"])
-        self.assertLess(len(second[-1].content), 10000)
+        self.assertLess(
+            len(second[-1].content), self.runtime.config.tool_result_bytes + 512
+        )
         self.assertEqual(
             self.store.receipts()[0]["payload"]["result"]["output"], BIG_OUTPUT
         )

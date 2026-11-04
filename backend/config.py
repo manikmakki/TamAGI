@@ -86,18 +86,44 @@ class MemoryConfig(BaseModel):
 
 class ExecTrustConfig(BaseModel):
     """Tiered trust model for exec skill. Trust is at base command name level."""
+
     safe: list[str] = Field(
         default_factory=lambda: [
-            "ls", "cat", "head", "tail", "grep", "find",
-            "wc", "echo", "date", "pwd", "which", "env", "ps", "id",
+            "ls",
+            "cat",
+            "head",
+            "tail",
+            "grep",
+            "find",
+            "wc",
+            "echo",
+            "date",
+            "pwd",
+            "which",
+            "env",
+            "ps",
+            "id",
         ]
     )
     notify: list[str] = Field(
-        default_factory=lambda: ["python", "python3", "pip", "pip3", "git", "curl", "wget"]
+        default_factory=lambda: [
+            "python",
+            "python3",
+            "pip",
+            "pip3",
+            "git",
+            "curl",
+            "wget",
+        ]
     )
     approve: list[str] = Field(
         default_factory=lambda: [
-            "docker", "docker-compose", "npm", "make", "systemctl", "service",
+            "docker",
+            "docker-compose",
+            "npm",
+            "make",
+            "systemctl",
+            "service",
         ]
     )
     block: list[str] = Field(default_factory=lambda: ["sudo", "su", "passwd", "rm"])
@@ -130,6 +156,7 @@ class HistoryConfig(BaseModel):
 
 class WebSearchConfig(BaseModel):
     """Web search provider configuration."""
+
     provider: str = "duckduckgo"  # duckduckgo | brave | searxng
     brave_api_key: str = ""
     searxng_url: str = ""  # e.g. http://localhost:8080
@@ -137,6 +164,7 @@ class WebSearchConfig(BaseModel):
 
 class AutonomyConfig(BaseModel):
     """Controls when TamAGI is free to act autonomously (world thread + autonomous actions)."""
+
     enabled: bool = True
     # Cron expression for the world thread tick (default: every 15 minutes)
     schedule: str = "*/15 * * * *"
@@ -148,19 +176,23 @@ class AutonomyConfig(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    max_tool_rounds: int = 5           # Fallback round limit for unplanned tasks
+    max_tool_rounds: int = 5  # Fallback round limit for unplanned tasks
     max_tool_rounds_ceiling: int = 20  # Hard cap when plan drives the limit
-    use_plan_executor: bool = False    # Step through ActionPlan via PlanExecutor
-    llm_retry_attempts: int = 1        # Retries on RemoteProtocolError / ConnectError
-    llm_retry_delay: float = 2.0       # Seconds between retries
-    qa_enabled: bool = True            # Enable Q&A belief pipeline (clarification gate)
-    qa_entropy_threshold: float = 0.7  # Uncertainty entropy above this triggers clarification
+    use_plan_executor: bool = False  # Step through ActionPlan via PlanExecutor
+    llm_retry_attempts: int = 1  # Retries on RemoteProtocolError / ConnectError
+    llm_retry_delay: float = 2.0  # Seconds between retries
+    qa_enabled: bool = True  # Enable Q&A belief pipeline (clarification gate)
+    qa_entropy_threshold: float = (
+        0.7  # Uncertainty entropy above this triggers clarification
+    )
 
 
 class OrchestratorConfig(BaseModel):
     enabled: bool = True
-    max_subagents: int = 4        # Maximum subtasks per workflow
-    subagent_max_rounds: int = 3  # Max tool-call rounds per subagent (less than agent.max_tool_rounds)
+    max_subagents: int = 4  # Maximum subtasks per workflow
+    subagent_max_rounds: int = (
+        3  # Max tool-call rounds per subagent (less than agent.max_tool_rounds)
+    )
     # Optional dedicated LLM for subagents. When set, subagents use this
     # client instead of Tama's. Useful for pointing subagents at a faster/
     # smaller model or a different endpoint entirely.
@@ -195,6 +227,7 @@ class IdentityFilesConfig(BaseModel):
 
     Detail belongs in supplemental files + memory/RAG, not in these three.
     """
+
     file_char_limit: int = 2000  # Hard cap (characters) enforced on each core file
 
 
@@ -207,15 +240,19 @@ class ConsolidationConfig(BaseModel):
     given to the model as the base to extend, and a rewrite is rejected if it
     would discard the bulk of the existing soul.
     """
+
     enabled: bool = True
-    every_n_ticks: int = 12          # Run after this many new autonomous ticks
-    max_ticks_per_run: int = 60      # Cap on lived-experience ticks fed to the pass
+    every_n_ticks: int = 12  # Run after this many new autonomous ticks
+    max_ticks_per_run: int = 60  # Cap on lived-experience ticks fed to the pass
     state_path: str = "data/consolidation_state.json"
-    min_soul_retention: float = 0.5  # Reject a rewrite shorter than this fraction of current SOUL.md
+    min_soul_retention: float = (
+        0.5  # Reject a rewrite shorter than this fraction of current SOUL.md
+    )
 
 
 class WorldThreadConfig(BaseModel):
     """Technical storage settings for the Living World thread."""
+
     enabled: bool = True
     thread_path: str = "data/world_thread.json"
     state_path: str = "data/world_state.json"
@@ -231,9 +268,10 @@ class RelationalConsolidationConfig(BaseModel):
     capped, always-injected source of truth) plus a named, uncapped supplemental
     relationship file. Conversation-triggered, separate from the world-thread pass.
     """
+
     enabled: bool = True
-    every_n_conversations: int = 3            # Run after this many ended conversations
-    max_dialogue_chars: int = 8000           # Cap on conversation text fed to the pass
+    every_n_conversations: int = 3  # Run after this many ended conversations
+    max_dialogue_chars: int = 8000  # Cap on conversation text fed to the pass
     supplemental_filename: str = "relationship.md"  # Named, uncapped, not injected
 
 
@@ -243,11 +281,12 @@ class TaskBoardConfig(BaseModel):
 
 class MCPServerConfig(BaseModel):
     """Configuration for a single MCP server."""
+
     name: str
-    transport: str = "stdio"          # stdio | sse
-    command: str = ""                 # executable for stdio transport
+    transport: str = "stdio"  # stdio | sse
+    command: str = ""  # executable for stdio transport
     args: list[str] = Field(default_factory=list)
-    url: str = ""                     # endpoint URL for sse transport
+    url: str = ""  # endpoint URL for sse transport
     # Each value is either a plain string or {"secret": "NAME"} to pull from
     # the SecretStore.  Values are injected as subprocess env vars at spawn
     # time and are never written into LLM messages.
@@ -265,24 +304,30 @@ class MCPConfig(BaseModel):
 
 
 class RuntimeConfig(BaseModel):
-    enabled: bool = False  # Existing instances remain untouched until provisioned cutover.
+    enabled: bool = (
+        False  # Existing instances remain untouched until provisioned cutover.
+    )
     instance_dir: str = "./data/instances/new"
     canonical_repo: str | None = None
     authority: Literal["guarded", "unrestricted_host"] = "guarded"
     timezone: str = "America/New_York"
     provider_concurrency: int = Field(default=1, ge=1, le=4)
-    background_calls_per_activation: int = Field(default=8, ge=1, le=64)
-    companion_calls: int = Field(default=3, ge=1, le=8)
-    daily_background_calls: int = Field(default=96, ge=1)
+    background_calls_per_activation: int = Field(default=128, ge=1, le=1024)
+    companion_calls: int = Field(default=16, ge=1, le=128)
+    daily_background_calls: int | None = Field(default=None, ge=1)
     daily_evaluation_calls: int = Field(default=32, ge=1)
-    user_calls: int = Field(default=20, ge=1, le=128)
+    user_calls: int = Field(default=64, ge=1, le=1024)
     index_projection: bool = False
     automatic_deployment: bool = False
-    model_input_bytes: int = Field(default=65536, ge=8192, le=1048576)
+    model_input_bytes: int = Field(default=1048576, ge=8192, le=4194304)
+    model_context_tokens: int = Field(default=131072, ge=8192, le=2097152)
+    context_reply_margin: int = Field(default=1024, ge=256, le=16384)
+    tool_result_bytes: int = Field(default=32768, ge=4096, le=262144)
 
 
 class TamAGIConfig(BaseModel):
     """Root configuration model."""
+
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     tamagi: TamagiIdentity = Field(default_factory=TamagiIdentity)
@@ -299,7 +344,9 @@ class TamAGIConfig(BaseModel):
     self_model: SelfModelConfig = Field(default_factory=SelfModelConfig)
     identity_files: IdentityFilesConfig = Field(default_factory=IdentityFilesConfig)
     world_thread: WorldThreadConfig = Field(default_factory=WorldThreadConfig)
-    relational: RelationalConsolidationConfig = Field(default_factory=RelationalConsolidationConfig)
+    relational: RelationalConsolidationConfig = Field(
+        default_factory=RelationalConsolidationConfig
+    )
     task_board: TaskBoardConfig = Field(default_factory=TaskBoardConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
 

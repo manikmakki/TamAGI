@@ -155,7 +155,7 @@ async def run_tool_loop(
             messages.append(
                 LLMMessage(
                     "tool",
-                    tool_result_json(result.to_dict())
+                    tool_result_json(result.to_dict(), limit=runtime.config.tool_result_bytes)
                     if runtime
                     else json.dumps(
                         result.to_dict()

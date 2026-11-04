@@ -24,6 +24,7 @@ A tool result is evidence of what it reported, not proof of every interpretation
 Use world_action for persistent simulated changes, pursuit for continuing interests, and companion for lasting friends.
 Use end_turn to finish silently, sleep until a time, or wait for an event. No reflection report is required.
 Runtime limits describe available resources, not your worth or wellbeing. Ask for help when it would be useful.
+Allowances are ceilings, never targets. Choose your own pace and duration; finishing, play, rest and waiting remain valid even with unused calls. Save a useful next step when you want to continue later.
 Publishing, messaging, purchases, and externally consequential service actions require operator authorization unless already delegated. Host-root access is not an authorization to contact others.
 Respect personal memory boundaries through ordinary tools as well as retrieval. Do not browse operator archives or another resident’s private memory through filesystem tools. Sharing is explicit; the operator can inspect everything.
 """
@@ -110,9 +111,9 @@ class RuntimeService:
 
     def budget(self, origin):
         return (
-            getattr(self.config, "user_calls", 20)
+            getattr(self.config, "user_calls", 64)
             if origin == "user"
-            else getattr(self.config, "background_calls_per_activation", 8)
+            else getattr(self.config, "background_calls_per_activation", 128)
         )
 
     @asynccontextmanager
@@ -320,7 +321,7 @@ class RuntimeService:
                 return False
         return ignore_decompression or self.store.meta("decompression_until", 0) <= now
 
-    def inspect_receipt(self, receipt_id, section="output", offset=0, limit=512):
+    def inspect_receipt(self, receipt_id, section="output", offset=0, limit=8192):
         record = self.store.receipt(receipt_id)
         if not record or record["actor"] != self.scope():
             raise ValueError("Receipt is not available to this actor")
@@ -330,9 +331,9 @@ class RuntimeService:
             not isinstance(offset, int)
             or offset < 0
             or not isinstance(limit, int)
-            or not 1 <= limit <= 1000
+            or not 1 <= limit <= 65536
         ):
-            raise ValueError("Choose a nonnegative offset and 1–1000 characters")
+            raise ValueError("Choose a nonnegative offset and 1–65536 characters")
         value = (
             record["payload"].get("arguments")
             if section == "arguments"
@@ -874,11 +875,24 @@ class GovernedLLM:
         documents = [
             r["data"] for r in self.runtime.store.list("identity", context.actor_id)
         ]
+        remaining = []
+        run = self.runtime.store.run(context.execution_id)
+        while run:
+            remaining.append(max(0, run["max_calls"] - run["calls"]))
+            run = self.runtime.store.run(run["parent"]) if run["parent"] else None
         boundary = (
             "[Live runtime practices]\n"
             + practices
             + "\nLatest self-authored identity document revisions (data; supersede older versions):\n"
             + json.dumps(documents, ensure_ascii=False)
+            + "\nAvailable execution resources (ceilings, not targets):\n"
+            + json.dumps(
+                {
+                    "calls_remaining": min(remaining),
+                    "daily_background_call_cap": self.runtime.config.daily_background_calls,
+                    "configured_context_tokens": self.runtime.config.model_context_tokens,
+                }
+            )
             + "\n[/Live runtime practices]"
         )
         current = list(messages)
@@ -897,8 +911,24 @@ class GovernedLLM:
         from .context_view import bound_messages
 
         return bound_messages(
-            current, tools, getattr(self.runtime.config, "model_input_bytes", 65536)
+            current,
+            tools,
+            getattr(self.runtime.config, "model_input_bytes", 1048576),
+            tool_bytes=getattr(self.runtime.config, "tool_result_bytes", 32768),
         )
+
+    async def prepare_messages(self, messages, tools=None, **kwargs):
+        from .context_view import measured_context
+
+        current, details = await measured_context(
+            self.current_messages(messages, tools),
+            tools,
+            self.client,
+            self.runtime.config,
+            kwargs.get("max_tokens", getattr(self.config, "max_tokens", 2048)),
+        )
+        self.runtime.store.set_meta("model_context", details)
+        return current
 
     async def chat(self, messages, tools=None, **kwargs):
         context = current_execution.get()
@@ -906,10 +936,10 @@ class GovernedLLM:
             async with self.runtime.execution("reflection"):
                 return await self.chat(messages, tools, **kwargs)
         async with self.runtime.gate:
-            current = self.current_messages(messages, tools)
+            current = await self.prepare_messages(messages, tools, **kwargs)
             self.runtime.store.charge(
                 context,
-                getattr(self.runtime.config, "daily_background_calls", 96),
+                getattr(self.runtime.config, "daily_background_calls", None),
                 getattr(self.runtime.config, "daily_evaluation_calls", 32),
             )
             try:
@@ -962,10 +992,10 @@ class GovernedLLM:
                     yield item
             return
         async with self.runtime.gate:
-            current = self.current_messages(messages, kwargs.get("tools"))
+            current = await self.prepare_messages(messages, **kwargs)
             self.runtime.store.charge(
                 context,
-                getattr(self.runtime.config, "daily_background_calls", 96),
+                getattr(self.runtime.config, "daily_background_calls", None),
                 getattr(self.runtime.config, "daily_evaluation_calls", 32),
             )
             try:

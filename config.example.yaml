@@ -311,11 +311,14 @@ runtime:
   authority: "guarded"  # unrestricted_host requires actual UID 0 on the host
   timezone: "America/New_York"
   provider_concurrency: 1
-  background_calls_per_activation: 8
-  companion_calls: 3
-  daily_background_calls: 96
+  background_calls_per_activation: 128  # Ceiling, not a target. Rest/end_turn can stop earlier.
+  companion_calls: 16                  # Drawn from the initiating activation.
+  daily_background_calls: null         # No daily cap; charges remain recorded. Set an integer to cap.
   daily_evaluation_calls: 32
-  user_calls: 20
+  user_calls: 64
   index_projection: false
   automatic_deployment: false
-  model_input_bytes: 65536       # Bounded model text views; full receipts remain in SQLite.
+  model_input_bytes: 1048576     # Secondary byte ceiling; measured tokens govern supported servers.
+  model_context_tokens: 131072  # Reduced if the server tokenizer reports a smaller window.
+  context_reply_margin: 1024    # In addition to the actual requested max_tokens.
+  tool_result_bytes: 32768      # Full receipts remain in SQLite; larger results can be paged.

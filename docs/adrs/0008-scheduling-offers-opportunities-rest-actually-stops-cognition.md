@@ -2,6 +2,8 @@
 
 Status: Accepted design; implementation evidence tracked in the roadmap.
 
+The initial call-count defaults below are superseded by [ADR-0016](0016-room-for-self-directed-work.md). Scheduling, rest, interruption, and durable accounting remain in force.
+
 ## Context
 
 Cron forces repeated narrative opportunities; sleep, waiting, and allowances do not survive restart.

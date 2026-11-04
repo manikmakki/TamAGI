@@ -106,6 +106,14 @@ async def state(runtime=Depends(operator)):
         "artifacts": runtime.store.list("artifact"),
         "growth": runtime.growth.snapshot(),
         "automatic_deployment": runtime.config.automatic_deployment,
+        "resources": {
+            "background_calls_per_activation": runtime.config.background_calls_per_activation,
+            "daily_background_calls": runtime.config.daily_background_calls,
+            "companion_calls": runtime.config.companion_calls,
+            "user_calls": runtime.config.user_calls,
+            "daily_evaluation_calls": runtime.config.daily_evaluation_calls,
+            "model_context": runtime.store.meta("model_context"),
+        },
         "backup_note": "A download kept on another device can restore this life. It is not a machine image.",
     }
 

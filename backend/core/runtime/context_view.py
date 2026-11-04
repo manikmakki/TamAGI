@@ -78,17 +78,29 @@ def tool_result_json(result, limit=4096):
         return raw
     source = result if isinstance(result, dict) else {"output": str(result)}
     receipt_id = (source.get("data") or {}).get("receipt_id")
-    return json.dumps(
-        {
-            "success": source.get("success"),
-            "receipt_id": receipt_id,
-            "context_truncated": True,
-            "output_excerpt": json_view(source.get("output", ""), max(256, limit // 2)),
-            "error_excerpt": json_view(source.get("error"), max(128, limit // 8)),
-            "detail": "Full result is retained. Use inspect_receipt with section output, error, data or arguments.",
-        },
-        ensure_ascii=False,
-    )
+    preview = {
+        "success": source.get("success"),
+        "receipt_id": receipt_id,
+        "context_truncated": True,
+        "output_excerpt": _clip_bytes(
+            str(source.get("output", "")), max(256, limit // 2)
+        ),
+        "error_excerpt": _clip_bytes(
+            str(source.get("error") or ""), max(128, limit // 8)
+        ),
+        "detail": "Full result is retained. Use inspect_receipt with section output, error, data or arguments.",
+    }
+    # Control characters can expand sixfold when encoded. Bound the serialized
+    # preview as well, while giving ordinary text the requested larger view.
+    for _ in range(10):
+        rendered = json.dumps(preview, ensure_ascii=False)
+        if len(rendered.encode()) <= limit:
+            return rendered
+        for field in ("output_excerpt", "error_excerpt"):
+            preview[field] = _clip_bytes(
+                preview[field], max(64, len(preview[field].encode()) // 2)
+            )
+    raise ContextViewTooLarge("Tool preview metadata exceeds the context allowance")
 
 
 def _clip_bytes(text, limit):
@@ -106,7 +118,7 @@ def _clip_bytes(text, limit):
     )
 
 
-def bound_messages(messages, tools=None, max_bytes=65536):
+def bound_messages(messages, tools=None, max_bytes=65536, *, tool_bytes=4096):
     """Keep protocol envelopes intact, shortening only the model's text view.
 
     This is a conservative byte allowance, not an exact tokenizer or image-token
@@ -128,7 +140,7 @@ def bound_messages(messages, tools=None, max_bytes=65536):
                 content = json.loads(message.content)
             except (ValueError, TypeError):
                 content = {"output": message.content}
-            message.content = tool_result_json(content)
+            message.content = tool_result_json(content, limit=tool_bytes)
 
     def text_size(message):
         size = 0
@@ -186,3 +198,60 @@ def bound_messages(messages, tools=None, max_bytes=65536):
             "Protocol messages cannot fit the configured model input allowance"
         )
     return current
+
+
+async def measured_context(messages, tools, client, config, reply_tokens):
+    """Fit the complete chat template, reserving output, without altering sources."""
+    configured_window = config.model_context_tokens
+    reserve = int(reply_tokens) + config.context_reply_margin
+    byte_limit = config.model_input_bytes
+    current = messages
+    counter = getattr(client, "count_context_tokens", None)
+    for _ in range(10):
+        measured = await counter(current, tools) if counter else None
+        if measured is None:
+            # A byte is a deliberately conservative text unit, not a token
+            # estimate. Keep the previous small view if counting is unavailable.
+            fallback = min(byte_limit, 65536, configured_window - reserve)
+            current = bound_messages(
+                current, tools, fallback, tool_bytes=config.tool_result_bytes
+            )
+            return current, {
+                "mode": "conservative_bytes",
+                "input_bytes_limit": fallback,
+                "configured_window_tokens": configured_window,
+                "reserved_reply_tokens": int(reply_tokens),
+                "margin_tokens": config.context_reply_margin,
+            }
+        window = min(configured_window, measured["max_model_len"])
+        allowed = window - reserve
+        if allowed <= 0:
+            raise ContextViewTooLarge(
+                "The requested reply leaves no room for model input"
+            )
+        if measured["count"] <= allowed:
+            return current, {
+                "mode": "server_tokenizer",
+                "input_tokens": measured["count"],
+                "model_window_tokens": window,
+                "server_window_tokens": measured["max_model_len"],
+                "input_tokens_limit": allowed,
+                "reserved_reply_tokens": int(reply_tokens),
+                "margin_tokens": config.context_reply_margin,
+            }
+        size = len(
+            json.dumps([m.to_dict() for m in current], ensure_ascii=False).encode()
+        )
+        size += len(json.dumps(tools or [], ensure_ascii=False).encode()) + 2048
+        next_limit = int(min(byte_limit, size) * allowed / measured["count"] * 0.85)
+        if next_limit < 8192 or next_limit >= byte_limit:
+            raise ContextViewTooLarge(
+                "The current tool protocol cannot fit the model's context window"
+            )
+        byte_limit = next_limit
+        current = bound_messages(
+            messages, tools, byte_limit, tool_bytes=config.tool_result_bytes
+        )
+    raise ContextViewTooLarge(
+        "Context could not be fitted within the model's measured window"
+    )

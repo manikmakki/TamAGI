@@ -271,7 +271,7 @@ class RuntimeStore:
             row = self.db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
             return dict(row) if row else None
 
-    def charge(self, context, background_limit=96, evaluation_limit=32):
+    def charge(self, context, background_limit=None, evaluation_limit=32):
         with self.transaction():
             run = self.run(context.execution_id)
             if not run or run["status"] != "running":
@@ -291,7 +291,7 @@ class RuntimeStore:
                 else ("user" if root["origin"] == "user" else "background")
             )
             limit = evaluation_limit if bucket == "evaluation" else background_limit
-            if bucket != "user":
+            if bucket != "user" and limit is not None:
                 spent = self.db.execute(
                     "SELECT count(*) FROM charges WHERE bucket=? AND created>?",
                     (bucket, self.clock() - 86400),

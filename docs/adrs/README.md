@@ -19,5 +19,6 @@ The parent-child framing describes the builder’s responsibility: honest condit
 | 0013 | [Autonomous deployment uses versioned releases and recoverable transitions](0013-autonomous-deployment-uses-versioned-releases-and-recoverable-transitions.md) | Accepted design |
 | 0014 | [Portability, operator recovery, and a companion-first interface](0014-portability-operator-recovery-and-a-companion-first-interface.md) | Accepted design |
 | 0015 | [Growth through sustained behavior](0015-growth-through-sustained-behavior.md) | Accepted design |
+| 0016 | [Room for self-directed work](0016-room-for-self-directed-work.md) | Accepted design |
 
 [Implementation and evidence](../platform-roadmap.md).

@@ -241,6 +241,8 @@ def provision(
     )
     config.workspace.path = str(instance / "workspace")
     config.history.persist_path = str(instance / "data/history")
+    config.history.context_compress_threshold = 0
+    config.history.max_messages_per_conversation = 1000
     config.server.host = "127.0.0.1"
     config.server.port = port
     config.auth.enabled = True

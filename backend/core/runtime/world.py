@@ -253,10 +253,10 @@ async def tick(world, *, manual=False):
                         )
             world.agent.personality.save_state()
             return result
-    except BudgetExhausted:
+    except BudgetExhausted as exc:
         return {
             "status": "budget_exhausted",
-            "detail": "The next opportunity will use the persistent rolling allowance",
+            "detail": str(exc) + ". Completed effects remain recorded; work can be reconsidered at a later opportunity.",
         }
     except asyncio.CancelledError:
         return {

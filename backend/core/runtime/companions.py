@@ -164,7 +164,7 @@ class Companions:
                 "companion",
                 actor_id=actor_id,
                 allowed_tools=tools,
-                max_calls=getattr(self.runtime.config, "companion_calls", 3),
+                max_calls=getattr(self.runtime.config, "companion_calls", 16),
             ) as invocation:
                 seed = actor["data"]
                 messages = [
@@ -181,7 +181,7 @@ class Companions:
                     self.llm,
                     self.skills,
                     messages,
-                    max_rounds=getattr(self.runtime.config, "companion_calls", 3),
+                    max_rounds=getattr(self.runtime.config, "companion_calls", 16),
                     is_autonomous=True,
                 )
                 terminal = current_terminal.get()
