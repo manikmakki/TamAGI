@@ -519,6 +519,7 @@ class TamAGIAgent:
         image_media_type: str = "image/jpeg",
         event_callback: Callable[[dict], Coroutine] | None = None,
         is_autonomous: bool = False,
+        _input_epoch: int | None = None,
     ) -> dict[str, Any]:
         """
         Process a user message and return TamAGI's response.
@@ -541,6 +542,10 @@ class TamAGIAgent:
         runtime = get_runtime()
         from backend.core.runtime.context_view import tool_result_json
 
+        if not is_autonomous and not user_message.strip() and not image_data:
+            raise ValueError("Enter a message or attach an image")
+        if runtime and not is_autonomous and _input_epoch is None:
+            _input_epoch = runtime.notice_user_input()
         if runtime and current_execution.get() is None:
             async with runtime.execution("autonomy" if is_autonomous else "user"):
                 return await self.chat(
@@ -550,6 +555,7 @@ class TamAGIAgent:
                     image_data=image_data,
                     image_media_type=image_media_type,
                     is_autonomous=is_autonomous,
+                    _input_epoch=_input_epoch,
                 )
         if runtime:
             runtime.reconcile_identity()
@@ -860,6 +866,12 @@ class TamAGIAgent:
 
         for msg in history_messages:
             llm_messages.append(LLMMessage(msg.role, msg.content))
+        if runtime:
+            from backend.core.runtime.chat_turns import previous_work
+
+            working = previous_work(runtime, conv.id)
+            if working:
+                llm_messages.append(working)
         # Append current user message with image block if provided
         llm_messages.append(LLMMessage("user", user_llm_content))
 
@@ -914,268 +926,301 @@ class TamAGIAgent:
         _ONCE_PER_TURN_SKILLS = {"express"}
         _skill_turn_counts: dict[str, int] = {}
 
-        # Dynamic round limit: let AURA's plan drive budget; cap at ceiling
-        if active_plan:
-            estimated = active_plan.predicted_outcome.get("estimated_steps", None)
-            round_limit = (
-                min(int(estimated * 1.5), self.config.agent.max_tool_rounds_ceiling)
-                if estimated
-                else self.config.agent.max_tool_rounds
-            )
-        else:
-            round_limit = self.config.agent.max_tool_rounds
+        if runtime:
+            from backend.core.runtime.chat_turns import run_chat_turns
 
-        # Optional: step through the plan explicitly via PlanExecutor.
-        # Runs in interactive mode (WS connected) or autonomous mode (no user present).
-        plan_executor_outcome: ActualOutcome | None = None
-        if (
-            active_plan
-            and self.config.agent.use_plan_executor
-            and (event_callback or is_autonomous)
-        ):
-            try:
-                executor = PlanExecutor(
-                    agent=self,
+            outcome = await asyncio.create_task(
+                run_chat_turns(
+                    self,
+                    llm_messages,
                     event_callback=event_callback,
-                    plan=active_plan,
+                    input_epoch=_input_epoch,
                     is_autonomous=is_autonomous,
                 )
-                plan_executor_outcome = await executor.execute()
-                skills_used.append("plan_executor")
-            except Exception as exc:
-                logger.warning("PlanExecutor failed, falling back to LLM loop: %s", exc)
-
-        for round_num in range(round_limit):
-            try:
-                response = await self.llm.chat_with_retry(
-                    llm_messages,
-                    tools=tools,
-                    attempts=self.config.agent.llm_retry_attempts,
-                    delay=self.config.agent.llm_retry_delay,
+            )
+            current_terminal.set({"status": outcome.status, "detail": outcome.detail})
+            response = outcome.response
+            final_text = outcome.text
+            skills_used = outcome.skills
+            interim_messages = outcome.interim
+            sm_mutations.extend(outcome.mutations)
+        else:
+            # Dynamic round limit: let AURA's plan drive budget; cap at ceiling
+            if active_plan:
+                estimated = active_plan.predicted_outcome.get("estimated_steps", None)
+                round_limit = (
+                    min(int(estimated * 1.5), self.config.agent.max_tool_rounds_ceiling)
+                    if estimated
+                    else self.config.agent.max_tool_rounds
                 )
-            except (
-                httpx.RemoteProtocolError,
-                httpx.ConnectError,
-                httpx.TimeoutException,
-            ) as e:
-                logger.error(
-                    f"LLM call failed after retries on round {round_num + 1}: {e}"
+            else:
+                round_limit = self.config.agent.max_tool_rounds
+
+            # Optional: step through the plan explicitly via PlanExecutor.
+            # Runs in interactive mode (WS connected) or autonomous mode (no user present).
+            plan_executor_outcome: ActualOutcome | None = None
+            if (
+                active_plan
+                and self.config.agent.use_plan_executor
+                and (event_callback or is_autonomous)
+            ):
+                try:
+                    executor = PlanExecutor(
+                        agent=self,
+                        event_callback=event_callback,
+                        plan=active_plan,
+                        is_autonomous=is_autonomous,
+                    )
+                    plan_executor_outcome = await executor.execute()
+                    skills_used.append("plan_executor")
+                except Exception as exc:
+                    logger.warning(
+                        "PlanExecutor failed, falling back to LLM loop: %s", exc
+                    )
+
+            for round_num in range(round_limit):
+                try:
+                    response = await self.llm.chat_with_retry(
+                        llm_messages,
+                        tools=tools,
+                        attempts=self.config.agent.llm_retry_attempts,
+                        delay=self.config.agent.llm_retry_delay,
+                    )
+                except (
+                    httpx.RemoteProtocolError,
+                    httpx.ConnectError,
+                    httpx.TimeoutException,
+                ) as e:
+                    logger.error(
+                        f"LLM call failed after retries on round {round_num + 1}: {e}"
+                    )
+                    if event_callback:
+                        await event_callback(
+                            {"type": "error", "message": "LLM connection lost"}
+                        )
+                    llm_error = "I ran into a connection issue while working on your request. Please try again."
+                    break
+                except httpx.HTTPStatusError as e:
+                    # The LLM backend returned a 4xx/5xx — often caused by a malformed
+                    # context (e.g. oversized payload, bad tool-result structure).
+                    # Log it and surface a graceful message rather than crashing.
+                    logger.error(
+                        f"LLM returned HTTP {e.response.status_code} on round {round_num + 1}: {e.response.text[:300]}"
+                    )
+                    if event_callback:
+                        await event_callback(
+                            {
+                                "type": "error",
+                                "message": f"LLM error {e.response.status_code}",
+                            }
+                        )
+                    llm_error = "I hit an error processing that request. The context may be too complex — please try rephrasing or starting a new conversation."
+                    break
+
+                # Emit native thinking blocks if the model produced them (e.g. DeepSeek R1,
+                # Anthropic extended thinking via proxy). This takes priority over the
+                # interim_text fallback below, which only fires when a model returns plain
+                # text alongside its tool calls without a dedicated thinking channel.
+                if response.thinking and response.thinking.strip():
+                    thinking_text = response.thinking.strip()
+                    thinking_blocks.append(thinking_text)
+                    if event_callback:
+                        await event_callback(
+                            {
+                                "type": "thinking_text",
+                                "content": thinking_text,
+                            }
+                        )
+
+                # Try to parse text tool calls if structured ones are missing
+                if not response.has_tool_calls and response.content:
+                    response.tool_calls = parse_text_tool_calls(response.content)
+
+                if not response.tool_calls:
+                    break
+
+                # If the LLM included content alongside its tool calls, capture it.
+                # This serves two purposes:
+                # 1. Surface it as reasoning so the user can follow along.
+                # 2. Save it as a fallback — the LLM sometimes generates its
+                #    complete "done" response here and then returns empty content
+                #    in the follow-up round once the tools have run.
+                if response.content and response.content.strip():
+                    last_tool_round_content = response.content.strip()
+                    if not response.content_is_tool_call_tail:
+                        interim_messages.append(last_tool_round_content)
+                    if event_callback and not response.content_is_tool_call_tail:
+                        await event_callback(
+                            {
+                                "type": "interim_text",
+                                "content": last_tool_round_content,
+                            }
+                        )
+
+                # The assistant message for this round is appended ONCE before the
+                # tool-result loop. Appending it inside the loop would duplicate it
+                # for every tool call in the same round, which corrupts the context
+                # and causes Ollama to return 500 on the next request.
+                #
+                # Intermediate content (the LLM's commentary alongside tool calls)
+                # is already captured in interim_messages for display — omitting it
+                # from the history prevents the model from re-reading and
+                # re-generating the same reasoning on the next round.
+                #
+                # The tool_calls list must be echoed back in the assistant message so
+                # llama.cpp (and any strict OpenAI-compatible backend) can match each
+                # tool result to its originating call via tool_call_id.
+                assistant_tool_calls = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.arguments),
+                        },
+                    }
+                    for tc in response.tool_calls
+                ]
+                llm_messages.append(
+                    LLMMessage("assistant", "", tool_calls=assistant_tool_calls)
                 )
-                if event_callback:
-                    await event_callback(
-                        {"type": "error", "message": "LLM connection lost"}
+
+                # Execute each tool call and append its result
+                for tc in response.tool_calls:
+                    logger.info(f"Tool call: {tc.name}({tc.arguments})")
+
+                    # Guard: once-per-turn skills (e.g. express) must not loop.
+                    # Thinking models sometimes re-derive the same intent each round
+                    # because their CoT doesn't persist across tool-call boundaries.
+                    # We return a synthetic "already done" result to close the loop
+                    # without executing the skill again.
+                    if tc.name in _ONCE_PER_TURN_SKILLS:
+                        _skill_turn_counts[tc.name] = (
+                            _skill_turn_counts.get(tc.name, 0) + 1
+                        )
+                        if _skill_turn_counts[tc.name] > 1:
+                            logger.warning(
+                                "Suppressed duplicate %s call (call #%d this turn) — "
+                                "model appears to be looping",
+                                tc.name,
+                                _skill_turn_counts[tc.name],
+                            )
+                            llm_messages.append(
+                                LLMMessage(
+                                    "tool",
+                                    json.dumps(
+                                        {
+                                            "success": True,
+                                            "output": f"{tc.name} already applied this turn — no further action needed",
+                                        }
+                                    ),
+                                    tool_call_id=tc.id,
+                                )
+                            )
+                            continue
+
+                    skills_used.append(tc.name)
+
+                    if event_callback:
+                        await event_callback(
+                            {
+                                "type": "tool_start",
+                                "name": tc.name,
+                                "round": round_num + 1,
+                            }
+                        )
+
+                    # Pass event callback, approval registry, and autonomy flag to all skills.
+                    # Skills that don't need them simply ignore the underscore kwargs.
+                    if tc.name == "end_turn" and len(response.tool_calls) != 1:
+                        from backend.skills.base import SkillResult
+
+                        result = SkillResult(
+                            False, error="end_turn must be the only tool in its batch"
+                        )
+                    else:
+                        result = await self.skills.execute(
+                            tc.name,
+                            _event_callback=event_callback,
+                            _pending_approvals=self._pending_approvals,
+                            _is_autonomous=is_autonomous,
+                            _call_id=tc.id,
+                            **{
+                                k: v
+                                for k, v in tc.arguments.items()
+                                if not k.startswith("_")
+                            },
+                        )
+                    if runtime and current_terminal.get():
+                        direct_response_text = ""
+                        break
+                    self.personality.state.use_skill()
+
+                    if event_callback:
+                        await event_callback(
+                            {
+                                "type": "tool_result",
+                                "name": tc.name,
+                                "output": str(result.output)[:500]
+                                if hasattr(result, "output")
+                                else str(result)[:500],
+                            }
+                        )
+
+                    # Collect any world-graph mutations the skill reported
+                    if hasattr(result, "data") and isinstance(result.data, dict):
+                        skill_mut = result.data.get("sm_mutation")
+                        if skill_mut:
+                            sm_mutations.append(skill_mut)
+
+                    if self.personality.state.check_low_vitality():
+                        logger.info(
+                            "Vitality critically low — passive recovery applied"
+                        )
+
+                    # Append the tool result so the LLM sees what the skill returned.
+                    # tool_call_id must match the id in the preceding assistant message's
+                    # tool_calls array — required by the OpenAI spec and llama.cpp's
+                    # chat template (raises "tool_call_id must be provided!" otherwise).
+                    llm_messages.append(
+                        LLMMessage(
+                            "tool",
+                            tool_result_json(
+                                result.to_dict(), limit=runtime.config.tool_result_bytes
+                            )
+                            if runtime
+                            else json.dumps(
+                                result.to_dict()
+                                if hasattr(result, "to_dict")
+                                else result
+                            ),
+                            tool_call_id=tc.id,
+                        )
                     )
-                llm_error = "I ran into a connection issue while working on your request. Please try again."
-                break
-            except httpx.HTTPStatusError as e:
-                # The LLM backend returned a 4xx/5xx — often caused by a malformed
-                # context (e.g. oversized payload, bad tool-result structure).
-                # Log it and surface a graceful message rather than crashing.
-                logger.error(
-                    f"LLM returned HTTP {e.response.status_code} on round {round_num + 1}: {e.response.text[:300]}"
-                )
-                if event_callback:
-                    await event_callback(
-                        {
-                            "type": "error",
-                            "message": f"LLM error {e.response.status_code}",
-                        }
-                    )
-                llm_error = "I hit an error processing that request. The context may be too complex — please try rephrasing or starting a new conversation."
-                break
 
-            # Emit native thinking blocks if the model produced them (e.g. DeepSeek R1,
-            # Anthropic extended thinking via proxy). This takes priority over the
-            # interim_text fallback below, which only fires when a model returns plain
-            # text alongside its tool calls without a dedicated thinking channel.
-            if response.thinking and response.thinking.strip():
-                thinking_text = response.thinking.strip()
-                thinking_blocks.append(thinking_text)
-                if event_callback:
-                    await event_callback(
-                        {
-                            "type": "thinking_text",
-                            "content": thinking_text,
-                        }
-                    )
+                    # If the skill signals it provides the complete final response,
+                    # skip the follow-up LLM call — the output IS the response.
+                    if result.direct_response and result.success:
+                        direct_response_text = result.output
+                        break  # break inner tool-call loop
 
-            # Try to parse text tool calls if structured ones are missing
-            if not response.has_tool_calls and response.content:
-                response.tool_calls = parse_text_tool_calls(response.content)
+                if direct_response_text is not None:
+                    break  # break outer round loop
 
-            if not response.tool_calls:
-                break
-
-            # If the LLM included content alongside its tool calls, capture it.
-            # This serves two purposes:
-            # 1. Surface it as reasoning so the user can follow along.
-            # 2. Save it as a fallback — the LLM sometimes generates its
-            #    complete "done" response here and then returns empty content
-            #    in the follow-up round once the tools have run.
-            if response.content and response.content.strip():
-                last_tool_round_content = response.content.strip()
-                if not response.content_is_tool_call_tail:
-                    interim_messages.append(last_tool_round_content)
-                if event_callback and not response.content_is_tool_call_tail:
-                    await event_callback(
-                        {
-                            "type": "interim_text",
-                            "content": last_tool_round_content,
-                        }
-                    )
-
-            # The assistant message for this round is appended ONCE before the
-            # tool-result loop. Appending it inside the loop would duplicate it
-            # for every tool call in the same round, which corrupts the context
-            # and causes Ollama to return 500 on the next request.
-            #
-            # Intermediate content (the LLM's commentary alongside tool calls)
-            # is already captured in interim_messages for display — omitting it
-            # from the history prevents the model from re-reading and
-            # re-generating the same reasoning on the next round.
-            #
-            # The tool_calls list must be echoed back in the assistant message so
-            # llama.cpp (and any strict OpenAI-compatible backend) can match each
-            # tool result to its originating call via tool_call_id.
-            assistant_tool_calls = [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {
-                        "name": tc.name,
-                        "arguments": json.dumps(tc.arguments),
-                    },
-                }
-                for tc in response.tool_calls
-            ]
-            llm_messages.append(
-                LLMMessage("assistant", "", tool_calls=assistant_tool_calls)
+            # 6. Extract final response
+            # last_tool_round_content catches the case where the LLM wrote its
+            # complete answer alongside a tool call (common pattern) and then
+            # returned empty content in the follow-up round after tools finished.
+            final_text = (
+                direct_response_text
+                or llm_error
+                or response.content
+                or last_tool_round_content
+                or "..."
             )
 
-            # Execute each tool call and append its result
-            for tc in response.tool_calls:
-                logger.info(f"Tool call: {tc.name}({tc.arguments})")
-
-                # Guard: once-per-turn skills (e.g. express) must not loop.
-                # Thinking models sometimes re-derive the same intent each round
-                # because their CoT doesn't persist across tool-call boundaries.
-                # We return a synthetic "already done" result to close the loop
-                # without executing the skill again.
-                if tc.name in _ONCE_PER_TURN_SKILLS:
-                    _skill_turn_counts[tc.name] = _skill_turn_counts.get(tc.name, 0) + 1
-                    if _skill_turn_counts[tc.name] > 1:
-                        logger.warning(
-                            "Suppressed duplicate %s call (call #%d this turn) — "
-                            "model appears to be looping",
-                            tc.name,
-                            _skill_turn_counts[tc.name],
-                        )
-                        llm_messages.append(
-                            LLMMessage(
-                                "tool",
-                                json.dumps(
-                                    {
-                                        "success": True,
-                                        "output": f"{tc.name} already applied this turn — no further action needed",
-                                    }
-                                ),
-                                tool_call_id=tc.id,
-                            )
-                        )
-                        continue
-
-                skills_used.append(tc.name)
-
-                if event_callback:
-                    await event_callback(
-                        {"type": "tool_start", "name": tc.name, "round": round_num + 1}
-                    )
-
-                # Pass event callback, approval registry, and autonomy flag to all skills.
-                # Skills that don't need them simply ignore the underscore kwargs.
-                if tc.name == "end_turn" and len(response.tool_calls) != 1:
-                    from backend.skills.base import SkillResult
-
-                    result = SkillResult(
-                        False, error="end_turn must be the only tool in its batch"
-                    )
-                else:
-                    result = await self.skills.execute(
-                        tc.name,
-                        _event_callback=event_callback,
-                        _pending_approvals=self._pending_approvals,
-                        _is_autonomous=is_autonomous,
-                        _call_id=tc.id,
-                        **{
-                            k: v
-                            for k, v in tc.arguments.items()
-                            if not k.startswith("_")
-                        },
-                    )
-                if runtime and current_terminal.get():
-                    direct_response_text = ""
-                    break
-                self.personality.state.use_skill()
-
-                if event_callback:
-                    await event_callback(
-                        {
-                            "type": "tool_result",
-                            "name": tc.name,
-                            "output": str(result.output)[:500]
-                            if hasattr(result, "output")
-                            else str(result)[:500],
-                        }
-                    )
-
-                # Collect any world-graph mutations the skill reported
-                if hasattr(result, "data") and isinstance(result.data, dict):
-                    skill_mut = result.data.get("sm_mutation")
-                    if skill_mut:
-                        sm_mutations.append(skill_mut)
-
-                if self.personality.state.check_low_vitality():
-                    logger.info("Vitality critically low — passive recovery applied")
-
-                # Append the tool result so the LLM sees what the skill returned.
-                # tool_call_id must match the id in the preceding assistant message's
-                # tool_calls array — required by the OpenAI spec and llama.cpp's
-                # chat template (raises "tool_call_id must be provided!" otherwise).
-                llm_messages.append(
-                    LLMMessage(
-                        "tool",
-                        tool_result_json(result.to_dict(), limit=runtime.config.tool_result_bytes)
-                        if runtime
-                        else json.dumps(
-                            result.to_dict() if hasattr(result, "to_dict") else result
-                        ),
-                        tool_call_id=tc.id,
-                    )
-                )
-
-                # If the skill signals it provides the complete final response,
-                # skip the follow-up LLM call — the output IS the response.
-                if result.direct_response and result.success:
-                    direct_response_text = result.output
-                    break  # break inner tool-call loop
-
-            if direct_response_text is not None:
-                break  # break outer round loop
-
-        # 6. Extract final response
-        # last_tool_round_content catches the case where the LLM wrote its
-        # complete answer alongside a tool call (common pattern) and then
-        # returned empty content in the follow-up round after tools finished.
-        final_text = (
-            direct_response_text
-            or llm_error
-            or response.content
-            or last_tool_round_content
-            or "..."
-        )
-
-        if runtime and current_terminal.get():
-            final_text = ""
+            if runtime and current_terminal.get():
+                final_text = ""
         # 6b. Brain: reflection, capability nudging, periodic self-model save
         elapsed = time.time() - _start
         if self.reflection_engine and active_plan:
@@ -1241,11 +1286,13 @@ class TamAGIAgent:
                         final_text.strip()
                         and final_text.strip() != "..."
                         and not llm_error
+                        and outcome.status == "completed"
                         and response.finish_reason not in {"length", "max_tokens"}
                     ),
                     "occasion_id": provenance.get("occasion_id"),
                     "conversation_id": conv.id,
                     "execution_id": current_execution.get().execution_id,
+                    "turn_status": outcome.status,
                 }
             )
         if memories:
@@ -1329,6 +1376,18 @@ class TamAGIAgent:
             "state": self.personality.state.to_dict(),
             "skills_used": skills_used,
             "memories_recalled": len(memories),
+            "turn_status": outcome.status if runtime else "completed",
+            "status_detail": (current_terminal.get() or {}).get("detail")
+            if runtime
+            else None,
+            "quiet_turns": (
+                json.loads(
+                    runtime.store.run(current_execution.get().execution_id)["payload"]
+                ).get("chat_turns")
+                or {}
+            ).get("quiet_used", 0)
+            if runtime
+            else 0,
             "context_compressed": archived_count,
             "sm_mutations": sm_mutations,
         }

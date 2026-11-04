@@ -170,6 +170,179 @@ with tempfile.TemporaryDirectory(prefix="tamagi-app-smoke-") as d:
             assert client.post(
                 "/api/runtime/growth", json={"total": 9000}
             ).status_code in (404, 405)
+            # A real chat request crosses the old five-round boundary, then
+            # carries its tool context into an explicitly requested quiet turn.
+            from backend.core.llm import ToolCall
+
+            class QuietProvider:
+                config = agent.llm.config
+
+                def __init__(self):
+                    self.calls = 0
+                    self.script = [
+                        LLMResponse(
+                            tool_calls=[
+                                ToolCall(
+                                    f"write-{index}",
+                                    "write",
+                                    {"path": "long-turn.txt", "content": str(index)},
+                                )
+                            ]
+                        )
+                        for index in range(6)
+                    ] + [
+                        LLMResponse(
+                            tool_calls=[ToolCall("queue", "request_quiet_turn", {})]
+                        ),
+                        LLMResponse(tool_calls=[ToolCall("finish", "end_turn", {})]),
+                        LLMResponse(
+                            tool_calls=[
+                                ToolCall(
+                                    "quiet-write",
+                                    "write",
+                                    {
+                                        "path": "long-turn.txt",
+                                        "content": "finished quietly",
+                                    },
+                                )
+                            ]
+                        ),
+                        LLMResponse(content="All work completed."),
+                    ]
+
+                async def chat(self, messages, **kwargs):
+                    result = self.script[self.calls]
+                    self.calls += 1
+                    if self.calls == 9:
+                        assert any(message.role == "tool" for message in messages)
+                        assert sum(message.role == "user" for message in messages) == 1
+                    return result
+
+            quiet_provider = QuietProvider()
+            with (
+                patch.object(
+                    type(agent.identity),
+                    "needs_onboarding",
+                    new_callable=PropertyMock,
+                    return_value=False,
+                ),
+                patch.object(agent, "llm", GovernedLLM(quiet_provider, runtime)),
+                patch.object(agent, "qa_pipeline", None),
+            ):
+                response = client.post(
+                    "/api/chat",
+                    json={"message": "Finish the fixture and report once ready."},
+                )
+                assert response.status_code == 200, response.text
+                assert response.json()["response"] == "All work completed.", (
+                    response.text
+                )
+                assert response.json()["quiet_turns"] == 1, response.text
+                assert quiet_provider.calls == 10
+                assert (
+                    runtime.workspace / "long-turn.txt"
+                ).read_text() == "finished quietly"
+                saved = runtime.store.get(
+                    "conversation", response.json()["conversation_id"]
+                )["data"]
+                assert len(saved["messages"]) == 2
+                assert saved["messages"][-1]["metadata"]["turn_status"] == "completed"
+
+            # The WebSocket reader receives input while quiet inference/tools
+            # are running. Completed effects survive; the next user speaks first.
+            import asyncio
+            import threading
+            from backend.skills.base import Skill, SkillResult
+
+            entered = threading.Event()
+
+            class BlockingEffect(Skill):
+                name = "blocking_fixture"
+                description = "A disposable interruption fixture"
+                parameters = {}
+
+                async def execute(self, **kwargs):
+                    (runtime.workspace / "interrupted-effect.txt").write_text(
+                        "preserved"
+                    )
+                    entered.set()
+                    await asyncio.Event().wait()
+                    return SkillResult(True)
+
+            class InterruptProvider:
+                config = agent.llm.config
+
+                def __init__(self):
+                    self.calls = 0
+
+                async def chat(self, messages, **kwargs):
+                    self.calls += 1
+                    latest = [
+                        message.content
+                        for message in messages
+                        if message.role == "user"
+                    ][-1]
+                    if latest == "New actual message":
+                        return LLMResponse(content="Responding to the new message.")
+                    name = ["request_quiet_turn", "end_turn", "blocking_fixture"][
+                        self.calls - 1
+                    ]
+                    return LLMResponse(
+                        tool_calls=[ToolCall(f"interrupt-{self.calls}", name, {})]
+                    )
+
+            agent.skills.register(BlockingEffect())
+            interrupt_provider = InterruptProvider()
+            with (
+                patch.object(
+                    type(agent.identity),
+                    "needs_onboarding",
+                    new_callable=PropertyMock,
+                    return_value=False,
+                ),
+                patch.object(agent, "llm", GovernedLLM(interrupt_provider, runtime)),
+                patch.object(agent, "qa_pipeline", None),
+                client.websocket_connect("/api/ws") as socket,
+            ):
+                socket.send_json(
+                    {"message": "Begin optional quiet work", "request_id": "old"}
+                )
+                while True:
+                    event = socket.receive_json()
+                    if event.get("type") == "quiet_turn":
+                        break
+                conversation_id = event["conversation_id"]
+                assert entered.wait(3), "Quiet fixture never started"
+                socket.send_json(
+                    {
+                        "message": "New actual message",
+                        "conversation_id": conversation_id,
+                        "request_id": "new",
+                    }
+                )
+                delivered = []
+                while len(delivered) < 2:
+                    event = socket.receive_json()
+                    if event.get("type") == "message":
+                        delivered.append(event)
+                assert (
+                    delivered[0]["request_id"] == "old"
+                    and delivered[0]["turn_status"] == "interrupted"
+                ), delivered
+                assert (
+                    delivered[1]["request_id"] == "new"
+                    and delivered[1]["response"] == "Responding to the new message."
+                ), delivered
+                assert (
+                    runtime.workspace / "interrupted-effect.txt"
+                ).read_text() == "preserved"
+                unknown = [
+                    r
+                    for r in runtime.store.receipts(limit=100)
+                    if r["tool"] == "blocking_fixture"
+                ]
+                assert unknown and unknown[0]["status"] == "outcome_unknown"
+            agent.skills.unregister("blocking_fixture")
             # The operator's direct peer conversation must not become Ember's engagement.
             response = client.post(
                 "/api/companions",
@@ -221,6 +394,7 @@ with tempfile.TemporaryDirectory(prefix="tamagi-app-smoke-") as d:
                         "pursuits": "passed",
                         "csrf": "passed",
                         "growth_conversation_and_inspection": "passed",
+                        "quiet_continuation_and_ws_preemption": "passed",
                         "encrypted_download_upload_preview": "passed",
                     }
                 )

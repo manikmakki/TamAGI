@@ -157,6 +157,30 @@ def bound_messages(messages, tools=None, max_bytes=65536, *, tool_bytes=4096):
 
     # Remove old whole conversational turns, preserving the current user turn and
     # every assistant tool call plus its matching tool results.
+    if sum(map(text_size, current)) > budget:
+        boundaries = [
+            index
+            for index, message in enumerate(current)
+            if message.role == "system"
+            and str(message.content).startswith(
+                "[Harness event] Starting agent-requested quiet continuation"
+            )
+        ]
+        users = [
+            index for index, message in enumerate(current) if message.role == "user"
+        ]
+        if boundaries and users:
+            # Completed quiet segments are protocol-complete boundaries too.
+            # Preserve the real request and the current segment, not hundreds
+            # of older call envelopes that cannot fit a conservative fallback.
+            start, end = users[-1] + 1, boundaries[-1]
+            if end > start:
+                current[start:end] = [
+                    LLMMessage(
+                        "system",
+                        "Older completed quiet-turn exchanges were omitted from this model view; their effects and original receipts remain retained. This is not a new user message.",
+                    )
+                ]
     while sum(map(text_size, current)) > budget:
         users = [
             index for index, message in enumerate(current) if message.role == "user"

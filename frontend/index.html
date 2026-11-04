@@ -968,7 +968,7 @@
 <script>
 const API=window.location.origin;
 const WS_URL=API.replace(/^http/,'ws')+'/api/ws';
-let convId=null,loading=false;
+let convId=null,loading=false,quietActive=false,activeRequestId=null;
 let ws=null,wsReady=false;
 let liveToolOutputs={};
 let currentInterimGroup=null;
@@ -987,7 +987,17 @@ function connectWS(){
   ws.onerror=()=>{wsReady=false};
   ws.onmessage=(e)=>handleWsEvent(JSON.parse(e.data));
 }
+function addTurnStatus(status){
+  const labels={completed:'Finished quietly.',resting:'Resting.',waiting:'Waiting.',blocked:'Work is blocked.',declined:'Work declined.',interrupted:'Quiet continuation stopped for your message.',budget_exhausted:'This turn reached its limit; completed actions are saved.',failed:'Work stopped after an error.',quiet:'Continuing quietly…'};
+  const entry=document.createElement('div');entry.className='msg-status';entry.setAttribute('role','status');entry.textContent=labels[status]||'Turn ended.';
+  document.getElementById('chat-messages').appendChild(entry);
+}
 function handleWsEvent(ev){
+  if(ev.request_id&&activeRequestId&&ev.request_id!==activeRequestId)return;
+  if(ev.type==='quiet_turn'){
+    quietActive=true;if(ev.conversation_id)convId=ev.conversation_id;
+    document.getElementById('send-btn').disabled=false;addTurnStatus('quiet');return;
+  }
   if(ev.type==='tool_start'){
     const lt=document.getElementById('live-tags');
     const span=document.createElement('span');
@@ -1008,7 +1018,8 @@ function handleWsEvent(ev){
     convId=ev.conversation_id;updateState(ev.state);
     const skills=(ev.skills_used||[]).map(name=>({name,output:(liveToolOutputs[name]||[]).join('\n')}));
     liveToolOutputs={};
-    addMsg('assistant',ev.response,skills,null,ev.context_compressed||0,ev.sm_mutations||[]);
+    if(ev.response?.trim())addMsg('assistant',ev.response,skills,null,ev.context_compressed||0,ev.sm_mutations||[]);else addTurnStatus(ev.turn_status||'completed');
+    quietActive=false;
     if(ev.clarification_question){const msgs=document.getElementById('chat-messages');const last=msgs.querySelector('.msg.assistant:last-child');if(last){last.classList.add('clarification-msg');const badge=document.createElement('div');badge.className='clarification-badge';badge.textContent='Clarifying';last.querySelector('.bubble').prepend(badge);}}
     loadConversations();loading=false;document.getElementById('send-btn').disabled=false;
   }else if(ev.type==='thinking_text'||ev.type==='interim_text'){
@@ -1540,7 +1551,8 @@ function toBase64(file){return new Promise((res,rej)=>{const r=new FileReader();
 
 async function sendMessage(){
   const el=document.getElementById('input');const msg=el.value.trim();
-  if(!msg&&!pendingFile||loading)return;
+  if(!msg&&!pendingFile||(loading&&!quietActive))return;
+  if(quietActive){addTurnStatus('interrupted');quietActive=false;clearLiveTags();if(currentInterimGroup){currentInterimGroup.classList.add('collapsed');currentInterimGroup=null;}}
   const w=document.getElementById('welcome');if(w)w.remove();
   const displayMsg=msg+(pendingFile?` [📎 ${pendingFile.name}]`:'');
   addMsg('user',displayMsg||pendingFile.name);
@@ -1548,7 +1560,8 @@ async function sendMessage(){
   document.getElementById('send-btn').disabled=true;setTyping(true);
   const file=pendingFile;clearAttachment();
   try{
-    const body={message:msg||`Attached: ${file?.name}`,conversation_id:convId};
+    const body={message:msg||`Attached: ${file?.name}`,conversation_id:convId,request_id:globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2)};
+    activeRequestId=body.request_id;
     if(file){
       if(file.type.startsWith('image/')){
         body.image_data=await toBase64(file);
@@ -1604,7 +1617,7 @@ function debounce(fn,ms){let t;return function(...a){clearTimeout(t);t=setTimeou
 function relativeTime(ts){if(!ts)return'';const d=typeof ts==='number'?new Date(ts*1000):new Date(ts);const diff=Math.floor((Date.now()-d)/1000);if(diff<60)return diff+'s ago';if(diff<3600)return Math.floor(diff/60)+'m ago';if(diff<86400)return Math.floor(diff/3600)+'h ago';return Math.floor(diff/86400)+'d ago'}
 
 async function loadConversations(){try{const d=await api('/conversations');const list=document.getElementById('conv-list');list.innerHTML='';(d.conversations||[]).forEach(c=>{const el=document.createElement('div');el.className=`conv-item${c.id===convId?' active':''}`;el.onclick=()=>openConversation(c.id);const dt=new Date(c.updated_at*1000).toLocaleDateString([],{month:'short',day:'numeric'});el.innerHTML=`<div class="ci-title">${esc(c.title)}</div><div class="ci-meta">${c.message_count} msgs \u00b7 ${dt}</div>`;list.appendChild(el)})}catch{}}
-async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>{const thinking=m.metadata?.thinking_blocks||[];const interim=m.metadata?.interim_messages||[];if(m.role==='assistant'&&(thinking.length||interim.length)){const hasThinking=thinking.length>0;const label=hasThinking?'Thinking':'Reasoning';const totalSteps=thinking.length+interim.length;const wrapper=document.createElement('div');wrapper.className='msg assistant';wrapper.innerHTML='<div class="interim-group collapsed" data-has-thinking="'+(hasThinking?'1':'0')+'" data-count="'+totalSteps+'"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">'+label+'</span> · <span class="interim-count">'+totalSteps+(totalSteps===1?' step':' steps')+'</span></span></button><div class="interim-body">'+thinking.map(s=>'<div class="thinking-entry">'+renderMd(s)+'</div>').join('')+interim.map(s=>'<div class="interim-entry">'+renderMd(s)+'</div>').join('')+'</div></div>';area.appendChild(wrapper);}addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp,m.metadata?.context_compressed||0,m.metadata?.sm_mutations||[]);});loadConversations();closeDrawer()}catch(e){console.error(e)}}
+async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>{const thinking=m.metadata?.thinking_blocks||[];const interim=m.metadata?.interim_messages||[];if(m.role==='assistant'&&(thinking.length||interim.length)){const hasThinking=thinking.length>0;const label=hasThinking?'Thinking':'Reasoning';const totalSteps=thinking.length+interim.length;const wrapper=document.createElement('div');wrapper.className='msg assistant';wrapper.innerHTML='<div class="interim-group collapsed" data-has-thinking="'+(hasThinking?'1':'0')+'" data-count="'+totalSteps+'"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">'+label+'</span> · <span class="interim-count">'+totalSteps+(totalSteps===1?' step':' steps')+'</span></span></button><div class="interim-body">'+thinking.map(s=>'<div class="thinking-entry">'+renderMd(s)+'</div>').join('')+interim.map(s=>'<div class="interim-entry">'+renderMd(s)+'</div>').join('')+'</div></div>';area.appendChild(wrapper);}if(m.role==='assistant'&&!m.content?.trim())addTurnStatus(m.metadata?.turn_status||'completed');else addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp,m.metadata?.context_compressed||0,m.metadata?.sm_mutations||[]);});loadConversations();closeDrawer()}catch(e){console.error(e)}}
 function newConversation(){convId=null;document.getElementById('chat-messages').innerHTML=`<div class="welcome-msg" id="welcome"><strong>New conversation!</strong><br>What shall we explore?</div>`;loadConversations();closeDrawer();document.getElementById('input').focus()}
 
 function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('drawer-overlay').classList.add('open');switchTab('chats');loadConversations()}

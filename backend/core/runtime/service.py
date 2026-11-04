@@ -52,6 +52,10 @@ class RuntimeService:
         self.root_lock = asyncio.Lock()
         self.wake_signal = asyncio.Event()
         self.background: set[asyncio.Task] = set()
+        self.quiet_tasks: set[asyncio.Task] = set()
+        self.waiting_users = 0
+        self.input_epoch = 0
+        self.chat_controls = {}
         self.maintenance = False
         self.companion_locks: dict[str, asyncio.Lock] = {}
         if recover:
@@ -111,10 +115,21 @@ class RuntimeService:
 
     def budget(self, origin):
         return (
-            getattr(self.config, "user_calls", 64)
+            getattr(self.config, "user_calls", 20)
             if origin == "user"
             else getattr(self.config, "background_calls_per_activation", 128)
         )
+
+    def notice_user_input(self):
+        """Called on receipt of actual input, before waiting for execution locks."""
+        self.input_epoch += 1
+        for task in list(self.quiet_tasks):
+            if task is not asyncio.current_task():
+                for control in self.chat_controls.values():
+                    if control.task is task:
+                        control.interrupt_requested = True
+                task.cancel()
+        return self.input_epoch
 
     @asynccontextmanager
     async def execution(
@@ -129,14 +144,27 @@ class RuntimeService:
         if parent and parent.depth >= 1 and origin == "companion":
             raise ValueError("Companions cannot start descendant activations")
         if origin == "user" and parent is None:
-            tasks = [t for t in self.background if t is not asyncio.current_task()]
+            tasks = [
+                t
+                for t in self.background | self.quiet_tasks
+                if t is not asyncio.current_task()
+            ]
             for task in tasks:
+                for control in self.chat_controls.values():
+                    if control.task is task:
+                        control.interrupt_requested = True
                 task.cancel()
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
         lock = self.root_lock if parent is None else None
         if lock:
-            await lock.acquire()
+            if origin == "user":
+                self.waiting_users += 1
+            try:
+                await lock.acquire()
+            finally:
+                if origin == "user":
+                    self.waiting_users -= 1
         if self.maintenance:
             if lock:
                 lock.release()
@@ -199,6 +227,9 @@ class RuntimeService:
             terminal = current_terminal.get() or {}
             self.store.finish_run(run_id, terminal.get("status", "completed"), terminal)
         finally:
+            self.quiet_tasks.discard(task)
+            if parent is None:
+                self.chat_controls.pop(run_id, None)
             if tracked:
                 self.background.discard(task)
             current_execution.reset(token)
@@ -880,6 +911,7 @@ class GovernedLLM:
         while run:
             remaining.append(max(0, run["max_calls"] - run["calls"]))
             run = self.runtime.store.run(run["parent"]) if run["parent"] else None
+        control = self.runtime.chat_controls.get(context.root_id)
         boundary = (
             "[Live runtime practices]\n"
             + practices
@@ -895,6 +927,11 @@ class GovernedLLM:
             )
             + "\n[/Live runtime practices]"
         )
+        if control:
+            boundary = boundary.replace(
+                "\n[/Live runtime practices]",
+                "\n" + control.framing() + "\n[/Live runtime practices]",
+            )
         current = list(messages)
         if current and current[0].role == "system":
             import re

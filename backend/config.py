@@ -316,7 +316,8 @@ class RuntimeConfig(BaseModel):
     companion_calls: int = Field(default=16, ge=1, le=128)
     daily_background_calls: int | None = Field(default=None, ge=1)
     daily_evaluation_calls: int = Field(default=32, ge=1)
-    user_calls: int = Field(default=64, ge=1, le=1024)
+    user_calls: int = Field(default=20, ge=1, le=1024)
+    user_silent_turns: int = Field(default=5, ge=0, le=5)
     index_projection: bool = False
     automatic_deployment: bool = False
     model_input_bytes: int = Field(default=1048576, ge=8192, le=4194304)

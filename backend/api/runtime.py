@@ -111,6 +111,7 @@ async def state(runtime=Depends(operator)):
             "daily_background_calls": runtime.config.daily_background_calls,
             "companion_calls": runtime.config.companion_calls,
             "user_calls": runtime.config.user_calls,
+            "user_silent_turns": runtime.config.user_silent_turns,
             "daily_evaluation_calls": runtime.config.daily_evaluation_calls,
             "model_context": runtime.store.meta("model_context"),
         },

@@ -69,6 +69,21 @@ class SkillRegistry:
         from backend.core.runtime import get_runtime
 
         runtime = get_runtime()
+        from backend.core.runtime import current_execution
+
+        context = current_execution.get()
+        if not (
+            runtime
+            and context
+            and not context.depth
+            and context.origin == "user"
+            and context.root_id in runtime.chat_controls
+        ):
+            tools = [
+                tool
+                for tool in tools
+                if tool["function"]["name"] != "request_quiet_turn"
+            ]
         if runtime and runtime.authority == "unrestricted_host":
             for tool in tools:
                 if tool["function"]["name"] in {"read", "write", "exec"}:

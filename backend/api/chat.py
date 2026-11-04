@@ -35,6 +35,9 @@ class ChatResponse(BaseModel):
     state: dict[str, Any]
     skills_used: list[str]
     memories_recalled: int
+    turn_status: str = "completed"
+    status_detail: str | None = None
+    quiet_turns: int = 0
 
 
 class KnowledgeRequest(BaseModel):
@@ -69,6 +72,8 @@ def get_agent():
 async def chat(request: ChatRequest):
     """Send a message to TamAGI and get a response."""
     agent = get_agent()
+    if not request.message.strip() and not request.image_data:
+        raise HTTPException(400, "Enter a message or attach an image")
     result = await agent.chat(
         user_message=request.message,
         conversation_id=request.conversation_id,
@@ -214,6 +219,9 @@ async def websocket_chat(websocket: WebSocket):
                         allow_always=bool(msg.get("allow_always", False)),
                     )
                 else:
+                    runtime = getattr(agent, "runtime", None)
+                    if runtime and isinstance(msg.get("message"), str) and msg["message"].strip():
+                        msg["_input_epoch"] = runtime.notice_user_input()
                     await message_queue.put(msg)
         except WebSocketDisconnect:
             await message_queue.put(None)
@@ -231,8 +239,11 @@ async def websocket_chat(websocket: WebSocket):
 
             conv_id: str | None = msg.get("conversation_id")
             user_message = msg.get("message", "")
+            request_id = msg.get("request_id")
+            if not isinstance(request_id, str) or len(request_id) > 128:
+                request_id = None
 
-            if not user_message:
+            if not isinstance(user_message, str) or not user_message.strip():
                 await websocket.send_json({"error": "Empty message"})
                 continue
 
@@ -240,7 +251,7 @@ async def websocket_chat(websocket: WebSocket):
             await websocket.send_json({"type": "typing", "status": True})
 
             async def send_event(event: dict) -> None:
-                await websocket.send_json(event)
+                await websocket.send_json({**event, "request_id": request_id})
 
             try:
                 result = await agent.chat(
@@ -249,6 +260,7 @@ async def websocket_chat(websocket: WebSocket):
                     event_callback=send_event,
                     image_data=msg.get("image_data"),
                     image_media_type=msg.get("image_media_type", "image/jpeg"),
+                    _input_epoch=msg.get("_input_epoch"),
                 )
 
                 # Fire a pose_change event immediately so the sprite animates
@@ -260,6 +272,7 @@ async def websocket_chat(websocket: WebSocket):
                 last_conv_id = result.get("conversation_id") or last_conv_id
                 await websocket.send_json({
                     "type": "message",
+                    "request_id": request_id,
                     **result,
                 })
 

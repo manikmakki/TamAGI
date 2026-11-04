@@ -315,7 +315,8 @@ runtime:
   companion_calls: 16                  # Drawn from the initiating activation.
   daily_background_calls: null         # No daily cap; charges remain recorded. Set an integer to cap.
   daily_evaluation_calls: 32
-  user_calls: 64
+  user_calls: 20                 # Model calls per user/quiet turn; not individual tool operations.
+  user_silent_turns: 5           # Optional continuations before delivering the final reply.
   index_projection: false
   automatic_deployment: false
   model_input_bytes: 1048576     # Secondary byte ceiling; measured tokens govern supported servers.

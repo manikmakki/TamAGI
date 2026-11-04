@@ -20,5 +20,6 @@ The parent-child framing describes the builder’s responsibility: honest condit
 | 0014 | [Portability, operator recovery, and a companion-first interface](0014-portability-operator-recovery-and-a-companion-first-interface.md) | Accepted design |
 | 0015 | [Growth through sustained behavior](0015-growth-through-sustained-behavior.md) | Accepted design |
 | 0016 | [Room for self-directed work](0016-room-for-self-directed-work.md) | Accepted design |
+| 0017 | [Bounded user turns and quiet continuations](0017-bounded-user-turns-and-quiet-continuations.md) | Accepted design |
 
 [Implementation and evidence](../platform-roadmap.md).

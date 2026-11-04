@@ -277,6 +277,14 @@ class RuntimeStore:
             if not run or run["status"] != "running":
                 raise BudgetExhausted("Execution is not running")
             root = self.run(context.root_id)
+            controls = json.loads(root["payload"]).get("chat_turns") or {}
+            if (
+                controls
+                and root["calls"] - controls["start_calls"] >= controls["call_limit"]
+            ):
+                raise BudgetExhausted(
+                    "This chat turn's model-call allowance is exhausted"
+                )
             # Charge the whole ancestor chain: grandchildren cannot reset parent caps.
             ancestors = []
             cursor = run
@@ -392,6 +400,17 @@ class RuntimeStore:
 
     def recover(self):
         with self.transaction():
+            for row in self.db.execute(
+                "SELECT id,payload FROM runs WHERE status='running'"
+            ).fetchall():
+                payload = json.loads(row["payload"])
+                if payload.get("chat_turns"):
+                    payload["chat_turns"]["queued"] = False
+                    payload["chat_turns"]["discarded_on_recovery"] = True
+                    self.db.execute(
+                        "UPDATE runs SET payload=? WHERE id=?",
+                        (encoded(payload), row["id"]),
+                    )
             self.db.execute(
                 "UPDATE receipts SET status='outcome_unknown',finished=? WHERE status='started'",
                 (self.clock(),),

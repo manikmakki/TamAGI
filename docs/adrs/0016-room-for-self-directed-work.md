@@ -2,6 +2,8 @@
 
 Status: Accepted by operator choice on 2026-11-03.
 
+The user-turn allowance is superseded by [ADR-0017](0017-bounded-user-turns-and-quiet-continuations.md). Background and model-context decisions remain in force.
+
 ## Context
 
 The initial eight-call activations and 96-call rolling background limit interrupted sustained research and could prevent further independent choice for most of a day. A 65536-byte model view also used only a fraction of the installed model's advertised 131072-token window. More capacity should permit longer activity while preserving the choice to stop.

@@ -45,7 +45,10 @@ def install_runtime_skills(runtime, registry, companions):
             "receipt_id": param("string", required=True),
             "section": param("string", enum=["output", "error", "data", "arguments"]),
             "offset": param("integer"),
-            "limit": param("integer", "1–65536 characters; default 8192. Read larger sources in pages."),
+            "limit": param(
+                "integer",
+                "1–65536 characters; default 8192. Read larger sources in pages.",
+            ),
         },
         runtime.inspect_receipt,
     )
@@ -99,6 +102,22 @@ def install_runtime_skills(runtime, registry, companions):
             "wake_event": param("string"),
         },
         end_turn,
+    )
+
+    def request_quiet_turn():
+        context = current_execution.get()
+        control = runtime.chat_controls.get(context.root_id) if context else None
+        if not control or context.depth or context.origin != "user":
+            raise ValueError(
+                "Quiet turns are available only to the primary resident within an actual user request"
+            )
+        return control.request()
+
+    install(
+        "request_quiet_turn",
+        "Request one optional quiet continuation before the final reply. Repeated requests in this turn coalesce. Up to five may start per actual user prompt, each with 20 model calls. Finish this turn successfully to start it; this request does not end the turn or extend its allowance. No explanation or productivity is required.",
+        {},
+        request_quiet_turn,
     )
     install(
         "remember",
