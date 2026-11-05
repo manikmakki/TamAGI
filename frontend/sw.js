@@ -1,5 +1,5 @@
 // TamAGI Service Worker — PWA offline support
-const CACHE_NAME = 'tamagi-platform-v8';
+const CACHE_NAME = 'tamagi-platform-v9';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

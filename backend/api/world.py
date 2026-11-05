@@ -44,7 +44,8 @@ async def get_world_state():
         return {'needs_world_seed':False,'location':location['data']['name'] if location else 'Home',
           'mood':activity.get('mood',''),'focus':activity.get('focus',''),'available_actions':['Choose freely','Continue a pursuit','Rest'],
           'timestamp':runtime.store.get('activity',runtime.actor_id)['updated'],'activity_status':activity['status'],
-          'next_wake_at':activity.get('wake_at'),'activity_reason':activity.get('wait_reason'),'activity_detail':activity.get('wait_detail'),'pursuits':runtime.store.list('pursuit',runtime.actor_id),
+          'next_wake_at':activity.get('wake_at'),'wake_event':activity.get('wake_event'),'timezone':runtime.config.timezone,
+          'activity_reason':activity.get('wait_reason'),'activity_detail':activity.get('wait_detail'),'pursuits':runtime.store.list('pursuit',runtime.actor_id),
           'receipts':[r['id'] for r in runtime.store.receipts(limit=5)]}
     state = state_store().load()
     if state is None:

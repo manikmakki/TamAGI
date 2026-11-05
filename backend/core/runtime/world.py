@@ -238,6 +238,10 @@ async def tick(world, *, manual=False):
                         "status": status,
                         "execution_id": execution.execution_id,
                         "receipts": result["receipts"],
+                        "next_wake_at": data.get("wake_at"),
+                        "wake_event": data.get("wake_event"),
+                        "wait_reason": data.get("wait_reason"),
+                        "timezone": runtime.config.timezone,
                     },
                 )
             if world.agent.consolidation:
