@@ -21,5 +21,6 @@ The parent-child framing describes the builder’s responsibility: honest condit
 | 0015 | [Growth through sustained behavior](0015-growth-through-sustained-behavior.md) | Accepted design |
 | 0016 | [Room for self-directed work](0016-room-for-self-directed-work.md) | Accepted design |
 | 0017 | [Bounded user turns and quiet continuations](0017-bounded-user-turns-and-quiet-continuations.md) | Accepted design |
+| 0018 | [An app drawer, chat-first navigation, and independent work lifetimes](0018-app-drawer-and-independent-work-lifecycle.md) | Accepted design; implementation pending |
 
 [Implementation and evidence](../platform-roadmap.md).

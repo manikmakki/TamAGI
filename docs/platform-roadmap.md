@@ -1,6 +1,14 @@
 # Home platform: implementation and evidence
 
-The [fifteen accepted ADRs](adrs/README.md) define the direction. Their parent-child framing concerns the builder’s obligations: honest conditions, meaningful choices, recoverable mistakes, and increasing independence. It is not a prescribed resident identity.
+The [accepted ADRs](adrs/README.md) define the direction. Their parent-child framing concerns the builder’s obligations: honest conditions, meaningful choices, recoverable mistakes, and increasing independence. It is not a prescribed resident identity.
+
+## Planned interface consolidation and work ownership
+
+[ADR-0018](adrs/0018-app-drawer-and-independent-work-lifecycle.md) records the accepted app-drawer direction: preserve Chat as the primary surface and consolidate Map, Journal, Inventory, Companions, Archive, and Settings into a shared shell. Inventory uses the active workspace's `workshop/` convention, with explicit distinctions between current files and saved artifacts. Existing notebook, pursuit, appearance, Growth, and operator controls retain destinations.
+
+Source inspection on 2026-11-05 confirmed that chat progress still calls its WebSocket directly and that socket cleanup can signal conversational departure. The first implementation step is application-owned admitted work with durable input/result identities, bounded queues and subscribers, deduplicated submission, result/event recovery, and explicit interruption and visit semantics. A persistent frontend shell alone does not satisfy that requirement.
+
+This work is **not yet implemented or qualified**. Its sequence is backend lifetime/reconnection contracts, shared shell and routing, destination consolidation, then disposable browser/application qualification and supervised rollout. The ADR lists the required navigation, disconnect, replay, interruption, presence, artifact, and compatibility scenarios. This documentation does not extend prior test results to those new behaviors or change the ongoing seven-day pilot's status.
 
 ## Delivered implementation
 
