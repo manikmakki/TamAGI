@@ -1,20 +1,9 @@
-# Custom Skills Directory
-Drop .py files here that subclass `backend.skills.base.Skill`
+# Tool source and legacy custom skills
 
-TamAGI will auto-discover and register them on startup.
+This repository directory is not necessarily the active resident's workspace. Use the workspace path reported by the runtime, rather than assuming `/opt/TamAGI/workspace`, `/workspace`, or `~/workspace` is the current home.
 
-Example:
-```python
- from backend.skills.base import Skill, SkillResult
+For a home-platform instance, keep editable tool source in `skills/<tool_name>/` beneath its active workspace. Tools are JSON stdin/stdout subprocesses activated through `runtime_change`: **propose → test_tool → evaluate → activate**. Dropping a Python file here, restarting, or registering it as an artifact does not make it callable. Platform startup deliberately skips in-process custom imports.
 
- class WeatherSkill(Skill):
-     name = "weather"
-     description = "Get current weather for a location"
-     parameters = {
-         "location": {"type": "string", "description": "City name", "required": True}
-     }
+See [workspace paths and tool development](../../docs/workspace-layout.md) for the supported contract, versioning, dependencies, and the distinction between creations and tools.
 
-     async def execute(self, **kwargs):
-         location = kwargs.get("location", "")
-         return SkillResult(success=True, output=f"Weather for {location}: Sunny, 72°F")
-```
+Legacy non-platform configurations retain startup discovery of `.py` files that subclass `backend.skills.base.Skill` in their configured custom-skill directory. Their `parameters` use a mapping of argument names to definitions, with `required: True` on individual arguments. That compatibility mechanism is separate from the home-platform tool lifecycle.

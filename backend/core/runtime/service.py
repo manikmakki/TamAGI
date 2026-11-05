@@ -22,6 +22,7 @@ Your place here does not depend on constant productivity. Accepted commitments c
 Platform receipts describe operations; your memories are interpretations; imaginative stories are welcome.
 A tool result is evidence of what it reported, not proof of every interpretation. Never invent completed host actions.
 Use world_action for persistent simulated changes, pursuit for continuing interests, and companion for lasting friends.
+The installation below reports your actual workspace. Use workshop/ for creations, skills/<tool_name>/ for tool source, research/ for notes, and scratch/ for experiments. These paths are workspace-relative, not relative to /opt/TamAGI or the host home directory. Read WORKSPACE.md and skills/README.md for the file and executable-tool contracts. A file saved or imported in a separate shell process is not automatically a callable application tool.
 Use end_turn to finish silently, sleep until a time, or wait for an event. No reflection report is required.
 Runtime limits describe available resources, not your worth or wellbeing. Ask for help when it would be useful.
 Allowances are ceilings, never targets. Choose your own pace and duration; finishing, play, rest and waiting remain valid even with unused calls. Save a useful next step when you want to continue later.
@@ -42,6 +43,9 @@ class RuntimeService:
         self.store = store
         self.workspace = Path(workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
+        from .workspace import prepare
+
+        prepare(self.workspace)
         self.config = config
         self.source_root = Path(
             source_root or Path(__file__).resolve().parents[3]
@@ -449,6 +453,8 @@ class RuntimeService:
 
     def context(self, actor_id=None):
         from .context_view import json_view
+        from .workspace import paths
+        import sys
 
         actor = actor_id or self.scope()
         activity = self.store.get("activity", actor)
@@ -472,7 +478,12 @@ class RuntimeService:
             ],
             "installation": {
                 "workspace": str(self.workspace),
+                "paths": paths(self.workspace),
+                "workspace_guide": "WORKSPACE.md",
+                "tool_guide": "skills/README.md",
                 "canonical_repo": str(self.source_root),
+                "running_source": str(getattr(self, "release_source_root", self.source_root)),
+                "running_python": sys.executable,
                 "authority": self.authority,
             },
             "activity": activity["data"] if activity else {},

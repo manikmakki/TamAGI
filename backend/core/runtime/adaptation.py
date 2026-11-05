@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 from backend.skills.base import Skill, SkillResult
 from .store import uid
+from .workspace import environment
 
 SURFACES = {
     "conversation_prompt",
@@ -48,7 +49,7 @@ class ProcessTool(Skill):
             env={
                 "PATH": "/usr/local/bin:/usr/bin:/bin",
                 "LANG": "C.UTF-8",
-                "TAMAGI_WORKSPACE": str(self.workspace),
+                **environment(self.workspace),
             },
         )
         try:
@@ -177,6 +178,13 @@ class Adaptation:
                 raise ValueError("Worker command must be an argv array")
             if not 1 <= value.get("timeout", 30) <= 120:
                 raise ValueError("Worker timeout must be 1–120 seconds")
+            parameters = value.get("parameters", {})
+            if not isinstance(parameters, dict) or any(
+                not isinstance(field, dict) for field in parameters.values()
+            ):
+                raise ValueError(
+                    "Worker parameters must map field names to definitions, not a full JSON Schema; read skills/README.md"
+                )
         elif surface == "retrieval_settings":
             if not isinstance(value, dict) or any(
                 k not in {"limit", "minimum_score"} for k in value

@@ -126,7 +126,7 @@ class ExecSkill(Skill):
         },
         "working_dir": {
             "type": "string",
-            "description": "Working directory (defaults to workspace path)",
+            "description": "Working directory relative to the active workspace, or an absolute host path (defaults to the workspace). '~' is not expanded.",
             "default": "",
         },
     }
@@ -134,7 +134,17 @@ class ExecSkill(Skill):
     async def execute(self, **kwargs: Any) -> SkillResult:
         config = get_config()
         command = kwargs.get("command", "").strip()
-        working_dir = kwargs.get("working_dir", "") or config.workspace.path
+        workspace = Path(config.workspace.path).resolve()
+        directory = Path(kwargs.get("working_dir", "") or ".")
+        if not directory.is_absolute():
+            directory = workspace / directory
+        working_dir = str(directory.resolve())
+        from backend.core.runtime.workspace import environment as workspace_environment
+
+        environment = {
+            **os.environ,
+            **workspace_environment(workspace),
+        }
         event_callback = kwargs.get("_event_callback")
         pending_approvals: dict | None = kwargs.get("_pending_approvals")
         is_autonomous: bool = bool(kwargs.get("_is_autonomous", False))
@@ -147,7 +157,12 @@ class ExecSkill(Skill):
         runtime = get_runtime()
         if runtime and runtime.authority == "unrestricted_host":
             return await self._run(
-                command, [], working_dir, config.guardrails.exec_timeout, shell=True
+                command,
+                [],
+                working_dir,
+                config.guardrails.exec_timeout,
+                shell=True,
+                environment=environment,
             )
 
         try:
@@ -215,7 +230,11 @@ class ExecSkill(Skill):
 
         logger.info("Executing: %s", command)
         return await self._run(
-            command, parts, working_dir, config.guardrails.exec_timeout
+            command,
+            parts,
+            working_dir,
+            config.guardrails.exec_timeout,
+            environment=environment,
         )
 
     async def _request_approval(
@@ -276,6 +295,7 @@ class ExecSkill(Skill):
         timeout: int,
         *,
         shell: bool = False,
+        environment: dict[str, str] | None = None,
     ) -> SkillResult:
         argv = ["/bin/bash", "-o", "pipefail", "-c", command] if shell else parts
         details = {
@@ -290,6 +310,7 @@ class ExecSkill(Skill):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=working_dir,
                 start_new_session=True,
+                env=environment,
             )
             try:
                 stdout, stderr = await asyncio.wait_for(

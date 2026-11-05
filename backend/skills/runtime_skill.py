@@ -140,7 +140,7 @@ def install_runtime_skills(runtime, registry, companions):
     )
     install(
         "register_artifact",
-        "Register a regular workspace file with its current content hash for future reuse and backup.",
+        "Save a regular workspace file's current bytes as an artifact snapshot. Prefer workshop/ for creations. This does not activate executable tools; use runtime_change for those.",
         {"path": param("string", required=True)},
         runtime.register_artifact,
     )
@@ -227,7 +227,19 @@ def install_development_skills(runtime, registry):
         if context and context.depth:
             raise ValueError("Only the primary resident manages runtime experiments")
         if action == "inspect":
+            from backend.core.runtime.workspace import paths
+
             return {
+                "workspace": str(runtime.workspace),
+                "paths": paths(runtime.workspace),
+                "tool_contract": {
+                    "guide": "skills/README.md",
+                    "source": "skills/<tool_name>/",
+                    "transport": "JSON arguments on stdin; one JSON result on stdout with boolean success, optional text output/error and object data",
+                    "parameters": "Map of field names to type/description/required definitions, not a full JSON Schema",
+                    "lifecycle": ["propose", "test_tool", "evaluate", "activate"],
+                    "activation": "Requires a successful worker test and qualifying comparative experiment; a shell-local registry is separate from the application",
+                },
                 "proposals": runtime.store.list("proposal"),
                 "active": runtime.store.list("runtime_revision"),
                 "experiments": runtime.store.list("experiment"),
@@ -246,7 +258,7 @@ def install_development_skills(runtime, registry):
 
     install(
         "runtime_change",
-        "Inspect, propose, test, evaluate, activate or revert a versioned runtime experiment. Evaluation is queued separately and retains comparison evidence.",
+        "Inspect paths and tool contracts; propose, test, evaluate, activate or revert a versioned runtime experiment. For a callable tool, read skills/README.md and use surface=tool: dropping a Python file or registering an artifact does not activate it. Evaluation is queued separately and retains comparison evidence.",
         {
             "action": param(
                 "string",
@@ -273,7 +285,7 @@ def install_development_skills(runtime, registry):
             ),
             "value": {
                 "type": ["string", "object"],
-                "description": "Prompt text, retrieval configuration, or process tool definition",
+                "description": "Prompt text, retrieval settings, or process tool object: name, description, command argv, parameters (field-name -> type/description/required), timeout 1–120. Worker reads JSON stdin and returns one JSON SkillResult on stdout. See skills/README.md.",
             },
             "intention": param("string"),
             "experiment_id": param("string"),

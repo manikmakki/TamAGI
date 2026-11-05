@@ -1,10 +1,9 @@
 """
 Skill Registry — Discovery, registration, and management of skills.
 
-Auto-discovers skills from:
-  1. Built-in skills (read, write, exec)
-  2. Custom skills in <workspace>/skills/
-  3. Dynamically registered skills
+Registers built-ins, MCP adapters, and home-platform versioned subprocess tools.
+Directory discovery of Python Skill subclasses is a legacy non-platform feature;
+it is deliberately disabled when a home-platform runtime is active.
 """
 
 from __future__ import annotations
@@ -224,7 +223,10 @@ class SkillRegistry:
 
     def discover_custom_skills(self, custom_dir: str | Path | None = None) -> int:
         """
-        Auto-discover and register custom skills from a directory.
+        Discover Python Skill subclasses only in legacy non-platform mode.
+
+        A home-platform runtime skips in-process imports and activates versioned
+        subprocess definitions through runtime_change instead.
         If custom_dir is provided, it is stored for subsequent reload calls.
         Returns the number of skills discovered.
         """

@@ -260,24 +260,21 @@ Web search works out of the box with DuckDuckGo (free, no API key). You can also
 
 ### Creating Custom Skills
 
-Drop a Python file in `/workspace/skills/`:
+The home platform uses **versioned subprocess tools**, not automatic Python imports. Start with the active workspace reported by the runtime; it is separate from this repository's `workspace/` directory and is not necessarily `~/workspace`.
+
+Keep editable tool source under `skills/<tool_name>/` in that active workspace. A worker reads one JSON arguments object from standard input and writes one JSON result to standard output:
 
 ```python
-from backend.skills.base import Skill, SkillResult
+import json
+import sys
 
-class MySkill(Skill):
-    name = "my_skill"
-    description = "Does something cool"
-    parameters = {
-        "input": {"type": "string", "description": "The input", "required": True}
-    }
-
-    async def execute(self, **kwargs) -> SkillResult:
-        # Your logic here
-        return SkillResult(success=True, output="Done!")
+arguments = json.load(sys.stdin)
+print(json.dumps({"success": True, "output": "Done!", "data": {}}))
 ```
 
-TamAGI will auto-discover and register it.
+Use `runtime_change` to **propose → test_tool → evaluate → activate** the tool. Inspect the retained trial and comparative evaluation before activation. Creating a file, restarting the app, or calling `register_artifact` does not activate a tool. See [workspace paths and tool development](docs/workspace-layout.md) for the folder map, tool-definition format, dependencies, and release boundaries.
+
+The older non-platform mode still supports `Skill` subclasses discovered from its configured workspace's `skills/` directory. That compatibility behavior does not apply to a home-platform instance.
 
 ---
 

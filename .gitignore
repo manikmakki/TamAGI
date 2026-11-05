@@ -10,7 +10,7 @@ venv/
 # Data (persisted locally)
 data/
 workspace/
-workspace*
+/workspace*
 docs/*.svg
 docs/*.png
 
