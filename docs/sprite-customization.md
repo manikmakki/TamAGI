@@ -1,8 +1,8 @@
 # Customizing Your TamAGI's Appearance
 
-TamAGI's avatar uses a **skeleton rig** — a hierarchy of named bones that drive the position, rotation, and scale of each body-part sprite. By default the renderer draws procedural placeholder art, but you can replace any part with your own PNG files.
+TamAGI's avatar uses a **skeleton rig** — a hierarchy of named bones that drive the position, rotation, and scale of each body-part sprite. Choose **Vex**, the blue-and-gold cyber fennec; **Echo**, the original glowing pixel character; or **Ember**, the hooded humanoid with flowing amber energy, in the rig editor. Vex is the default for a new configuration. All three characters are drawn procedurally and support the existing animations and custom PNG uploads. Ember adds a gentle hover, curious gestures, and traveling energy pulses.
 
-You don't need to replace every part at once. Missing PNGs fall back silently to the placeholder, so you can swap in artwork one piece at a time.
+You don't need to replace every part at once. Missing PNGs use the selected character's artwork, so you can swap in artwork one piece at a time. Changing character keeps your uploaded overrides; removing an override restores that character's built-in part. Existing saved rigs continue to use their original appearance under **Custom rig** until you choose another character.
 
 ---
 
@@ -12,12 +12,12 @@ You don't need to replace every part at once. Missing PNGs fall back silently to
 /rig-editor               ← built-in rig editor (open in your browser)
         │  Save to TamAGI button
         ▼
-PUT /api/sprites/config   ← saves skeleton + sprite manifest to data/sprite_config.json
+PUT /api/sprites/config   ← saves character + skeleton + sprite manifest to data/sprite_config.json
 POST /api/sprites/upload/… ← saves your PNGs to data/sprites/ → served at /sprites/…
         │
         ▼
 TamAGI frontend           ← loads config on startup, preloads PNGs,
-                             draws them in place of procedural placeholders
+                             draws them in place of built-in character parts
 ```
 
 ---
@@ -32,7 +32,8 @@ The editor shows a live animated canvas preview on the left and controls on the 
 
 | Control | What it does |
 |---------|-------------|
-| **Preset buttons** (Default / Chibi / Tall / Stocky) | Switch between body proportion presets |
+| **Character buttons** (Vex / Echo / Ember / Custom rig) | Choose built-in artwork or retain a custom rig; then save to apply it to the main avatar |
+| **Proportion buttons** (Default / Chibi / Tall / Stocky) | Switch body proportions in Custom rig mode |
 | **Animation buttons** (idle / happy / sad / …) | Preview each animation state |
 | **Bone Properties panel** | Click a bone name to expand sliders; adjust position, scale, and pivot |
 | **Bones / Labels checkboxes** | Toggle the debug skeleton overlay |
@@ -86,13 +87,13 @@ Each body part has one or more **variants** — the specific state shown during 
 | `leg_right` | `default` | |
 | `foot_left` | `default` | |
 | `foot_right` | `default` | |
-| `accessory` | `default` | Hat, hair, or any head accessory |
+| `accessory` | `default` | Vex's tail; Ember's neck energy; empty for Echo; head accessory in Custom rig mode |
 
-You don't have to provide all variants. If `eye_left:happy` is missing, it falls back to the procedural version automatically.
+You don't have to provide all variants. If `eye_left:happy` is missing, it uses the selected character's happy eye automatically. Vex's ears and receiver are part of its head. Echo's original tiny hands are part of its arm artwork; its separate hand slots stay available for uploads. Ember's hood is part of the head, while its eyes and mouth remain independently animated.
 
 ### Layer order
 
-Each part in the **Custom Sprites** panel has a **Layer** number (0–99). Higher numbers render on top. Use this to control depth — for example, set `accessory` to a high layer so a hat renders above the head and eyes.
+Each part in the **Custom Sprites** panel has a **Layer** number (−99–99). Higher numbers render on top. Vex's tail uses a low layer behind the body. Set `accessory` to a high layer for an accessory that should render above the head and eyes, and adjust its position as needed.
 
 ### Uploading PNGs
 
@@ -117,7 +118,7 @@ curl -X POST http://localhost:7741/api/sprites/upload/eye_left/closed -F "file=@
 curl -X POST http://localhost:7741/api/sprites/upload/eye_left/happy  -F "file=@eye_happy.png"
 ```
 
-To revert a part to the procedural placeholder:
+To revert a part to the selected character's built-in artwork:
 
 ```bash
 curl -X DELETE http://localhost:7741/api/sprites/upload/head/default
@@ -125,7 +126,7 @@ curl -X DELETE http://localhost:7741/api/sprites/upload/head/default
 
 ### Sprite dimensions
 
-The **Scale** slider in Bone Properties determines the rendered size of each slot. The table below shows the base bone-space sizes for the **Default** preset (before any Scale multiplier):
+The **Scale** slider in Bone Properties determines the rendered size of each slot. Vex, Echo, and Ember have their own slot sizes and proportions. The table below shows the base bone-space sizes for the **Default** proportion preset in **Custom rig** mode (before any Scale multiplier):
 
 | Part | Base Width | Base Height | At 2.5× render scale, Scale=1 |
 |------|-----------|------------|-------------------------------|

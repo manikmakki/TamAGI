@@ -1,9 +1,13 @@
 // TamAGI Service Worker — PWA offline support
-const CACHE_NAME = 'tamagi-platform-v6';
+const CACHE_NAME = 'tamagi-platform-v8';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/assets/avatar-vex.js',
+  '/assets/avatar-echo.js',
+  '/assets/avatar-ember.js?v=8',
+  '/assets/avatar-runtime.js?v=8',
 ];
 
 // Install: cache static assets

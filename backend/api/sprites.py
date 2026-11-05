@@ -43,7 +43,9 @@ async def get_sprite_config():
 async def save_sprite_config(config: dict):
     """
     Save a sprite config JSON exported from the rig editor.
-    Expected shape: { skeleton: [...bones], sprites: { part: { bone, width, height, offsetX, offsetY, variants: { variant: path } } } }
+    Expected shape: { avatar: "vex" | "echo" | "ember" | "custom", skeleton: [...bones],
+    sprites: { part: { bone, width, height, offsetX, offsetY, variants: { variant: path | null } } } }
+    The optional avatar field chooses the built-in fallback art; older configs stay valid.
     """
     _DATA_DIR.mkdir(exist_ok=True)
     _CONFIG_PATH.write_text(json.dumps(config, indent=2))
@@ -70,7 +72,7 @@ async def upload_sprite(part: str, variant: str, file: UploadFile = File(...)):
 
 @router.delete("/upload/{part}/{variant}")
 async def delete_sprite(part: str, variant: str):
-    """Remove a previously uploaded PNG, reverting that slot to the procedural placeholder."""
+    """Remove an uploaded PNG, reverting that slot to the selected built-in art."""
     target = _SPRITES_DIR / f"{part}_{variant}.png"
     if not target.exists():
         raise HTTPException(404, "Sprite not found")

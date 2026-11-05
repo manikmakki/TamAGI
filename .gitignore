@@ -12,6 +12,7 @@ data/
 workspace/
 workspace*
 docs/*.svg
+docs/*.png
 
 # Config with secrets
 config.yaml

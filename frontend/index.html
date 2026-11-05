@@ -965,6 +965,10 @@
   </div>
 </div>
 
+<script src="/assets/avatar-vex.js"></script>
+<script src="/assets/avatar-echo.js"></script>
+<script src="/assets/avatar-ember.js?v=8"></script>
+<script src="/assets/avatar-runtime.js?v=8"></script>
 <script>
 const API=window.location.origin;
 const WS_URL=API.replace(/^http/,'ws')+'/api/ws';
@@ -1348,15 +1352,16 @@ function solveWorldTransforms(bones){
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
-function renderFrame(canvas,bones,manifest,activeVariants){
+function renderFrame(canvas,bones,manifest,activeVariants,time=0){
   const ctx=canvas.getContext('2d');
+  TamagiAvatarRuntime.style(canvas,_avatarId);
   const W=canvas.width,H=canvas.height;
   ctx.clearRect(0,0,W,H);
   ctx.save();
-  ctx.translate(W/2,H/2+50);
+  ctx.translate(W/2,TamagiAvatarRuntime.originY(canvas,_avatarId));
   const scale=2.5;
   ctx.scale(scale,scale);
-  ctx.imageSmoothingEnabled=false;
+  ctx.imageSmoothingEnabled=!(window.TamagiAvatars[_avatarId]?.pixelated??true);
   const wt=solveWorldTransforms(bones);
   const drawOrder=Object.entries(manifest)
     .map(([pn,e])=>({pn,e,bone:bones.find(b=>b.name===e.bone),z:(bones.find(b=>b.name===e.bone)||{}).zOrder||0}))
@@ -1376,7 +1381,7 @@ function renderFrame(canvas,bones,manifest,activeVariants){
     if(_spriteImages[imgKey]){
       ctx.drawImage(_spriteImages[imgKey],0,0,sw,sh);
     }else{
-      drawPlaceholder(ctx,pn,variant,sw,sh);
+      TamagiAvatarRuntime.draw(ctx,_avatarId,pn,variant,sw,sh,drawPlaceholder,time);
     }
     ctx.restore();
     ctx.restore();
@@ -1389,16 +1394,19 @@ function renderFrame(canvas,bones,manifest,activeVariants){
 // Values: HTMLImageElement (only present when the image loaded successfully)
 let _spriteImages={};
 let _spriteConfig=null;
+let _avatarId='vex';
 
 async function loadSpriteConfig(){
   try{
     const cfg=await api('/sprites/config');
-    if(!cfg||(cfg.skeleton==null&&cfg.sprites==null))return;
-    _spriteConfig=cfg;
+    _avatarId=TamagiAvatarRuntime.resolve(cfg);
+    _rigBones=TamagiAvatarRuntime.createBones(_avatarId,createBone,()=>applyPivotDefaults(PRESETS.default.bones()));
+    _spriteConfig=cfg||null;
+    _spriteImages={};
 
     // If the config carries a skeleton, replace the rig bones with it.
     // This lets the rig editor's exported proportions drive the avatar directly.
-    if(cfg.skeleton&&cfg.skeleton.length){
+    if(Array.isArray(cfg?.skeleton)&&cfg.skeleton.length){
       _rigBones=cfg.skeleton.map(b=>Object.assign(
         createBone(b.name,b.parent,b.restX,b.restY,b.pivotX||0,b.pivotY||0,b.length,b.zOrder||0),
         {restX:b.restX,restY:b.restY,pivotX:b.pivotX||0,pivotY:b.pivotY||0,length:b.length,zOrder:b.zOrder||0,
@@ -1409,17 +1417,17 @@ async function loadSpriteConfig(){
     }
 
     // Preload every PNG referenced in the sprite manifest.
-    if(cfg.sprites){
+    if(cfg?.sprites){
       const loads=[];
       for(const[part,def]of Object.entries(cfg.sprites)){
         for(const[variant,path]of Object.entries(def.variants||{})){
           if(!path)continue;
           const key=`${part}:${variant}`;
           const img=new Image();
-          img.src=path;
           loads.push(new Promise(resolve=>{
             img.onload=()=>{_spriteImages[key]=img;resolve();};
-            img.onerror=resolve; // missing PNG → silently falls back to placeholder
+            img.onerror=resolve; // Missing PNG falls back to the selected character.
+            img.src=path;
           }));
         }
       }
@@ -1432,22 +1440,8 @@ async function loadSpriteConfig(){
 // buildActiveManifest overlays any explicit dimensions from the sprite config,
 // so user-provided PNGs can be a different size than the auto-computed slots.
 function buildActiveManifest(bones){
-  const manifest=buildManifest(bones);
-  if(_spriteConfig&&_spriteConfig.sprites){
-    const boneMap={};bones.forEach(b=>boneMap[b.name]=b);
-    for(const[part,cfg]of Object.entries(_spriteConfig.sprites)){
-      if(!manifest[part])continue;
-      // Saved width/height have displayScale baked in (from buildExportJSON).
-      // renderFrame also multiplies by displayScale, so we divide it back out here
-      // to avoid double-scaling.
-      const ds=(boneMap[manifest[part].bone]?.displayScale)||1;
-      if(cfg.width)  manifest[part].w=cfg.width/ds;
-      if(cfg.height) manifest[part].h=cfg.height/ds;
-      if(cfg.offsetX!=null) manifest[part].ox=cfg.offsetX;
-      if(cfg.offsetY!=null) manifest[part].oy=cfg.offsetY;
-    }
-  }
-  return manifest;
+  const manifest=TamagiAvatarRuntime.manifest(_avatarId,bones,buildManifest);
+  return TamagiAvatarRuntime.overlay(manifest,bones,_spriteConfig?.sprites);
 }
 
 // ── Animation loop ────────────────────────────────────────────────────────────
@@ -1460,10 +1454,10 @@ function _rigTick(ts){
   const t=(ts-_rigStartTime)/1000;
   for(const b of _rigBones){b.rotation=0;b.scaleX=1;b.scaleY=1;b.translateX=0;b.translateY=0;b.opacity=1;}
   const animFn=ANIMATIONS[_rigAnimName]||ANIMATIONS.idle;
-  const variants=animFn(_rigBones,t)||{};
+  const variants=TamagiAvatarRuntime.animate(_avatarId,_rigBones,t,_rigAnimName,animFn(_rigBones,t)||{});
   const manifest=buildActiveManifest(_rigBones);
   const canvas=document.getElementById('sprite-box');
-  if(canvas)renderFrame(canvas,_rigBones,manifest,variants);
+  if(canvas)renderFrame(canvas,_rigBones,manifest,variants,t);
   requestAnimationFrame(_rigTick);
 }
 
@@ -1969,7 +1963,7 @@ function initResize(){
 document.addEventListener('DOMContentLoaded',async()=>{initLayout();initResize();const inp=document.getElementById('input');inp.addEventListener('input',()=>autoResize(inp));inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
 // Start skeleton rig — load custom sprite config first (may override bones/dims),
 // then begin the animation loop so frame 1 already uses the right data.
-_rigBones=applyPivotDefaults(PRESETS.default.bones());
+_rigBones=TamagiAvatarRuntime.createBones(_avatarId,createBone,()=>applyPivotDefaults(PRESETS.default.bones()));
 await loadSpriteConfig();
 requestAnimationFrame(_rigTick);
 connectWS();await loadState();loadConversations();const needsOb=await checkOnboarding();if(!needsOb)await checkWorldSeed();setInterval(loadState,30000)});
