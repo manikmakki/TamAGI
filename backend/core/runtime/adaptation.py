@@ -243,8 +243,14 @@ class Adaptation:
 
     async def test_tool(self, proposal_id, arguments):
         proposal = self.runtime.store.get("proposal", proposal_id)
-        if not proposal or proposal["data"]["surface"] != "tool":
-            raise ValueError("Choose a tool proposal")
+        if not proposal:
+            raise ValueError(
+                "test_tool requires an existing proposal_id. Use runtime_change(action='inspect') to find it."
+            )
+        if proposal["data"]["surface"] != "tool":
+            raise ValueError(
+                "test_tool applies only to surface='tool'. For a prompt or retrieval change, use evaluate with proposal_id."
+            )
         # Tests run in a separate workspace. The authority profile is still reported honestly.
         import tempfile
 
@@ -281,16 +287,35 @@ class Adaptation:
         return result.to_dict()
 
     def activate(self, proposal_id, experiment_id):
+        from .change_guidance import proposal_status
+
+        guidance = proposal_status(self.runtime, proposal_id)
         proposal = self.runtime.store.get("proposal", proposal_id)
-        experiment = self.runtime.store.get("experiment", experiment_id)
-        if (
-            not proposal
-            or not experiment
-            or experiment["data"].get("proposal_id") != proposal_id
-            or experiment["data"].get("decision") != "promote"
-        ):
+        if not experiment_id:
             raise ValueError(
-                "Activation needs a qualifying comparative experiment for this proposal"
+                "activate requires experiment_id as well as proposal_id. Next call: "
+                + json.dumps(guidance["next_call"])
+                + ". "
+                + guidance["message"]
+            )
+        experiment = self.runtime.store.get("experiment", experiment_id)
+        if not experiment:
+            raise ValueError(
+                f"Unknown experiment_id {experiment_id!r}. Supply an experiment-... ID, not a proposal_id or job_id. "
+                + "Next call: "
+                + json.dumps(guidance["next_call"])
+            )
+        if experiment["data"].get("proposal_id") != proposal_id:
+            raise ValueError(
+                f"Experiment {experiment_id} belongs to a different proposal. "
+                + "Next call: "
+                + json.dumps(guidance["next_call"])
+            )
+        if experiment["data"].get("decision") != "promote":
+            raise ValueError(
+                f"Experiment {experiment_id} has overall decision={experiment['data'].get('decision')!r}; activation requires decision='promote'. "
+                "Individual scenario scores do not qualify. Next call: "
+                + json.dumps(guidance["next_call"])
             )
         data = proposal["data"]
         import hashlib
@@ -301,7 +326,9 @@ class Adaptation:
             experiment["data"].get("manifest", {}).get("candidate_hash")
             != candidate_hash
         ):
-            raise ValueError("Proposal changed since comparative evaluation")
+            raise ValueError(
+                "Proposal changed since comparative evaluation. This experiment approves a different version; evaluate the current proposal before activation."
+            )
         if data["surface"] == "tool":
             trials = [
                 r
@@ -310,7 +337,9 @@ class Adaptation:
             ]
             if not trials:
                 raise ValueError(
-                    "Tool activation requires a successful worker contract test"
+                    "Tool activation requires a successful worker contract test. Run runtime_change(action='test_tool', proposal_id='"
+                    + proposal_id
+                    + "', arguments={...}) with representative inputs. An existing matching decision=promote does not need to be rerun after a successful test."
                 )
         target = data["value"]["name"] if data["surface"] == "tool" else data["surface"]
         old = self.runtime.store.get("runtime_revision", target)

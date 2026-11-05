@@ -1,10 +1,12 @@
 """Small explicit affordances; trusted actor scope comes from execution context."""
 
 from __future__ import annotations
+
 import json
 from datetime import datetime
-from backend.skills.base import Skill, SkillResult
+
 from backend.core.runtime.contracts import current_execution
+from backend.skills.base import Skill, SkillResult
 
 
 class RuntimeSkill(Skill):
@@ -222,7 +224,14 @@ def install_development_skills(runtime, registry):
         target="",
         revision=0,
         arguments=None,
+        include_evidence=False,
     ):
+        from backend.core.runtime.change_guidance import (
+            change_call,
+            inspect_changes,
+            proposal_status,
+        )
+
         context = current_execution.get()
         if context and context.depth:
             raise ValueError("Only the primary resident manages runtime experiments")
@@ -230,6 +239,7 @@ def install_development_skills(runtime, registry):
             from backend.core.runtime.workspace import paths
 
             return {
+                **inspect_changes(runtime, proposal_id, include_evidence),
                 "workspace": str(runtime.workspace),
                 "paths": paths(runtime.workspace),
                 "tool_contract": {
@@ -237,28 +247,78 @@ def install_development_skills(runtime, registry):
                     "source": "skills/<tool_name>/",
                     "transport": "JSON arguments on stdin; one JSON result on stdout with boolean success, optional text output/error and object data",
                     "parameters": "Map of field names to type/description/required definitions, not a full JSON Schema",
-                    "lifecycle": ["propose", "test_tool", "evaluate", "activate"],
+                    "lifecycle": [
+                        "propose",
+                        "test_tool",
+                        "evaluate",
+                        "inspect",
+                        "activate",
+                    ],
                     "activation": "Requires a successful worker test and qualifying comparative experiment; a shell-local registry is separate from the application",
                 },
-                "proposals": runtime.store.list("proposal"),
-                "active": runtime.store.list("runtime_revision"),
-                "experiments": runtime.store.list("experiment"),
             }
         if action == "propose":
-            return runtime.adaptation.propose(surface, value, intention)
+            proposal = runtime.adaptation.propose(surface, value, intention)
+            return {**proposal_status(runtime, proposal["id"]), **proposal}
+        if action in {"test_tool", "evaluate", "activate"}:
+            if not proposal_id:
+                raise ValueError(
+                    f"action={action!r} requires proposal_id (the proposal-... ID returned by propose). "
+                    "experiment_id identifies evaluation evidence and cannot replace proposal_id. "
+                    "Use action='inspect' to find the IDs."
+                )
+            proposal_status(runtime, proposal_id)
         if action == "test_tool":
-            return await runtime.adaptation.test_tool(proposal_id, arguments or {})
+            result = await runtime.adaptation.test_tool(proposal_id, arguments or {})
+            if not result["success"]:
+                return {
+                    **result,
+                    "proposal_id": proposal_id,
+                    "status": "worker_test_failed",
+                    "message": "The worker test failed. Inspect its error, correct editable source and propose a new version before testing again. This does not qualify for activation.",
+                    "next_call": None,
+                }
+            return {**result, **proposal_status(runtime, proposal_id)}
         if action == "evaluate":
-            return runtime.submit_evaluation(proposal_id)
+            if experiment_id:
+                guidance = proposal_status(runtime, proposal_id)
+                raise ValueError(
+                    "evaluate does not accept experiment_id. Next call: "
+                    + json.dumps(guidance["next_call"])
+                    + ". "
+                    "evaluate starts a new comparison using proposal_id; activate uses both IDs from an overall decision=promote."
+                )
+            return {
+                **runtime.submit_evaluation(proposal_id),
+                "proposal_id": proposal_id,
+                "message": "The automated baseline/candidate comparison is queued, not passed. No human review or separate comparative marker is needed. Wait for evaluation_completed, then inspect this proposal for the overall decision and activation call. Do not resubmit just to check status.",
+                "next_call": change_call("inspect", proposal_id=proposal_id),
+                "wait_call": {
+                    "tool": "end_turn",
+                    "arguments": {
+                        "status": "waiting",
+                        "wake_event": "evaluation_completed",
+                    },
+                },
+            }
         if action == "activate":
-            return runtime.adaptation.activate(proposal_id, experiment_id)
+            revision_record = runtime.adaptation.activate(proposal_id, experiment_id)
+            return {**proposal_status(runtime, proposal_id), **revision_record}
         if action == "revert":
-            return runtime.adaptation.revert(target, revision)
+            if not target:
+                raise ValueError(
+                    "revert requires target: the tool name or runtime surface, not a proposal_id or experiment_id. Use inspect to find active revisions."
+                )
+            return {
+                "message": "The runtime revision was reverted. Inspect active revisions to confirm the selected version or retirement.",
+                "next_call": change_call("inspect"),
+                **runtime.adaptation.revert(target, revision),
+            }
         raise ValueError("Unknown runtime experiment operation")
 
     install(
         "runtime_change",
-        "Inspect paths and tool contracts; propose, test, evaluate, activate or revert a versioned runtime experiment. For a callable tool, read skills/README.md and use surface=tool: dropping a Python file or registering an artifact does not activate it. Evaluation is queued separately and retains comparison evidence.",
+        "Manage versioned changes: propose -> test_tool (tools only) -> evaluate -> inspect -> activate. inspect returns concise status and next_call; use proposal_id to focus it and include_evidence=true for full trials. evaluate starts an automated comparative job using proposal_id, without experiment_id. A queued job or successful scenario is not approval: activation requires the experiment's overall decision=promote and BOTH proposal_id and experiment_id. Activation is explicit. Read skills/README.md for worker contracts.",
         {
             "action": param(
                 "string",
@@ -272,7 +332,10 @@ def install_development_skills(runtime, registry):
                     "revert",
                 ],
             ),
-            "proposal_id": param("string"),
+            "proposal_id": param(
+                "string",
+                "Required for test_tool, evaluate and activate; optional filter for inspect. Use the proposal-... ID returned by propose.",
+            ),
             "surface": param(
                 "string",
                 enum=[
@@ -288,10 +351,23 @@ def install_development_skills(runtime, registry):
                 "description": "Prompt text, retrieval settings, or process tool object: name, description, command argv, parameters (field-name -> type/description/required), timeout 1–120. Worker reads JSON stdin and returns one JSON SkillResult on stdout. See skills/README.md.",
             },
             "intention": param("string"),
-            "experiment_id": param("string"),
-            "target": param("string"),
+            "experiment_id": param(
+                "string",
+                "Required for activate: the experiment-... ID whose overall decision is promote for this proposal. Do not pass to evaluate or use a job_id here.",
+            ),
+            "target": param(
+                "string",
+                "Required for revert: tool name or runtime surface, not a proposal or experiment ID.",
+            ),
             "revision": param("integer"),
-            "arguments": param("object"),
+            "arguments": param(
+                "object",
+                "Representative worker inputs for test_tool; use the proposed tool's parameter names.",
+            ),
+            "include_evidence": param(
+                "boolean",
+                "inspect only; default false. Set true with proposal_id to read full retained experiments and worker definitions.",
+            ),
         },
         runtime_change,
     )

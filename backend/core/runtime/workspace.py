@@ -83,12 +83,24 @@ not a full JSON Schema with a top-level properties object.
 1. Save and exercise your worker source in skills/<tool_name>/.
 2. Propose it; retain the returned proposal ID.
 3. test_tool with that proposal ID and representative arguments. Inspect success.
-4. evaluate the proposal; wait for evaluation_completed and inspect the retained
-   experiment. A failed or inconclusive comparison does not authorize activation.
-5. activate with the proposal ID and its qualifying experiment ID.
+4. evaluate with proposal_id to queue an automatic baseline/candidate comparison.
+   The returned job_id tracks execution, not approval. No human review or separate
+   comparative marker is needed. Do not pass experiment_id to evaluate. Wait with
+   end_turn(status="waiting", wake_event="evaluation_completed") or inspect later.
+   Use inspect with proposal_id for concise status, jobs, and an exact next_call;
+   include_evidence=true returns full evidence. Do not queue another evaluation
+   just to check status. An interrupted job can leave an unfinished experiment.
+5. Only an experiment's overall decision="promote" qualifies. A single successful
+   scenario is insufficient. activate requires BOTH proposal_id and experiment_id
+   from that qualifying experiment; it does not find the experiment automatically.
+   A missing experiment_id means supply the ID, not repeat the comparison.
 6. Inspect active revisions and invoke the actual named tool. Only then claim
    the running application can call it. Active tool changes appear at the next
    model-call boundary, without restarting the application.
+
+The default evaluation checks a few general behaviors and worker protocol
+availability. It does not verify every output or prove task-specific usefulness.
+Inspect the retained evidence and exercise representative inputs honestly.
 
 Use an explicit installed interpreter, never assume `python` or an activated
 virtualenv. The runtime reports its Python executable for inspection, but that
