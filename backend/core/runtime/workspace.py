@@ -29,6 +29,7 @@ not this workspace. /opt/TamAGI/workspace is a legacy directory, not this home.
 | scratch/ | Temporary experiments; no automatic deletion. |
 | .tools/ | Platform-owned frozen executable revisions. Do not edit these to revise a tool. |
 | .artifacts/ | Platform-owned saved artifact snapshots. These differ from editable originals. |
+| .attachments/ | Platform-owned, content-hashed images accepted through chat. |
 
 These conventions help you find work; they are not restrictions on host authority.
 Use subdirectories freely. Your IDENTITY.md, SOUL.md, USER.md and TASKS.md at the

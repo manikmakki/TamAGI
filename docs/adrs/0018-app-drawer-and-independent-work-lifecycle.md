@@ -1,6 +1,6 @@
 # ADR-0018: An app drawer, chat-first navigation, and independent work lifetimes
 
-Status: Accepted design by operator direction on 2026-11-05. Implementation and qualification are pending.
+Status: Accepted design by operator direction on 2026-11-05; implemented with mechanical qualification recorded in the roadmap. Sustained behavioral observation remains separate.
 
 ## Context
 
@@ -125,11 +125,11 @@ Inventory's folder discovery is a change from today's registered-snapshot-only l
 3. Consolidate Map, Journal/notebook, Inventory, Companions, Archive, and Settings; keep legacy-route adapters until their destinations work. Add workshop discovery with clear current/saved-version presentation.
 4. Exercise real browser navigation and disconnection against disposable instances, then release through the existing validation and supervisor lifecycle. Retain the findings as mechanical evidence separate from the ongoing behavioral pilot.
 
-This ADR records the decision first. Its acceptance does not classify any of this implementation work as completed.
+This ADR was recorded before implementation. Acceptance of the decision did not itself establish implementation evidence.
 
 ## Acceptance evidence
 
-As of this record, evidence consists of the source inspection above and the operator's navigation decisions. Existing tests cover receipts, budgets, quiet-turn interruption, and restart recovery; they do not establish transport-independent continuation or the new navigation behavior. Required implementation evidence:
+At acceptance, evidence consisted of the source inspection above and the operator's navigation decisions. Earlier receipts/budget/restart tests did not by themselves establish transport-independent continuation. The implementation adds `test_interactions.py`, `test_inventory.py`, the retained application smoke, and disposable Chromium scenarios in `scripts/navigation-browser-smoke.mjs`. The [implementation guide](../navigation-and-work.md) and [roadmap](../platform-roadmap.md#interface-consolidation-and-work-ownership) distinguish those mechanical checks from the behavioral pilot. Acceptance scenarios:
 
 - Chat remains the default; every drawer destination, direct link, legacy route, and Back/Forward transition is usable. Keyboard navigation, drawer focus return, accessible labels, and narrow/mobile layouts work without imposing a world setting.
 - Switching views during a tool call and during a quiet continuation preserves the conversation, draft, upload selection, scroll position, limits, and ongoing progress. Returning requires no extra prompt. Browsing creates no departure event or inference call.

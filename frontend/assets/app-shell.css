@@ -1,0 +1,90 @@
+[hidden] { display: none !important; }
+body { display: flex; flex-direction: column; }
+body #app { flex: 1; height: calc(100dvh - 44px); min-height: 0; }
+#shell-bar { display: flex; align-items: center; gap: 12px; height: 44px; min-height: 44px; padding: 0 14px; background: var(--bg-primary); border-bottom: 1px solid var(--border); }
+.shell-brand { font-family: var(--font-display); color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-decoration: none; }
+#shell-view-title { font-size: 10px; color: var(--text-secondary); border-left: 1px solid var(--border-bright); padding-left: 12px; }
+#shell-work { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 10px; color: var(--text-secondary); }
+#shell-work-label { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; max-width: 30vw; }
+#shell-work[data-busy=true] #shell-work-label { color: var(--accent); }
+#shell-work button { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-bright); padding: 4px 7px; border-radius: 4px; font: inherit; cursor: pointer; }
+#shell-work button:hover { color: var(--accent); border-color: var(--accent-dim); }
+#shell-notice { background: var(--bg-elevated); padding: 9px 18px; color: var(--text-secondary); font-size: 11px; border-bottom: 1px solid var(--border); }
+body .top-bar > div:first-child { visibility: hidden; }
+body .drawer { width: min(310px, 88vw); left: -340px; background: var(--bg-primary); }
+#drawer .drawer-header { padding: 20px; }
+#drawer .drawer-header h3 { color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 2px; }
+.app-menu { display: flex; flex: 1; flex-direction: column; gap: 5px; padding: 14px 12px; }
+.app-menu-item { display: flex; align-items: center; gap: 16px; padding: 13px 16px; border: 1px solid transparent; border-radius: 7px; color: var(--text-secondary); text-decoration: none; font-size: 13px; }
+.app-menu-item > span:first-child { width: 20px; font-size: 21px; text-align: center; color: var(--accent-tertiary); }
+.app-menu-item:hover, .app-menu-item:focus-visible { background: var(--bg-elevated); color: var(--text-primary); }
+.app-menu-item[aria-current=page] { background: var(--accent-glow); border-color: var(--border-bright); color: var(--accent); }
+.app-menu-item[data-view=settings] { margin-top: auto; border-top-color: var(--border); border-radius: 0; }
+.menu-unread { margin-left: auto; color: var(--accent); font-size: 10px; }
+.drawer-foot { padding: 18px 26px; color: var(--text-muted); font-size: 10px; border-top: 1px solid var(--border); }
+#shell-pages { flex: 1; overflow-y: auto; min-height: 0; }
+.shell-page { max-width: 1180px; margin: 0 auto; padding: 30px 32px 60px; }
+.page-heading { margin-bottom: 26px; }
+.shell-page .eyebrow { font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: var(--accent-tertiary); }
+.shell-page h1 { font-family: var(--font-display); font-size: 28px; font-weight: 400; margin: 10px 0; }
+.shell-page p { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.page-heading p, .muted, .sub { color: var(--text-secondary); }
+.shell-page h2, .shell-dialog h2 { font-size: 15px; font-weight: 500; margin-bottom: 14px; }
+.shell-page h3 { font-size: 12px; margin: 14px 0 10px; }
+.shell-page .grid, .creation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 18px; }
+.shell-page .card, .shell-dialog .card { border: 1px solid var(--border); background: var(--bg-surface); border-radius: 9px; padding: 22px; margin-bottom: 18px; }
+.shell-page details > summary, .shell-dialog details > summary { cursor: pointer; color: var(--accent-tertiary); font-size: 12px; margin-bottom: 12px; }
+.shell-page .item { border-top: 1px solid var(--border); padding: 12px 0; font-size: 12px; }
+.shell-page .item strong { font-weight: 500; }
+.shell-page .item p, .shell-dialog p { white-space: pre-wrap; }
+.shell-page .row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.shell-page button:not(.drawer-tab):not(.dream-trigger-btn):not(.flyout-back):not(.mem-filter), .shell-page .button { font: inherit; font-size: 11px; color: var(--text-primary); background: var(--bg-elevated); border: 1px solid var(--border-bright); border-radius: 5px; padding: 8px 12px; cursor: pointer; }
+.shell-page button:hover, .shell-page .button:hover { border-color: var(--accent-dim); }
+.shell-page button:disabled { opacity: .5; cursor: wait; }
+.shell-page a { color: var(--accent-tertiary); }
+.shell-page input:not([type=checkbox]), .shell-page textarea, .shell-page select { width: 100%; font: inherit; font-size: 12px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-bright); border-radius: 5px; padding: 10px; margin: 6px 0 14px; }
+.shell-page textarea { min-height: 90px; resize: vertical; }
+.shell-page label { font-size: 11px; color: var(--text-secondary); }
+.shell-page form { margin-top: 14px; }
+.shell-page pre, .shell-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow: auto; font-size: 11px; line-height: 1.7; }
+.shell-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border); margin-bottom: 20px; padding-bottom: 10px; flex-wrap: wrap; }
+.shell-tabs a { padding: 8px 10px; color: var(--text-secondary); font-size: 11px; text-decoration: none; border-radius: 5px; }
+.shell-tabs a[aria-current=page] { background: var(--accent-glow); color: var(--accent); }
+#view-archive .drawer-panel { min-height: 350px; overflow: visible; }
+#view-archive .conv-list, #view-archive .mem-entries { overflow: visible; }
+#view-archive .new-chat-btn { width: fit-content; margin: 0 0 15px; }
+#view-archive .conv-item { max-width: 800px; }
+.journal-columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr); gap: 22px; }
+#panel-mind { height: 70vh; min-height: 350px; border: 1px solid var(--border); border-radius: 8px; }
+#panel-mind .mind-activity { margin: 10px; }
+#panel-mind .mind-title { font-size: 12px; }
+#panel-mind .mind-content, #panel-mind .flyout-section-text { font-size: 12px; }
+.view-frame { display: block; width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); }
+.map-frame { height: min(72vh, 800px); min-height: 420px; margin-bottom: 20px; }
+.settings-frame { height: 80vh; min-height: 500px; }
+.creation-grid { margin-bottom: 22px; }
+.creation-card { display: flex; flex-direction: column; min-height: 180px; gap: 12px; }
+.creation-icon { font-size: 25px; color: var(--accent-tertiary); }
+.creation-card h2 { margin: 0; overflow-wrap: anywhere; }
+.creation-card small { color: var(--text-muted); font-size: 10px; }
+.creation-card .row { margin-top: auto; }
+.empty { padding: 20px 0; color: var(--text-muted); font-size: 12px; }
+.shell-dialog { color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-bright); border-radius: 10px; padding: 28px; width: min(850px, 94vw); max-height: 90dvh; margin: auto; font-family: var(--font-mono); }
+.shell-dialog::backdrop { background: #03030abf; backdrop-filter: blur(3px); }
+.dialog-close { float: right; font-size: 20px; color: var(--text-secondary); background: transparent; border: 0; cursor: pointer; padding: 0 5px; }
+#preview-content iframe { width: 100%; height: 60vh; background: white; border: 0; }
+#preview-content img { max-width: 100%; max-height: 65vh; object-fit: contain; }
+#preview-note { color: var(--text-secondary); font-size: 11px; margin: 10px 0; }
+.shell-dialog button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent-tertiary); outline-offset: 3px; }
+@media (max-width: 700px) {
+  #shell-bar { gap: 8px; padding: 0 10px; }
+  #shell-view-title { display: none; }
+  #shell-work { font-size: 9px; gap: 5px; }
+  #shell-work-label { max-width: 33vw; }
+  .shell-page { padding: 22px 14px 45px; }
+  .shell-page h1 { font-size: 24px; }
+  .journal-columns { grid-template-columns: 1fr; }
+  #panel-mind { height: 65vh; }
+  .shell-dialog { padding: 18px; }
+}

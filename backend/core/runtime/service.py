@@ -336,6 +336,8 @@ class RuntimeService:
         return data
 
     def due(self, *, ignore_decompression=False, ignore_error_backoff=False):
+        if getattr(self, "interactions", None) and self.interactions.has_pending():
+            return False
         state = self.activity_state()
         now = self.store.clock()
         error_wait = state.get("wait_reason") in {

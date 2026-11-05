@@ -142,6 +142,8 @@ async def run_tool_loop(
                         {
                             "type": "tool_result",
                             "name": tc.name,
+                            "receipt_id": getattr(result, "data", {}).get("receipt_id"),
+                            "success": getattr(result, "success", None),
                             "output": str(result.output)[:300]
                             if hasattr(result, "output")
                             else str(result)[:300],

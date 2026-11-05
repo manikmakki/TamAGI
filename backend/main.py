@@ -350,6 +350,10 @@ async def lifespan(app: FastAPI):
     if runtime:
         from backend.core.runtime.learning import LearningConsolidator
         agent.consolidation = LearningConsolidator(runtime, llm, config.world_thread.consolidation.every_n_ticks)
+    if runtime:
+        from backend.core.runtime.interactions import Interactions
+        runtime.interactions = Interactions(runtime, agent, config.autonomy.resume_after_conversation)
+        runtime.interactions.start()
     world_thread.start()
     logger.info("World thread started — Living World is active")
 
@@ -360,6 +364,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info(f"═══ {config.tamagi.name} is going to sleep... ═══")
+    if runtime:
+        await runtime.interactions.close()
     await world_thread.stop()
     personality.save_state()
     self_model.save()
@@ -440,8 +446,10 @@ class RuntimeMutationMiddleware(BaseHTTPMiddleware):
         from backend.core.runtime import get_runtime, current_execution
         runtime = get_runtime()
         transfer = request.url.path.startswith(('/api/backups', '/api/restores'))
+        owns_lifetime = request.url.path == '/api/chat' or request.url.path.startswith('/api/chat/requests') or (request.url.path.startswith('/api/companions/') and request.url.path.endswith('/consult'))
+        observation = request.url.path == '/api/memory/recall'
         if runtime and request.method in {'POST', 'PUT', 'PATCH', 'DELETE'} and request.url.path.startswith('/api/') and not request.url.path.startswith('/api/auth/'):
-            if runtime.maintenance:
+            if runtime.maintenance and not (owns_lifetime or observation):
                 return JSONResponse({'detail':'Checkpoint or deployment in progress'}, status_code=503)
             # Recheck operator authentication before creating any executable activation.
             if not request.session.get('authenticated'):
@@ -449,7 +457,7 @@ class RuntimeMutationMiddleware(BaseHTTPMiddleware):
             origin = request.headers.get('origin')
             if origin and origin != str(request.base_url).rstrip('/'):
                 return JSONResponse({'detail':'Cross-origin mutation refused'}, status_code=403)
-            if not transfer and request.url.path != "/api/world/tick" and current_execution.get() is None:
+            if not transfer and not owns_lifetime and not observation and request.url.path != "/api/world/tick" and current_execution.get() is None:
                 async with runtime.execution('user'):
                     return await call_next(request)
         return await call_next(request)
@@ -536,22 +544,32 @@ if frontend_path.exists():
 
     @app.get("/home")
     async def home_page():
-        return FileResponse(frontend_path / "home.html")
+        return FileResponse(frontend_path / "index.html")
 
     @app.get("/settings")
     async def settings_page():
-        return FileResponse(frontend_path / "settings.html")
+        return FileResponse(frontend_path / "index.html")
 
     @app.get("/rig-editor")
     async def rig_editor_page():
-        return FileResponse(frontend_path / "rig-editor.html")
+        return FileResponse(frontend_path / "index.html")
 
     @app.get("/self-model")
     async def self_model_page():
-        return FileResponse(frontend_path / "self-model.html")
+        return FileResponse(frontend_path / "index.html")
+
+    @app.get("/panels/{panel}")
+    async def compatibility_panel(panel: str):
+        files = {"map": "self-model.html", "settings": "settings.html", "appearance": "rig-editor.html"}
+        if panel not in files:
+            from fastapi import HTTPException
+            raise HTTPException(404, "Unknown view")
+        return FileResponse(frontend_path / files[panel])
 
     @app.get("/{path:path}")
     async def serve_frontend(path: str):
+        if path in {"home.html", "settings.html", "rig-editor.html", "self-model.html"}:
+            return FileResponse(frontend_path / "index.html")
         # Try to serve the exact file first
         file_path = frontend_path / path
         if file_path.is_file():

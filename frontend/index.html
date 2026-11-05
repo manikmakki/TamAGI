@@ -8,8 +8,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/manifest.json">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/15.0.7/marked.min.js"></script>
+  <script src="/assets/marked.min.js"></script>
   <title>TamAGI</title>
+  <link rel="stylesheet" href="/assets/app-shell.css?v=18">
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap');
@@ -834,26 +835,12 @@
 
 <!-- DRAWER -->
 <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
-<aside class="drawer" id="drawer">
-  <div class="drawer-header">
-    <h3 id="drawer-title">Conversations</h3>
-    <button class="drawer-close" onclick="closeDrawer()">&times;</button>
-  </div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="App drawer" inert><div class="drawer-header"><h3 id="drawer-title">Explore</h3><button class="drawer-close" onclick="closeDrawer()" aria-label="Close app drawer">&times;</button></div><nav class="app-menu" aria-label="Main navigation"><a class="app-menu-item" data-view="chat" href="/"><span aria-hidden="true">◇</span><span>Chat</span><span class="menu-unread" data-unread="chat" hidden></span></a><a class="app-menu-item" data-view="map" href="/map"><span aria-hidden="true">⌘</span><span>Map</span><span class="menu-unread" data-unread="map" hidden></span></a><a class="app-menu-item" data-view="journal" href="/journal"><span aria-hidden="true">▤</span><span>Journal</span><span class="menu-unread" data-unread="journal" hidden></span></a><a class="app-menu-item" data-view="inventory" href="/inventory"><span aria-hidden="true">▧</span><span>Inventory</span><span class="menu-unread" data-unread="inventory" hidden></span></a><a class="app-menu-item" data-view="companions" href="/companions"><span aria-hidden="true">♧</span><span>Companions</span><span class="menu-unread" data-unread="companions" hidden></span></a><a class="app-menu-item" data-view="archive" href="/archive"><span aria-hidden="true">▥</span><span>Archive</span><span class="menu-unread" data-unread="archive" hidden></span></a><a class="app-menu-item" data-view="settings" href="/settings"><span aria-hidden="true">⚙</span><span>Settings</span><span class="menu-unread" data-unread="settings" hidden></span></a></nav><div class="drawer-foot">A little world to discover.</div></aside>
 
-  <div class="drawer-tabs">
-    <button class="drawer-tab active" id="tab-chats"     onclick="switchTab('chats')">Chats</button>
-    <button class="drawer-tab"        id="tab-mind"      onclick="switchTab('mind')">Mind</button>
-    <button class="drawer-tab"        id="tab-memories"  onclick="switchTab('memories')">Memories</button>
-  </div>
-
-  <!-- Chats panel (existing behavior) -->
-  <div class="drawer-panel" id="panel-chats">
-    <div class="new-chat-btn" onclick="newConversation()">+ New Conversation</div>
-    <div class="conv-list" id="conv-list"></div>
-  </div>
-
-  <!-- Mind panel — TamAGI's inner monologue: goals, actions, reflections -->
-  <div class="drawer-panel hidden" id="panel-mind">
+<header id="shell-bar"><button class="btn-icon" id="shell-menu" onclick="openDrawer()" aria-label="Open app drawer" aria-controls="drawer" aria-expanded="false">&#9776;</button><a href="/" class="shell-brand">TAMAGI</a><span id="shell-view-title">Chat</span><div id="shell-work" role="status" aria-live="polite"><span id="shell-work-label">Ready</span><button id="shell-stop" hidden>Stop</button><button id="shell-return" hidden>Open chat</button></div></header><div id="shell-notice" role="status" aria-live="polite" hidden></div>
+<main id="shell-pages" hidden>
+<section class="shell-page" id="view-map" hidden><div class="page-heading"><span class="eyebrow">Places &amp; connections</span><h1>Map</h1><p>Explore the world taking shape.</p></div><iframe class="view-frame map-frame" title="World map" data-src="/panels/map"></iframe><details class="card"><summary>Places &amp; ongoing pursuits</summary><div id="places"></div><article class="card"><h2>Ongoing pursuits</h2><div id="pursuits"></div><form id="pursuit-form"><label for="pursuit-title">Something to explore together</label><input id="pursuit-title" required><label for="pursuit-step">A possible next step</label><input id="pursuit-step"><button>Start a pursuit</button></form></article></details></section>
+<section class="shell-page" id="view-journal" hidden><div class="page-heading"><span class="eyebrow">Life between conversations</span><h1>Journal</h1><p>Thoughts, discoveries, and time to rest.</p></div><div class="journal-columns"><div><div class="drawer-panel hidden" id="panel-mind">
     <div class="mind-panel-header">
       <div class="mind-status" id="mind-status-row"></div>
       <button class="dream-trigger-btn" id="dream-trigger-btn" onclick="triggerDream()">&#x25B6; Tick Now</button>
@@ -874,10 +861,13 @@
         <div id="flyout-body"></div>
       </div>
     </div>
-  </div>
-
-  <!-- Memories panel (new) -->
-  <div class="drawer-panel hidden" id="panel-memories">
+  </div></div><aside><article class="card"><h2>Household notebook</h2><div id="notes" class="list"></div><form id="note-form"><label for="note-text">Leave a shared note</label><textarea id="note-text" required maxlength="16000"></textarea><button>Place on the shelf</button></form></article></aside></div></section>
+<section class="shell-page" id="view-inventory" hidden><div class="page-heading"><span class="eyebrow">Things made here</span><h1>Inventory</h1><p>Creations from the workshop, finished or still taking shape.</p></div><div id="inventory-items" class="creation-grid"></div><details class="card" id="earlier-artifacts"><summary>Earlier saved artifacts</summary><div id="earlier-items"></div></details></section>
+<section class="shell-page" id="view-companions" hidden><div class="page-heading"><span class="eyebrow">Familiar voices</span><h1>Companions</h1></div><p class="sub">Each companion keeps their own memories. Conversations and chosen notes become shared history.</p><div id="companions" class="grid"></div><details class="card"><summary>Introduce a companion</summary><form id="companion-form"><label for="friend-name">Name</label><input id="friend-name" required maxlength="100"><label for="friend-seed">Starting disposition</label><textarea id="friend-seed" required maxlength="2000" placeholder="A few qualities or interests to begin with"></textarea><button>Introduce</button></form></details><article class="card" id="consultation" hidden><h2 id="consult-title">Conversation</h2><div id="friend-reply" aria-live="polite"></div><form id="consult-form"><label for="friend-message">Your invitation</label><textarea id="friend-message" required maxlength="16000"></textarea><select id="friend-mode" aria-label="Invitation type"><option value="conversation">Conversation</option><option value="task">A bounded task</option></select><button>Send invitation</button></form></article></section>
+<section class="shell-page" id="view-archive" hidden><div class="page-heading"><span class="eyebrow">Our shared history</span><h1>Archive</h1></div><div class="shell-tabs" role="tablist" aria-label="Archive"><button class="drawer-tab active" id="tab-chats" role="tab" aria-selected="true" onclick="switchTab('chats')">Conversations</button><button class="drawer-tab" id="tab-memories" role="tab" aria-selected="false" onclick="switchTab('memories')">Memories</button></div><div class="drawer-panel" id="panel-chats">
+    <div class="new-chat-btn" onclick="newConversation()">+ New Conversation</div>
+    <div class="conv-list" id="conv-list"></div>
+  </div><div class="drawer-panel hidden" id="panel-memories">
     <div class="mem-search-bar">
       <input class="mem-search-input" id="mem-search" type="text"
              placeholder="Search memories..." oninput="debouncedSearch(this.value)" />
@@ -894,23 +884,19 @@
     <div class="mem-entries" id="mem-entries">
       <div class="drawer-empty">Search your memories...</div>
     </div>
-  </div>
-
-  <div class="drawer-nav">
-    <a href="/home" class="drawer-nav-link">⌂ Home &amp; Workshop</a>
-    <a href="/rig-editor" onclick="closeDrawer()" class="drawer-nav-link">▦ Rig Editor</a>
-    <a href="/self-model" onclick="closeDrawer()" class="drawer-nav-link">&#x25C8; World Model</a>
-    <a href="/settings"   onclick="closeDrawer()" class="drawer-nav-link">⚙ Settings</a>
-  </div>
-</aside>
-
+  </div></section>
+<section class="shell-page" id="view-settings" hidden><div class="page-heading"><span class="eyebrow">Make yourself at home</span><h1>Settings</h1></div><div class="shell-tabs" role="tablist" aria-label="Settings"><a href="/settings" data-setting="operator">Home &amp; recovery</a><a href="/settings/connections" data-setting="connections">Connections</a><a href="/settings/appearance" data-setting="appearance">Appearance</a></div><div id="settings-operator"><div class="grid"><article class="card"><h2>Save a portable backup</h2><p class="muted">Save identities, memories, companions, and creations in an encrypted download. Keep a copy on another device for independent recovery. Credentials and model weights are excluded; text and artifacts may contain information you have placed in them.</p><form id="backup-form"><label for="backup-password">Backup password · at least 12 characters</label><input type="password" id="backup-password" minlength="12" required autocomplete="new-password"><button>Create encrypted download</button></form><div id="backup-download"></div></article><article class="card"><h2>Continue from a backup</h2><p class="muted">Preview a saved home before restoring. You will reconnect credentials and choose this computer’s permissions.</p><form id="restore-form"><label for="restore-file">Encrypted TamAGI archive</label><input type="file" id="restore-file" required accept=".gpg"><label for="restore-password">Archive password</label><input type="password" id="restore-password" required autocomplete="off"><button>Preview archive</button></form><div id="restore-preview" hidden><pre id="restore-details"></pre><label for="restore-authority">Authority on this computer</label><select id="restore-authority"><option value="guarded">Guarded workspace</option><option value="unrestricted_host">Unrestricted host root · dedicated computer</option></select><p><label><input type="checkbox" id="source-stopped">The source installation is stopped. This continues the same resident.</label></p><button id="restore-commit">Restore this home</button></div></article></div><details class="card"><summary>The predecessor’s archive</summary><p class="muted">The previous instance is preserved for you. Its memories are excluded from this resident’s life. Export it separately for safekeeping.</p><button id="load-archives">Show preserved archives</button><div id="archives"></div></details>
+<details class="card"><summary>External service permissions</summary><p class="muted">Delegate a configured service action for an hour, or revoke its allowance.</p><button id="load-grants">Show configured actions</button><div id="grants"></div></details>
+<details class="card"><summary>Automatic application deployment</summary><p class="muted">After recovery qualification, TamAGI can activate its own tested releases. A portable backup kept elsewhere provides a separate way back.</p><button id="enable-deployment">Enable qualified automatic deployment</button> <button id="disable-deployment">Pause automatic deployment</button></details>
+<details class="card"><summary>Runtime, changes, and recovery evidence</summary><p class="muted">Host-root controls are cooperative operating practices. A portable backup does not recreate the operating system or every external service.</p><pre id="runtime-details"></pre><div class="row"><button id="refresh-evidence">Refresh evidence</button><a href="/settings/connections">Connections &amp; credentials</a></div><pre id="evidence"></pre></details></div><iframe class="view-frame settings-frame" title="Connections and credentials" data-src="/panels/settings" id="settings-connections" hidden></iframe><iframe class="view-frame settings-frame" title="Avatar appearance editor" data-src="/panels/appearance" id="settings-appearance" hidden></iframe></section>
+</main><dialog id="growth-dialog" class="shell-dialog"><button class="dialog-close" aria-label="Close growth details">×</button><details class="card" id="growth"><summary>Why this level?</summary><h2 id="growth-title">Growing here</h2><p id="growth-summary" class="muted"></p><progress id="recognition-progress" max="1" value="0" aria-label="Growth toward the next level" style="width:100%;accent-color:var(--accent)"></progress><p id="growth-age" class="muted"></p><p class="muted">Growth recognizes sustained conversation, continuity, and adaptation. Age is shown separately.</p><h3>Recent recognition</h3><div id="growth-recognitions"></div><details><summary>Stage history</summary><div id="growth-stages"></div></details></details></dialog><dialog id="preview-dialog" class="shell-dialog"><button class="dialog-close" aria-label="Close preview">×</button><h2 id="preview-title">Creation</h2><p id="preview-note"></p><div id="preview-content"></div></dialog><dialog id="work-approval-dialog" class="shell-dialog"><h2>Approval needed</h2><div id="work-approval-content"></div></dialog>
 <!-- APP -->
 <div id="app">
   <!-- AVATAR — TOP 1/3 -->
   <div class="avatar-panel">
     <div class="top-bar">
       <div style="display:flex;align-items:center;gap:7px">
-        <button class="btn-icon" onclick="openDrawer()" title="Conversations">&#9776;</button>
+        <button class="btn-icon chat-menu" onclick="openDrawer()" title="Open app drawer" aria-label="Open app drawer" aria-controls="drawer" aria-expanded="false">&#9776;</button>
         <div class="logo-small">TAMAGI<span>v0.1</span></div>
       </div>
       <div class="top-pills">
@@ -935,7 +921,7 @@
           <div class="growth-detail" id="growth-detail" hidden>
             <span id="growth-next"></span>
             <progress id="growth-progress" max="1" value="0" aria-label="Growth toward the next level"></progress>
-            <div class="growth-meta"><span id="resident-age"></span><a href="/home#growth">Why this level?</a></div>
+            <div class="growth-meta"><span id="resident-age"></span><a href="/growth">Why this level?</a></div>
           </div>
         </div>
         <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Vitality <span class="stat-help">&#9432;</span></span><span id="s-vitality-v">80</span></div><div class="stat-bar"><div class="stat-fill vitality" id="s-vitality-f" style="width:80%"></div></div><div class="stat-tip">A playful illustration of daily rhythm. Drifts toward a time-of-day baseline — high midday, low at night.</div></div>
@@ -2027,5 +2013,7 @@ async function loadState(){
 }
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
+<script src="/assets/app-shell.js?v=18"></script>
+<script src="/assets/home-views.js?v=18"></script>
 </body>
 </html>

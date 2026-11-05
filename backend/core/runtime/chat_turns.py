@@ -291,6 +291,8 @@ async def run_chat_turns(
                             "type": "tool_result",
                             "name": call.name,
                             "output": receipt.output[:500],
+                            "receipt_id": receipt.data.get("receipt_id"),
+                            "success": receipt.success,
                         }
                     )
                     mutation = receipt.data.get("sm_mutation")

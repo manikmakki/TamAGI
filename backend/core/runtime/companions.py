@@ -75,6 +75,8 @@ class Companions:
         allowed_tools=None,
         *,
         _caller_actor_id=None,
+        _event_callback=None,
+        _pending_approvals=None,
     ):
         from backend.core.tool_loop import run_tool_loop
 
@@ -90,6 +92,8 @@ class Companions:
                     thread_id,
                     allowed_tools,
                     _caller_actor_id=_caller_actor_id,
+                    _event_callback=_event_callback,
+                    _pending_approvals=_pending_approvals,
                 )
         caller_actor_id = _caller_actor_id or context.actor_id
         if context.depth:
@@ -182,7 +186,9 @@ class Companions:
                     self.skills,
                     messages,
                     max_rounds=getattr(self.runtime.config, "companion_calls", 16),
-                    is_autonomous=True,
+                    event_callback=_event_callback,
+                    pending_approvals=_pending_approvals,
+                    is_autonomous=_caller_actor_id != "operator",
                 )
                 terminal = current_terminal.get()
                 receipts = self.runtime.store.receipts(invocation.execution_id)

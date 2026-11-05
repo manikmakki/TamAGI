@@ -18,6 +18,8 @@ Deterministic **Growth** recognizes sustained conversation, continuity, and adap
 
 The seven-day behavioral pilot is an operational gate; passing unit tests is not evidence of sustained autonomous improvement.
 
+The app drawer keeps **Chat** at home and opens **Map, Journal, Inventory, Companions, Archive, and Settings**. Accepted work belongs to the backend, so browsing or disconnecting does not cancel it; return to its retained result or use **Stop** explicitly. Inventory discovers workshop creations and distinguishes current files from saved versions. See [navigation and work](docs/navigation-and-work.md) for recovery behavior and verification.
+
 
 ## What is TamAGI?
 

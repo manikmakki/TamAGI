@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, SecretStr
 from backend.core.runtime import get_runtime
 from backend.core.runtime.contracts import RuntimeConflict
@@ -38,6 +39,55 @@ router = APIRouter(
 )
 
 
+@router.get("/inventory")
+async def inventory(runtime=Depends(operator)):
+    from backend.core.runtime.inventory import Inventory
+    try:
+        return Inventory(runtime).list()
+    except (OSError, ValueError):
+        raise HTTPException(409, "Workshop directory unavailable") from None
+
+
+@router.get("/inventory/file")
+async def inventory_file(path: str, preview: bool = False, runtime=Depends(operator)):
+    import mimetypes
+    from urllib.parse import quote
+    from backend.core.runtime.inventory import Inventory
+
+    try:
+        file = Inventory(runtime).open(path)
+    except (OSError, ValueError):
+        raise HTTPException(404, "Workshop file unavailable") from None
+    headers = {"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"}
+    if preview:
+        try:
+            mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+            safe_images = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+            limit = 16 * 1024 * 1024 if mime in safe_images else 256 * 1024
+            content = file.read(limit + 1)
+            if len(content) > limit:
+                raise HTTPException(413, "Use download for this larger file")
+            headers["Content-Security-Policy"] = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
+            if mime not in safe_images | {"text/html", "image/svg+xml"}:
+                try:
+                    content.decode("utf-8")
+                except UnicodeError:
+                    raise HTTPException(415, "Preview unavailable; use download") from None
+                mime = "text/plain"
+            return Response(content, media_type=mime, headers=headers)
+        finally:
+            file.close()
+
+    def chunks():
+        try:
+            while chunk := file.read(65536):
+                yield chunk
+        finally:
+            file.close()
+    headers["Content-Disposition"] = "attachment; filename*=UTF-8''" + quote(Path(path).name, safe="")
+    return StreamingResponse(chunks(), media_type="application/octet-stream", headers=headers)
+
+
 class Operation(BaseModel):
     action: str
     id: str = ""
@@ -55,6 +105,8 @@ class Consultation(BaseModel):
     mode: str = "conversation"
     thread_id: str | None = None
     allowed_tools: list[str] | None = None
+    request_id: str | None = Field(default=None, min_length=1, max_length=128)
+    background: bool = False
 
 
 class BackupRequest(BaseModel):
@@ -179,6 +231,13 @@ async def inspect_companion(actor_id: str, runtime=Depends(operator)):
 
 @router.post("/companions/{actor_id}/consult")
 async def consult(actor_id: str, body: Consultation, runtime=Depends(operator)):
+    if getattr(runtime, "interactions", None):
+        from backend.core.runtime.interactions import AdmissionError
+        try:
+            work = await runtime.interactions.submit({"actor_id": actor_id, **body.model_dump(exclude={"request_id", "background"})}, body.request_id, kind="companion")
+            return work if body.background else await runtime.interactions.wait(work["work_id"])
+        except AdmissionError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
     try:
         return await runtime.companions.consult(
             actor_id, body.content, body.mode, body.thread_id, body.allowed_tools,

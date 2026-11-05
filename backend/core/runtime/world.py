@@ -24,7 +24,11 @@ async def tick(world, *, manual=False):
     if not runtime.due(ignore_decompression=manual, ignore_error_backoff=manual):
         state = runtime.activity_state()
         now = runtime.store.clock()
-        if state.get("wait_reason") in {
+        if getattr(runtime, "interactions", None) and runtime.interactions.has_pending():
+            reason = "user_work"
+            detail = "Accepted conversational work is still running or queued."
+            next_wake = None
+        elif state.get("wait_reason") in {
             "context_limit",
             "request_rejected",
             "provider_unavailable",
@@ -50,7 +54,7 @@ async def tick(world, *, manual=False):
             detail = "The post-conversation pause is still in effect."
             next_wake = runtime.store.meta("decompression_until")
         return {
-            "status": state["status"] if reason != "decompression" else "waiting",
+            "status": state["status"] if reason not in {"decompression", "user_work"} else "waiting",
             "location": state.get("location", "home"),
             "next_wake_at": next_wake,
             "reason": reason,

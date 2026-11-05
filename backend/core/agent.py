@@ -368,7 +368,7 @@ class TamAGIAgent:
             logger.warning("World conversation summarization failed: %s", exc)
             return ""
 
-    async def on_conversation_ended(self, conv_id: str) -> None:
+    async def on_conversation_ended(self, conv_id: str, *, schedule_resume: bool = True) -> None:
         """Called when a user conversation ends. Injects departure event into the world thread."""
         # Relational consolidation runs independently of the world thread.
         await self._maybe_relational_consolidate(conv_id)
@@ -377,15 +377,17 @@ class TamAGIAgent:
             return
         conv = self.get_conversation(conv_id)
         if not conv or len(conv.messages) < 2:
-            self._world_thread.schedule_resume()
+            if schedule_resume:
+                self._world_thread.schedule_resume()
             return
         try:
             from backend.core.world_thread import WorldEventInjector
 
             duration_minutes = int((time.time() - conv.created_at) / 60)
-            summary = await self._summarize_conversation_for_world(conv)
+            summary = "" if conv.world_summarized else await self._summarize_conversation_for_world(conv)
             conv.world_summarized = True
             self._unmark_conv_pending(conv_id)
+            self._save_conversation(conv)
             if summary:
                 departure_event = WorldEventInjector.visitor_departure(
                     "your visitor", summary
@@ -399,7 +401,8 @@ class TamAGIAgent:
         except Exception as exc:
             logger.warning("on_conversation_ended failed: %s", exc)
         finally:
-            self._world_thread.schedule_resume()
+            if schedule_resume:
+                self._world_thread.schedule_resume()
 
     async def flush_unsummarized_conversations(self) -> None:
         """Summarize pending conversations and inject departure events into the world thread.
@@ -520,6 +523,7 @@ class TamAGIAgent:
         event_callback: Callable[[dict], Coroutine] | None = None,
         is_autonomous: bool = False,
         _input_epoch: int | None = None,
+        _admitted_message: dict | None = None,
     ) -> dict[str, Any]:
         """
         Process a user message and return TamAGI's response.
@@ -556,6 +560,7 @@ class TamAGIAgent:
                     image_media_type=image_media_type,
                     is_autonomous=is_autonomous,
                     _input_epoch=_input_epoch,
+                    _admitted_message=_admitted_message,
                 )
         if runtime:
             runtime.reconcile_identity()
@@ -588,17 +593,26 @@ class TamAGIAgent:
             history_content = user_message
 
         # Record user message (text-only placeholder for persistence)
-        current_user_record = Message(role="user", content=history_content)
-        conv.messages.append(current_user_record)
+        current_user_record = Message(**_admitted_message) if _admitted_message else Message(role="user", content=history_content)
+        if not any(message.id == current_user_record.id for message in conv.messages):
+            conv.messages.append(current_user_record)
+        user_index = next(index for index, message in enumerate(conv.messages) if message.id == current_user_record.id)
+
+        def record_response(message):
+            index = next(index for index, item in enumerate(conv.messages) if item.id == current_user_record.id)
+            conv.messages.insert(index + 1, message)
+
         if runtime:
             runtime.growth.bind_conversation(
-                conv.id, [message.to_dict() for message in conv.messages]
+                conv.id, [message.to_dict() for message in conv.messages[:user_index + 1]]
             )
         conv.updated_at = time.time()
         conv.world_summarized = (
             False  # new messages → needs re-summarization for world thread
         )
         self._mark_conv_pending(conv.id)
+        if _admitted_message:
+            self._save_conversation(conv)
         if self._world_thread:
             # Refresh the pause on every active turn, not only the first one.
             self._world_thread.pause_for_conversation()
@@ -655,7 +669,7 @@ class TamAGIAgent:
                             "conversation_id": conv.id,
                             "execution_id": current_execution.get().execution_id,
                         }
-                    conv.messages.append(
+                    record_response(
                         Message(
                             role="assistant",
                             content=_clarification.question,
@@ -776,9 +790,9 @@ class TamAGIAgent:
         # Start from the last N messages, excluding the current (just-appended) turn.
         history_start_index = max(
             0,
-            len(conv.messages) - self.config.history.max_messages_per_conversation,
+            user_index + 1 - self.config.history.max_messages_per_conversation,
         )
-        history_messages = list(conv.messages[history_start_index:-1])
+        history_messages = list(conv.messages[history_start_index:user_index])
 
         # Context compression: if the total character count of the history exceeds
         # the configured threshold, archive the oldest messages into persistent memory and
@@ -1305,7 +1319,7 @@ class TamAGIAgent:
             meta["context_compressed"] = archived_count
         if sm_mutations:
             meta["sm_mutations"] = sm_mutations
-        conv.messages.append(
+        record_response(
             Message(
                 role="assistant",
                 content=final_text,
@@ -1326,7 +1340,7 @@ class TamAGIAgent:
                 triple = (
                     f"User: {prev_user}\nTamAGI: {prev_assistant}\nUser: {user_message}"
                 )
-                turn_index = sum(1 for m in conv.messages if m.role == "user") - 1
+                turn_index = sum(1 for m in conv.messages[:user_index + 1] if m.role == "user") - 1
                 anchor_message_index = next(
                     (
                         index
