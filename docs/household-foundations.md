@@ -6,6 +6,8 @@ This delivers a runnable foundation across parts of roadmap Phases B–D. It doe
 
 The [qualification record](qualification/0019-foundations-2026-11-06.md) retains the clean-revision result: **232 passing tests, including 83 new household tests**, plus the successful three-process scenario. Real model calls and push dispatches were zero.
 
+A later [interactive development preview](household-preview.md) exposes these fixtures in a separate local browser panel with scripted replies, new/unread threads, world commands and scheduling inspection. It remains separate from production app integration and starts no real model or notification traffic.
+
 ## Implemented boundary
 
 | Component | Implemented behavior | Evidence |
