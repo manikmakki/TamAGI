@@ -2,6 +2,14 @@
 
 The [accepted ADRs](adrs/README.md) define the direction. Their parent-child framing concerns the builder’s obligations: honest conditions, meaningful choices, recoverable mistakes, and increasing independence. It is not a prescribed resident identity.
 
+## Multi-resident direction: documented, not enabled
+
+[ADR-0019](adrs/0019-distinct-residents-and-a-shared-world.md) records the accepted direction for one operator, distinct full residents, connected personal homes, shared conversations, and fair access to a common model provider. [The multi-resident roadmap](multi-resident-roadmap.md) defines phases A-F and their qualification/adoption gates. Full residents retain separate runtime processes, databases, and workspaces; companions remain invitation-only.
+
+The 2026-11-06 design extension adds resident-initiated conversations, direct PWA Web Push with operator contact preferences, durable unread-thread counts, and New Thread access directly in Chat. These are planned features with future qualification gates; the current service worker provides offline caching and existing unread indicators track browser-local work results.
+
+This is a documentation deliverable, not a report of implemented household support. No resident is enrolled, no live data is migrated, and no model calls or deployment are introduced by this phase. Ember's current burn-in continues with its existing release and scheduling. Household development uses disposable fixtures, and any live cutover is a separately selected post-burn-in step. The single-resident test evidence below does not qualify the proposed household platform.
+
 ## Interface consolidation and work ownership
 
 [ADR-0018](adrs/0018-app-drawer-and-independent-work-lifecycle.md) records the accepted app-drawer direction: preserve Chat as the primary surface and consolidate Map, Journal, Inventory, Companions, Archive, and Settings into a shared shell. Inventory uses the active workspace's `workshop/` convention, with explicit distinctions between current files and saved artifacts. Existing notebook, pursuit, appearance, Growth, and operator controls retain destinations.
