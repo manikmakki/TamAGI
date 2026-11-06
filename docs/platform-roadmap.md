@@ -4,9 +4,9 @@ This page describes the v0.3 code on `codex/dependable-home`. It separates imple
 
 The [accepted ADRs](adrs/README.md) record design intent. Their parent-child framing concerns the builder’s obligations: honest conditions, meaningful choices, recoverable mistakes, and room for independence. It does not prescribe a resident’s identity or prove subjective welfare.
 
-## Multi-resident direction: experimental, not enabled
+The [accepted ADRs](adrs/README.md) record design intent. Their parent-child framing concerns the builder’s obligations: honest conditions, meaningful choices, recoverable mistakes, and room for independence. It does not prescribe a resident’s identity or prove subjective welfare.
 
-[ADR-0019](adrs/0019-distinct-residents-and-a-shared-world.md) and the [multi-resident roadmap](multi-resident-roadmap.md) describe one operator, distinct full residents, connected personal homes, shared conversations, and fair provider access. An [experimental foundation](household-foundations.md) now exists on the isolated `codex/adr-0019-household` branch, with disposable qualification evidence. **Production integration and full qualification remain pending.** Current instances have one primary resident and invitation-only companions.
+[ADR-0019](adrs/0019-distinct-residents-and-a-shared-world.md) and the [multi-resident roadmap](multi-resident-roadmap.md) describe one operator, distinct full residents, connected personal homes, shared conversations, and fair provider access. **Implementation and qualification remain pending.** Current instances have one primary resident and invitation-only companions.
 
 The 2026-11-06 extension also proposes resident-initiated contact, PWA Web Push, durable unread-thread counts, and a New Thread control in Chat. The existing service worker caches assets; existing seen-work indicators are browser-local. Neither establishes those proposed capabilities.
 
