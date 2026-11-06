@@ -112,6 +112,8 @@ class RuntimeService:
                 category="platform",
             )
         self.reconcile_activity()
+        if recover:
+            self.reconcile_evaluation_wait()
         from .growth import GrowthService
 
         self.growth = GrowthService(self)
@@ -335,7 +337,28 @@ class RuntimeService:
                 )
         return data
 
+    def reconcile_evaluation_wait(self):
+        """Release a wait whose evaluation already settled, even across restart."""
+        with self.store.transaction():
+            state = self.store.get("activity", self.actor_id)["data"]
+            if (
+                state.get("status") != "waiting"
+                or state.get("wake_event") != "evaluation_completed"
+            ):
+                return
+            with self.store.lock:
+                jobs = self.store.db.execute(
+                    "SELECT payload FROM records WHERE kind='evaluation_job' AND actor=?",
+                    (self.actor_id,),
+                ).fetchall()
+            statuses = [json.loads(job["payload"]).get("status") for job in jobs]
+            if statuses and all(
+                status in {"completed", "failed", "interrupted"} for status in statuses
+            ):
+                self.wake("evaluation_completed")
+
     def due(self, *, ignore_decompression=False, ignore_error_backoff=False):
+        self.reconcile_evaluation_wait()
         if getattr(self, "interactions", None) and self.interactions.has_pending():
             return False
         state = self.activity_state()
@@ -399,7 +422,14 @@ class RuntimeService:
                 "activity",
                 self.actor_id,
                 self.actor_id,
-                {**data, "status": "completed", "wake_event": None, "wake_at": None},
+                {
+                    **data,
+                    "status": "completed",
+                    "wake_event": None,
+                    "wake_at": None,
+                    "wait_reason": None,
+                    "wait_detail": None,
+                },
                 expected=state["revision"],
                 category="platform",
             )

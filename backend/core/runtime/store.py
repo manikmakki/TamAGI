@@ -419,6 +419,19 @@ class RuntimeStore:
                 "UPDATE runs SET status='interrupted',finished=? WHERE status='running'",
                 (self.clock(),),
             )
+            for row in self.db.execute(
+                "SELECT * FROM records WHERE kind='evaluation_job'"
+            ).fetchall():
+                data = json.loads(row["payload"])
+                if data.get("status") in {"queued", "running"}:
+                    self.put(
+                        "evaluation_job",
+                        row["id"],
+                        row["actor"],
+                        {**data, "status": "interrupted"},
+                        expected=row["revision"],
+                        category="platform",
+                    )
 
     def checkpoint(self, destination):
         destination = Path(destination)

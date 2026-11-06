@@ -1,5 +1,5 @@
 // TamAGI Service Worker — PWA offline support
-const CACHE_NAME = 'tamagi-platform-v10';
+const CACHE_NAME = 'tamagi-platform-v11';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -10,7 +10,7 @@ const STATIC_ASSETS = [
   '/assets/avatar-runtime.js?v=8',
   '/assets/app-shell.css?v=18',
   '/assets/app-shell.js?v=18',
-  '/assets/home-views.js?v=18',
+  '/assets/home-views.js?v=19',
   '/assets/marked.min.js',
   '/assets/d3.v7.min.js',
   '/assets/panel-bridge.js',

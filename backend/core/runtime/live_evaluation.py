@@ -209,7 +209,6 @@ def install_evaluator(runtime, llm):
                     },
                     category="platform",
                 )
-                runtime.wake("evaluation_completed")
             except asyncio.CancelledError:
                 runtime.store.put(
                     "evaluation_job",
@@ -230,6 +229,10 @@ def install_evaluator(runtime, llm):
                     },
                     category="platform",
                 )
+            finally:
+                # Completion means the job settled, including failure or interruption.
+                # The retained job status remains the authority on its outcome.
+                runtime.wake("evaluation_completed")
 
         task = asyncio.create_task(work(), context=contextvars.Context())
         # Keep a reference until it starts its own bounded execution.

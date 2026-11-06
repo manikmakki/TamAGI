@@ -30,7 +30,7 @@
     renderGrowth(state.growth);empty($('places'));
     for(const place of state.home)$('places').append(item(place.data.name,place.data.description||''));
     empty($('notes'),state.notebook.length?'':'The notebook is open for a first shared thought.');
-    for(const note of state.notebook.slice(-12)) {
+    for(const note of state.notebook.slice(-12).reverse()) {
       const actor=state.companions.find(p=>p.id===note.actor);
       const details=document.createElement('details'),summary=document.createElement('summary'),body=document.createElement('p');
       summary.textContent=(actor?.data.name||(note.actor==='operator'?'You':'TamAGI'))+' · '+note.data.text.slice(0,80)+(note.data.text.length>80?'…':'');body.textContent=note.data.text;details.className='item';details.append(summary,body);$('notes').append(details);
