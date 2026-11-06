@@ -4,6 +4,8 @@ Status: experimental ADR-0019 implementation started on 2026-11-06 on `codex/adr
 
 This delivers a runnable foundation across parts of roadmap Phases B–D. It does **not** complete any of those phases. The [roadmap](multi-resident-roadmap.md) retains their full parity, integration, recovery, and adoption gates. Ember and Echo are not fixtures; all residents are newly seeded with distinguishable synthetic records.
 
+The [qualification record](qualification/0019-foundations-2026-11-06.md) retains the clean-revision result: **232 passing tests, including 83 new household tests**, plus the successful three-process scenario. Real model calls and push dispatches were zero.
+
 ## Implemented boundary
 
 | Component | Implemented behavior | Evidence |
