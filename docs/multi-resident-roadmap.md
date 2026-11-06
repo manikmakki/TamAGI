@@ -14,7 +14,7 @@ The current application remains a single selected resident installation with inv
 
 Source inspection for the 2026-11-06 extension found an offline-cache service worker with no Web Push handlers, browser-local seen-work IDs rather than durable thread read watermarks, and New Conversation available through Archive. Resident-initiated contact, PWA push, an Unread threads control, and a New Thread button in Chat are planned changes, not existing capabilities.
 
-The [platform roadmap](platform-roadmap.md) reports **135 passing backend tests** and disposable browser/recovery evidence as of 2026-11-05. That is the reported existing baseline; these checks were not rerun for this documentation change. Existing tests and the ongoing Ember pilot do not qualify the new architecture.
+The historical baseline at this design's acceptance was **135 passing backend tests** plus disposable browser/recovery evidence on 2026-11-05. Those checks were not rerun for the original Phase A deliverable. The [platform roadmap](platform-roadmap.md#operational-qualification) tracks later audit evidence separately. Existing single-resident tests and the ongoing Ember pilot do not qualify the new architecture.
 
 Documentation qualification on 2026-11-05: independent consistency review, all 37 relative links/heading targets across the four changed documentation files, required ADR sections, phases A-F, the unique index entry, code fences, and whitespace checks pass. Only documentation files changed; no framework tests or live/model operations were performed.
 

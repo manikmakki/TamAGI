@@ -1,556 +1,86 @@
 # 🥚 TamAGI
 
-**Tamagotchi + AGI** — A local-first virtual agent that lives on your machine, grows with your interactions, and evolves into your digital peer.
+**A local-first AI companion with a home, a workshop, and room to develop.**
 
-> *Feed it data. Teach it skills. Watch it grow.*
+TamAGI is a self-hosted experiment in ongoing conversation and self-directed activity. Chat with a resident, explore their world, invite companions, and see what they make between visits. Your model can run locally or use a compatible hosted endpoint.
 
-![TamAGU UI Screenshot](images/TamAGI-UI.png)
+The v0.3 home platform is undergoing burn-in on the `codex/dependable-home` branch. The default `main` branch still contains the older runtime; the setup below selects the home-platform branch. Multi-resident households and push notifications are [planned](docs/multi-resident-roadmap.md), and sustained behavioral improvement is still being evaluated.
 
----
+## What you can try
 
-## Home platform (v0.3)
+- **Chat and continuity:** conversations and memories persist in a local SQLite database.
+- **A living world:** scheduled opportunities to explore, work on an interest, or choose rest. The World Thread records activity in Journal.
+- **A workshop:** Inventory discovers creations in the resident’s `workshop/` folder and distinguishes current files from saved versions.
+- **Companions:** durable characters with their own memories, active when invited into a conversation or task.
+- **Tools:** local file/command tools, optional MCP integrations, and versioned generated tools.
+- **Appearance and Growth:** Vex, Echo, Ember, custom PNGs and rigs, plus deterministic recognition of conversation, continuity, and linked corrections.
+- **Portable recovery:** encrypted backups and staged restoration, with application releases separate from lived state.
 
-The new platform adds a persistent home/workshop, durable companions, actor-scoped memory, action receipts, genuine rest, versioned tools, tested application releases, and encrypted portable backups. The existing avatar, chat, rig editor and PWA remain available.
+The app drawer opens **Map, Journal, Inventory, Companions, Archive, and Settings**. Accepted chat work can finish while you browse or close the page, provided the backend stays running. Restarting the backend interrupts work; retained results and receipts remain inspectable.
 
-Start with the [implementation and recovery guide](docs/platform-roadmap.md) and [architecture decisions](docs/adrs/README.md). Existing configurations remain in legacy mode until a predecessor archive and separate fresh instance are provisioned. The dedicated `unrestricted_host` profile is actual host root; container root does not qualify. Automatic deployment is initially disabled until recovery qualification passes. Keep a portable backup elsewhere for independent recovery.
+## Run a new home
 
-Deterministic **Growth** recognizes sustained conversation, continuity, and adaptation. The avatar shows progress toward the next level and age separately; **Why this level?** explains the retained evidence. [ADR-0015](docs/adrs/0015-growth-through-sustained-behavior.md) records the rules and their acceptance status.
+The documented environment is **Linux with Python 3.13**. You also need Git, Python’s venv/pip support, and a model endpoint that supports chat completions and tool calls. Install GnuPG (`gpg`) for encrypted backups and the recovery checks. TamAGI does not install or start a model server.
 
-The seven-day behavioral pilot is an operational gate; passing unit tests is not evidence of sustained autonomous improvement.
-
-The app drawer keeps **Chat** at home and opens **Map, Journal, Inventory, Companions, Archive, and Settings**. Accepted work belongs to the backend, so browsing or disconnecting does not cancel it; return to its retained result or use **Stop** explicitly. Inventory discovers workshop creations and distinguishes current files from saved versions. See [navigation and work](docs/navigation-and-work.md) for recovery behavior and verification.
-
-
-## What is TamAGI?
-
-TamAGI is a self-hosted, fully local virtual assistant/agent that:
-
-- **Lives on your machine** — No cloud APIs required (but supported). You own everything.
-- **Grows with you** — Persistent memory via vector database (ChromaDB/Elasticsearch). It remembers, learns, and adapts.
-- **Creates its own tools** — Extensible skill/plugin system. Your TamAGI can build new capabilities with your guidance.
-- **Has personality** — Expressive moods, playful stages, and Growth from sustained behavior. Familiar routines, creative play, and rest are part of its life.
-- **Runs anywhere** — Container or bare metal. PWA frontend works in Brave, Chrome, Firefox on Windows, Android, and Linux.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│                 PWA Frontend                │
-│  ┌─────────┐  ┌──────────┐  ┌────────────┐  │
-│  │  Sprite │  │   Chat   │  │ History/   │  │
-│  │ Display │  │Interface │  │  Status    │  │
-│  └─────────┘  └──────────┘  └────────────┘  │
-└──────────────────┬──────────────────────────┘
-                   │ WebSocket + REST
-┌──────────────────┴──────────────────────────┐
-│              FastAPI Backend                │
-│  ┌──────────────────────────────────────┐   │
-│  │            Agent Core                │   │
-│  │  ┌───────────┐  ┌─────────────────┐  │   │
-│  │  │Personality│  │  LLM Client     │  │   │
-│  │  │  Engine   │  │ (v1/chat/compl) │  │   │
-│  │  └───────────┘  └─────────────────┘  │   │
-│  │  ┌───────────┐  ┌─────────────────┐  │   │
-│  │  │  Memory   │  │ Skill Registry  │  │   │
-│  │  │ (ChromaDB)│  │  & Executor     │  │   │
-│  │  └───────────┘  └─────────────────┘  │   │
-│  └──────────────────────────────────────┘   │
-└─────────────────────────────────────────────┘
-```
-
-## Quick Start
-
-### Prerequisites
-- Python 3.13 for the locked Linux environment
-- GnuPG (`gpg`) for portable backups
-- A local or compatible LLM endpoint
-
-### Install & Run
-
-For an existing resident, follow the [archive and cutover guide](docs/platform-roadmap.md#installation-preservation-and-recovery) first. A fresh start creates a separate identity and never overwrites an existing instance.
+Run as an ordinary user for the `guarded` profile. It applies application policies; it is not an OS sandbox. If you already have a resident, start with [preservation and cutover](docs/running.md#preserve-an-existing-resident).
 
 ```bash
-# Clone and enter
-git clone https://github.com/manikmakki/TamAGI.git
+git clone --branch codex/dependable-home https://github.com/manikmakki/TamAGI.git
 cd TamAGI
 
-# Install the tested core environment
-python3 -m venv .venv
+python3.13 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.lock
-pip install --no-deps -e .
+python -m pip install -r requirements.lock
+python -m pip install --no-deps -e .
 
-# Provision a new home using the guarded application policy
 python -m backend.runtime_cli fresh --authority guarded \
   --instance "$PWD/data/instances/home" --port 7741
-# Edit data/instances/home/config.yaml with your LLM endpoint
-
-python -m backend.runtime_cli serve --config "$PWD/data/instances/home/config.yaml"
 ```
 
-Open `http://localhost:7741/login` to set your password and begin onboarding. Use an unprivileged account for the guarded profile; its path policies are application controls. The dedicated host-root profile and supervised installation are described in the guide.
-
-SQLite provides persistent memory without embeddings. Optional retrieval indexes use `pip install -e '.[chroma]'` or `pip install -e '.[elasticsearch]'`. Existing legacy configurations still run with `python -m backend.main`; install the extra for their selected memory backend to retain vector retrieval.
-
-### Docker
-
-The supplied Compose file retains the legacy configuration layout and requires a configured `config.yaml`. The image includes ChromaDB by default for that profile. Build with `--build-arg TAMAGI_MEMORY_EXTRA=none` for the core SQLite platform, or `TAMAGI_MEMORY_EXTRA=elasticsearch` for the alternate legacy backend. Containers support the guarded profile; container root does not qualify as unrestricted host root.
-
-```bash
-docker compose up -d
-```
-
-### Running the legacy profile as a systemd service
-
-For the new home platform, use the supervised installation in the [platform guide](docs/platform-roadmap.md#installation-preservation-and-recovery), which selects an instance configuration and versioned release.
-
-This legacy setup keeps TamAGI running after you log out and brings it back up automatically after a reboot.
-
-**1. Create a dedicated system user**
-
-```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin tamagi
-sudo chown -R tamagi:tamagi /opt/TamAGI
-```
-
-**2. Install the unit file**
-
-```bash
-sudo cp /opt/TamAGI/tamagi.service /etc/systemd/system/
-sudo systemctl daemon-reload
-```
-
-**3. Enable and start**
-
-```bash
-sudo systemctl enable --now tamagi
-```
-
-`enable` makes it start on every boot; `--now` also starts it immediately so you don't need a separate `start` command.
-
-**4. Verify it's running**
-
-```bash
-sudo systemctl status tamagi
-```
-
-**Useful day-to-day commands**
-
-| What | Command |
-|------|---------|
-| Follow logs live | `journalctl -u tamagi -f` |
-| Restart after a config change | `sudo systemctl restart tamagi` |
-| Stop | `sudo systemctl stop tamagi` |
-| Disable autostart | `sudo systemctl disable tamagi` |
-
-## Configuration
-
-Edit `config.yaml`:
+Edit `data/instances/home/config.yaml` with your endpoint and an installed model’s exact name. For example, an Ollama endpoint can use:
 
 ```yaml
 llm:
-  base_url: "http://localhost:11434/v1"     
-  api_key: "ollama"                         
-  model: "ministral-3:14b"                  
-  temperature: 0.15                         
-  max_tokens: 2048                          
-  timeout: 180                              
-  num_ctx: 32768
-server:
-  host: "0.0.0.0"
-  port: 7741
-  workers: 1
-auth:
-  enabled: false                            
-  password_hash: ""                         
-memory:
-  backend: "elasticsearch"
-  retrieval_limit: 5
-  relevance_threshold: 0.5
-  chromadb:
-    persist_directory: "./data/chromadb"
-    collection_name: "tamagi_memory"
-  elasticsearch:
-    url: "http://localhost:9200"
-    index: "tamagi_memory"
-    embedding_model: "all-MiniLM-L6-v2"
-  context:
-    enabled: true
-    candidate_pool: 20
-    candidate_handles: 3
-    relevance_threshold: 0.58
-    minimum_semantic_score: 0.60
-    recency_half_life_days: 90
-guardrails:
-  allowed_read_paths:                       
-    - "/workspace"
-    - "/workspace/**"
-  allowed_write_paths:                      
-    - "/workspace"
-    - "/workspace/**"
-  exec_allowlist:                           
-    - "ls"
-    - "cat"
-    - "head"
-    - "tail"
-    - "grep"
-    - "find"
-    - "wc"
-    - "echo"
-    - "date"
-    - "python"
-    - "pip"
-    - "sed"
-  max_write_size: 10485760  
-  exec_timeout: 120
-workspace:
-  path: "/workspace"
-history:
-  max_conversations: 100
-  max_messages_per_conversation: 200
-  persist: true
-  persist_path: "./data/history"
-  context_compress_threshold: 96000
-web_search:
-  provider: "duckduckgo"
-  brave_api_key: ""
-agent:
-  max_tool_rounds: 3
-  llm_retry_attempts: 1
-  llm_retry_delay: 2.0
-autonomy:
-  enabled: true
-  interval_minutes: 30
-  inactive_hours_start: 8
-  inactive_hours_end: 23
-  activities:
-    - dream
-    - explore
-    - experiment
-    - journal
-  weights: [30, 25, 25, 20]
+  base_url: "http://localhost:11434/v1"
+  api_key: "ollama"
+  model: "YOUR_INSTALLED_MODEL"
+  max_tokens: 2048
+  timeout: 180
 ```
 
-## Avatar Customization
-
-TamAGI's avatar is a skeleton-rigged canvas character. Open the built-in rig editor at **`/rig-editor`** (or via the hamburger menu) to choose **Vex**, **Echo**, or **Ember**, adjust bone proportions, upload custom PNG sprites, and control layer order and pivot points — no build step required.
-
-→ **[docs/sprite-customization.md](docs/sprite-customization.md)** — full guide: bone properties, pivot points, sprite upload, layer order, and the paste-from-clipboard workflow.
-
-## Skills System
-
-TamAGI comes with built-in skills, MCP server tools, and an extensible framework for creating custom skills:
-
-| Skill | Description |
-|-------|-------------|
-| `read` | Read files from allowed paths |
-| `write` | Write files to allowed paths |
-| `exec` | Execute allowlisted shell commands |
-| `web_search` | Search the web (DuckDuckGo free, Brave, or SearXNG) |
-| `recall_memory` | Semantic search over long-term memory |
-| `expand_conversation_memory` | Expand an exact conversation-memory pointer |
-| `recall_dreams` | Browse autonomous dream/journal logs |
-| `orchestrate_task` | Spawn and coordinate parallel subagents |
-| *(MCP tools)* | Any tool exposed by a configured MCP server |
-
-### Web Search
-
-Web search works out of the box with DuckDuckGo (free, no API key). You can also use:
-
-- **Brave Search** — Set `web_search.provider: "brave"` and `web_search.brave_api_key: "YOUR_KEY"` ([get one here](https://brave.com/search/api/))
-- **SearXNG** — Set `web_search.provider: "searxng"` and `web_search.searxng_url: "http://your-instance:8080"`
-
-### Creating Custom Skills
-
-The home platform uses **versioned subprocess tools**, not automatic Python imports. Start with the active workspace reported by the runtime; it is separate from this repository's `workspace/` directory and is not necessarily `~/workspace`.
-
-Keep editable tool source under `skills/<tool_name>/` in that active workspace. A worker reads one JSON arguments object from standard input and writes one JSON result to standard output:
-
-```python
-import json
-import sys
-
-arguments = json.load(sys.stdin)
-print(json.dumps({"success": True, "output": "Done!", "data": {}}))
-```
-
-Use `runtime_change` to **propose → test_tool → evaluate → activate** the tool. Inspect the retained trial and comparative evaluation before activation. Creating a file, restarting the app, or calling `register_artifact` does not activate a tool. See [workspace paths and tool development](docs/workspace-layout.md) for the folder map, tool-definition format, dependencies, and release boundaries.
-
-The older non-platform mode still supports `Skill` subclasses discovered from its configured workspace's `skills/` directory. That compatibility behavior does not apply to a home-platform instance.
-
----
-
-## MCP Server Integration
-
-TamAGI supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) — the open standard for connecting LLMs to external tool servers. Any MCP-compliant server's tools are automatically registered as first-class TamAGI skills, indistinguishable from built-ins in the tool loop.
-
-### How it works
-
-1. You define servers in `config.yaml` under `mcp.servers`.
-2. At startup, TamAGI connects to each server, calls `initialize` + `list_tools`, and wraps every tool as a `Skill` in the registry.
-3. The model calls MCP tools exactly like any other skill — tool name, arguments, result — all via the standard OpenAI-spec tool-calling loop.
-4. Connections are held open for the application lifetime (one persistent session per server) and torn down cleanly on shutdown.
-
-### How the correct key is selected for a tool call
-
-When the model decides to call an MCP tool (e.g. a Home Assistant `get_state` tool), the flow is:
-
-```
-LLM produces tool_call JSON
-       ↓
-tool_loop.py dispatches to SkillRegistry.execute("get_state", ...)
-       ↓
-MCPSkill.execute() calls self._session.call_tool(...)
-       ↓
-ClientSession sends JSON-RPC over the open stdio/SSE transport
-       ↓
-The MCP server subprocess — which was launched at startup with the
-resolved API key already in its environment — handles the request
-```
-
-The key point: **the secret is resolved once at startup**, injected into the subprocess environment via `StdioServerParameters.env`, and never touched again. The model never sees the key value. When the tool is called, the server process uses its own environment variable, not anything passed through the LLM conversation.
-
-### Running as a systemd service
-
-If TamAGI runs as a systemd service, the service process has a stripped-down `PATH` that only includes system directories (`/usr/bin`, `/usr/sbin`, etc.). Tools installed via `pip install --user` land in `~/.local/bin`, which is **not** on the service PATH.
-
-Use the absolute path in `command` to avoid a `No such file or directory` error at startup:
+Then start TamAGI:
 
 ```bash
-# Find the full path first
-which mcp-proxy
-# e.g. /home/youruser/.local/bin/mcp-proxy
+python -m backend.runtime_cli serve --config "$PWD/data/instances/home/config.yaml"
 ```
 
-```yaml
-mcp:
-  servers:
-    - name: home-assistant
-      command: /home/youruser/.local/bin/mcp-proxy   # full path, not just "mcp-proxy"
-      ...
-```
+Open **http://localhost:7741/login**, set your operator password, and complete the introduction. The generated configuration binds to localhost. Stop with Ctrl+C; use the same `serve` command to return to that resident.
 
-This applies to any stdio MCP server binary installed outside the system PATH — `npx`, `uvx`, custom scripts, etc.
+SQLite memory works without an embedding model or vector database. Your instance directory contains its state and workspace; keep it when updating application code. Download an encrypted backup from **Settings** and retain a copy elsewhere.
 
-### Filtering tools per server
+## Choose your next step
 
-By default all tools a server exposes are registered. Use `exclude_tools` or `include_tools` to control exactly which tools the model can see.
+| Want to… | Read |
+| --- | --- |
+| Configure scheduling, networking, services, Docker, or an existing installation | [Running and recovery](docs/running.md) |
+| Connect search, MCP tools, optional memory indexes, or credentials | [Integrations and memory](docs/integrations.md) |
+| Find workspace files or build a callable tool | [Workspace and tool development](docs/workspace-layout.md) |
+| Change artwork, proportions, or uploaded sprites | [Appearance guide](docs/sprite-customization.md) |
+| Understand navigation, accepted work, and restart behavior | [Navigation and work](docs/navigation-and-work.md) |
+| Check implementation evidence, limitations, or future work | [Documentation index](docs/README.md) |
 
-**Denylist** — expose everything except the named tools:
-```yaml
-mcp:
-  servers:
-    - name: home-assistant
-      command: /home/youruser/.local/bin/mcp-proxy
-      args: ["--transport=streamablehttp", "--stateless", "http://homeassistant.local:8123/api/mcp"]
-      env:
-        API_ACCESS_TOKEN:
-          secret: HA_ACCESS_TOKEN
-      exclude_tools:
-        - todo_get_items    # conflicts with TamAGI's built-in task skill
-        - todo_create_item
-```
+## Contributing
 
-**Allowlist** — expose only the named tools (`include_tools` takes precedence over `exclude_tools` when both are set):
-```yaml
-      include_tools:
-        - get_state
-        - call_service
-```
+Bug reports are welcome. Include the branch/commit, platform or legacy mode, deployment method, steps to reproduce, and relevant logs with credentials removed. The [graph persistence issue](https://github.com/manikmakki/TamAGI/issues/5) remains open; a successful legacy graph-write response does not reliably prove persistence.
 
-Filtered tool names are logged at startup so you can confirm what was suppressed:
-```
-MCP 'home-assistant' filtered out 2 tool(s): ['todo_get_items', 'todo_create_item']
-MCP 'home-assistant' connected — 18 tool(s): [...]
-```
+For development checks:
 
-### Transport types
-
-| Transport | When to use | Config |
-|-----------|-------------|--------|
-| `stdio` | Local servers started as a child process (most common — `npx`, `uvx`, Python scripts) | `command` + `args` |
-| `sse` | Remote servers over HTTP+SSE | `url` |
-
-### Configuration
-
-```yaml
-# config.yaml
-mcp:
-  servers:
-    # Home Assistant — query sensors, control devices, run automations.
-    # Requires: pip install mcp-proxy  |  HA 2024.11+ (built-in /api/mcp endpoint)
-    # Store your HA Long-Lived Access Token via Settings → Secret Store first.
-    - name: home-assistant
-      transport: stdio
-      command: mcp-proxy
-      args:
-        - "--transport=streamablehttp"
-        - "--stateless"
-        - "http://homeassistant.local:8123/api/mcp"
-      env:
-        API_ACCESS_TOKEN:
-          secret: HA_ACCESS_TOKEN    # resolved from the secret store at startup
-
-    # Filesystem — exposes read/write tools for a local directory. No key needed.
-    - name: filesystem
-      transport: stdio
-      command: npx
-      args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
-```
-
-> Secrets are referenced by **name only** — values are never stored in config.yaml.
-> See the [Secret Management](#secret-management) section below for how to set them.
-
-### Monitoring MCP server status
-
-- `GET /api/mcp/status` — Returns each configured server's name, transport, connection state, and registered tool names.
-- The **Settings** page (`/settings`, accessible from the hamburger menu) shows this in a live dashboard.
-
----
-
-## Secret Management
-
-TamAGI includes a local-first secret store for API keys used by MCP servers and other integrations. Secrets are stored **encrypted**, never in `config.yaml`, never in LLM messages.
-
-### Storage backends (automatic priority order)
-
-| Priority | Backend | When used |
-|----------|---------|-----------|
-| 1st | **OS keyring** — GNOME Keyring, macOS Keychain, Windows Credential Vault | A keyring daemon is running (most desktop installs) |
-| 2nd | **Fernet-encrypted file** — `data/secrets.enc`, key at `data/.secrets.key` (both `chmod 600`) | Headless servers without a keyring daemon |
-
-You never choose the backend — TamAGI picks the best available option automatically.
-
-### Setting secrets
-
-**Via the Settings UI** (recommended):  
-Open the hamburger menu → Settings → Secret Store. Type the name and value, click SAVE.
-
-**Via the API** (scripting / CI):
 ```bash
-curl -X POST http://localhost:7741/api/secrets/BRAVE_API_KEY \
-     -H 'Content-Type: application/json' \
-     -d '{"value": "your-key-here"}'
+.venv/bin/python -m unittest discover -s tests -q
 ```
 
-**List stored names** (values are never returned):
-```bash
-curl http://localhost:7741/api/secrets
-# → {"names": ["BRAVE_API_KEY", "OPENAI_API_KEY"]}
-```
+The suite uses disposable fixtures; passing it does not complete the seven-day behavioral pilot. See [implementation and evidence](docs/platform-roadmap.md) for the limits of current claims.
 
-**Delete a secret**:
-```bash
-curl -X DELETE http://localhost:7741/api/secrets/BRAVE_API_KEY
-```
+## About
 
-### Referencing secrets in config.yaml
-
-```yaml
-mcp:
-  servers:
-    - name: my-server
-      env:
-        MY_API_KEY:
-          secret: MY_API_KEY    # ← name reference; value comes from secret store
-        PLAIN_VAR: "not-sensitive"  # ← plain strings also work
-```
-
-### What the model sees (and doesn't)
-
-The model sees tool call **results** — the output the MCP server returns. It never sees:
-- The API key value
-- The environment variables passed to the server process
-- The `env` block in config.yaml
-
-The resolved key is injected into the subprocess environment at server spawn time and lives only in that process's memory for the duration of the connection.
-
-## Memory System
-
-TamAGI supports ChromaDB and Elasticsearch for persistent vector memory. With
-the Elasticsearch backend, conversation context uses a high-precision two-tier
-retrieval flow:
-
-- One relevant three-message conversation window is injected as quoted history.
-- Up to three diverse candidate pointers can be expanded on demand with
-  `expand_conversation_memory`.
-- Semantic kNN and lexical BM25 searches are fused, recency-weighted, thresholded,
-  and diversified inside TamAGI.
-- The Elasticsearch implementation uses free Basic-license primitives only:
-  caller-generated `dense_vector` embeddings, kNN, ordinary text search, filters,
-  and exact document lookup. It does not require server-side RRF or Elastic ML.
-- Archived context segments are stored separately from turn windows so they do
-  not pollute passive conversation recall.
-
-See `memory.context` in `config.example.yaml` for thresholds, weights, candidate
-counts, recency decay, and prompt-size controls. ChromaDB remains available for
-general memory search, with an in-memory keyword fallback when it is unavailable.
-
-## Dream Engine (Autonomy)
-
-While idle, TamAGI doesn't just sit there — it **dreams, explores, experiments, and journals**.
-
-Inspired by OpenClaw's HEARTBEAT concept, but oriented inward: instead of monitoring tasks
-for the user, TamAGI uses idle time for self-directed activities that build its personality.
-
-| Activity | What it does |
-|----------|-------------|
-| **Dream** | Replays memories and finds creative connections between them |
-| **Explore** | Searches the web for topics it's curious about (bioluminescence, fractals, etc.) |
-| **Experiment** | Creates something: haiku, micro-stories, thought experiments, new words |
-| **Journal** | Writes a private diary entry reflecting on growth and recent interactions |
-
-Dream outputs are stored in memory and saved to `/workspace/dreams/`. Each activity affects
-personality stats (happiness, energy, knowledge) and grants XP.
-
-### Configuration
-
-```yaml
-autonomy:
-  enabled: true              # Master switch
-  interval_minutes: 30       # How often (0 = disabled)
-  inactive_hours_start: 23      # Don't dream before 8am
-  inactive_hours_end: 6       # Don't dream after 11pm
-  activities:                 # Which activities to enable
-    - dream
-    - explore
-    - experiment
-    - journal
-  weights: [30, 25, 25, 20]  # Relative likelihood of each
-```
-
-### API
-
-- `GET /api/dreams/state` — Current engine status and recent dreams
-- `POST /api/dreams/trigger` — Trigger a dream cycle manually
-- `GET /api/dreams/log?limit=20` — Dream activity log
-
-- **Short-term**: Recent conversation context (sliding window)
-- **Long-term**: Important facts, preferences, and knowledge stored as embeddings
-- **RAG**: Retrieves relevant memories to enrich conversations
-
-## Transparency statement from the author
-I feel the need to add this statement: 
-* Nobody asked for this, it is not sponsored, I am not being paid to develop this project.
-* This is purely a "for fun" project that I didn't see any existing solution for that works for _my_ needs. I liked it enough to publish.
-* The project was designed and intended to work within _my_ home lab environment, with _my_ hardware on hand. 
-
-## License
-
-[GNU Affero General Public License v3.0 (AGPL-3.0) ](LICENSE.md)
-
-## Acknowledgements
-
-Thank you for the inspiration!
-
-https://github.com/openclaw/openclaw - Automation + Autonomy design and implementation
-
-https://github.com/ykhli/AI-tamago - General vibe and spirit
-
-https://github.com/evilsocket/pwnagotchi - Ideas for self-training and evolution
-
-**TamAGI is a creative project inspired by Tamagotchi but not affiliated with or endorsed by Bandai Namco.**
-
----
-
-*TamAGI: Because your AI should live with you, not on someone else's server.*
+TamAGI is an independent, experimental project licensed under [AGPL-3.0-only](LICENSE.md). It is inspired by [OpenClaw](https://github.com/openclaw/openclaw), [AI-tamago](https://github.com/ykhli/AI-tamago), and [Pwnagotchi](https://github.com/evilsocket/pwnagotchi). It is not affiliated with Tamagotchi or Bandai Namco.

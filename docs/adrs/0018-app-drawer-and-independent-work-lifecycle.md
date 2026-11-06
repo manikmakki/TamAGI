@@ -8,7 +8,7 @@ Chat is TamAGI's primary relationship surface. The animated avatar, conversation
 
 Navigation currently spreads related features across the chat drawer, Mind and memory flyouts, the graph, `/home`, and separate settings and appearance pages. `/home` introduces a competing dashboard and visual language. The operator chose a central app drawer and consistent destinations instead of a broad redesign of chat.
 
-The operator also identified a lifecycle requirement: tools and activity must continue while another view is selected. Inspection on 2026-11-05 found more than a presentation issue:
+The operator also identified a lifecycle requirement: tools and activity must continue while another view is selected. Inspection before implementation on 2026-11-05 found more than a presentation issue. The following bullets describe that earlier snapshot; the linked source files now contain the implemented lifecycle:
 
 - [The WebSocket handler](../../backend/api/chat.py) awaits `agent.chat()` and sends progress directly through that socket. Its cleanup calls `on_conversation_ended` for the last completed conversation.
 - [The chat runner](../../backend/core/runtime/chat_turns.py) awaits progress callbacks during execution. A broken socket can fail a turn at an emission boundary. Completed receipts survive, but later work can stop.
@@ -116,7 +116,7 @@ Work may finish after the user closes the browser. The interface must communicat
 
 Operational records and retained results belong in canonical storage and backups. Event retention may be bounded if current snapshots and final outcomes remain recoverable. Preserve rollback-compatible migrations and existing deployment recovery. This does not promise uninterrupted inference across application restarts or unrestricted histories of every streaming update.
 
-Inventory's folder discovery is a change from today's registered-snapshot-only list. Implement that distinction explicitly rather than relabeling the existing list and claiming folder coverage. Existing artifacts, notebook sharing, memory attribution, visitor continuity, Growth, authentication, uploads, rig settings, and recovery controls remain supported through the consolidation.
+At acceptance, Inventory's folder discovery was a change from the registered-snapshot-only list. The implemented Inventory now distinguishes current workshop files from saved versions. Existing artifacts, notebook sharing, memory attribution, visitor continuity, Growth, authentication, uploads, rig settings, and recovery controls retain destinations through the consolidation.
 
 ## Implementation order
 

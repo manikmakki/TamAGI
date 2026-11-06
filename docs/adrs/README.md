@@ -2,6 +2,8 @@
 
 The parent-child framing describes the builder’s responsibility: honest conditions, meaningful choices, recoverable mistakes, and growing independence. It does not prescribe the resident’s persona.
 
+These records preserve decisions and their context at acceptance. Present-tense descriptions in an older Context section describe that historical snapshot, not necessarily today's code. Supersession notices identify later decisions; use the [current guides](../README.md) and [implementation/evidence map](../platform-roadmap.md) for operation and known gaps. Accepted design alone does not establish shipped behavior or complete the burn-in pilot.
+
 | ADR | Decision | Status |
 |---|---|---|
 | 0001 | [Developmental commitments and meaningful choice](0001-developmental-commitments-and-meaningful-choice.md) | Accepted design |

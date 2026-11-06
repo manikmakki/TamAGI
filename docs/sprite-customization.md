@@ -24,7 +24,7 @@ TamAGI frontend           ← loads config on startup, preloads PNGs,
 
 ## Step 1 — Open the Rig Editor
 
-Navigate to **`http://localhost:7741/rig-editor`** while TamAGI is running. You can also reach it from the hamburger menu inside the main TamAGI UI.
+Open **Settings → Appearance** in the app drawer while TamAGI is running. The earlier `http://localhost:7741/rig-editor` link remains a compatible entry point; use your installation's actual host and port.
 
 The editor shows a live animated canvas preview on the left and controls on the right.
 
@@ -105,23 +105,23 @@ Click **Upload** next to any variant slot to pick a file, or:
 
 No browser permission prompt is required for the paste method.
 
-You can also upload via the API directly:
+You can also upload through the authenticated API. These examples assume port 7741 and a cookie jar containing a current operator session from `/api/auth/login`. Set `TAMAGI_COOKIE_JAR` to that file; the browser UI handles its session automatically.
 
 ```bash
 # Upload a single PNG
-curl -X POST http://localhost:7741/api/sprites/upload/head/default \
+curl -b "$TAMAGI_COOKIE_JAR" -X POST http://localhost:7741/api/sprites/upload/head/default \
      -F "file=@my_head.png"
 
 # Upload all eye variants
-curl -X POST http://localhost:7741/api/sprites/upload/eye_left/open   -F "file=@eye_open.png"
-curl -X POST http://localhost:7741/api/sprites/upload/eye_left/closed -F "file=@eye_closed.png"
-curl -X POST http://localhost:7741/api/sprites/upload/eye_left/happy  -F "file=@eye_happy.png"
+curl -b "$TAMAGI_COOKIE_JAR" -X POST http://localhost:7741/api/sprites/upload/eye_left/open   -F "file=@eye_open.png"
+curl -b "$TAMAGI_COOKIE_JAR" -X POST http://localhost:7741/api/sprites/upload/eye_left/closed -F "file=@eye_closed.png"
+curl -b "$TAMAGI_COOKIE_JAR" -X POST http://localhost:7741/api/sprites/upload/eye_left/happy  -F "file=@eye_happy.png"
 ```
 
 To revert a part to the selected character's built-in artwork:
 
 ```bash
-curl -X DELETE http://localhost:7741/api/sprites/upload/head/default
+curl -b "$TAMAGI_COOKIE_JAR" -X DELETE http://localhost:7741/api/sprites/upload/head/default
 ```
 
 ### Sprite dimensions
@@ -154,7 +154,7 @@ If your art looks offset, use the **Pivot X / Pivot Y** sliders in Bone Properti
 
 ### PNG requirements
 
-- **Format**: PNG with alpha transparency (RGBA). The canvas renders with `imageSmoothingEnabled = false`, so pixel art stays crisp.
+- **Format**: PNG; alpha transparency (RGBA) is useful for separate body parts. Pixelated characters use nearest-neighbor rendering; smooth characters can enable image smoothing, so not every avatar uses pixel-art rendering.
 - **Background**: Transparent background recommended; opaque backgrounds will cover whatever is drawn beneath that bone.
 - **Orientation**: Draw limbs pointing downward at rest. The rig rotates them automatically during animation.
 
@@ -162,7 +162,7 @@ If your art looks offset, use the **Pivot X / Pivot Y** sliders in Bone Properti
 
 ## Step 4 — Save and Reload
 
-Click **Save to TamAGI** in the editor. This writes to `data/sprite_config.json` and updates sprite files in `data/sprites/`. Then **reload the main TamAGI page** to see your changes take effect — no server restart needed.
+Click **Save to TamAGI** in the editor to save the character, rig, and sprite manifest in `data/sprite_config.json`. PNG uploads are saved separately when uploaded, under `data/sprites/`. In platform mode, these paths are relative to the active instance, not the repository. Then **reload the main TamAGI page** to see your changes take effect — no server restart needed.
 
 Changes to `data/sprite_config.json` and `data/sprites/*.png` take effect on the next page load.
 
@@ -175,6 +175,6 @@ Changes to `data/sprite_config.json` and `data/sprites/*.png` take effect on the
 | `GET` | `/api/sprites/config` | Fetch the current sprite config |
 | `PUT` | `/api/sprites/config` | Save a full config JSON |
 | `POST` | `/api/sprites/upload/{part}/{variant}` | Upload a PNG for one slot |
-| `DELETE` | `/api/sprites/upload/{part}/{variant}` | Remove a PNG, reverting that slot to placeholder |
+| `DELETE` | `/api/sprites/upload/{part}/{variant}` | Remove a PNG, reverting that slot to the selected character's built-in artwork |
 
 Sprites are served as static files at `/sprites/{part}_{variant}.png`.
