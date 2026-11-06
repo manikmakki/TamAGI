@@ -35,4 +35,6 @@ All manual resident actions are controlled fixture exercises. They do not establ
 
 [API tests](../tests/test_household_preview.py) cover authentication, mutation guards, replay, addressing/privacy, read snapshots, availability and synthetic scheduling against newly seeded workers. The standalone [browser smoke](../scripts/household-preview-browser-smoke.mjs) targets a disposable preview with a separate Chromium profile. Supply `TAMAGI_PREVIEW_URL` and `TAMAGI_PREVIEW_PASSWORD` in its environment; do not target the live app. Browser reports and screenshots are retained under `/tmp`.
 
+The [qualification record](qualification/0019-preview-2026-11-06.md) retains the passing 243-test run and desktop/mobile Chromium checks.
+
 The preview files are [backend](../backend/core/household/preview.py), [page](../frontend/household-preview.html), and [launcher](../scripts/household_preview.py). None is imported by the production entry point. There is no configurable provider endpoint in this launcher, and it never reads a live instance configuration or predecessor archive.
