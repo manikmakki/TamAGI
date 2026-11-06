@@ -1,6 +1,6 @@
 # Multi-resident household: implementation roadmap
 
-Status: Accepted design by operator direction on 2026-11-05; contact, PWA push, and chat thread controls added on 2026-11-06. Documentation only; implementation pending.
+Status: Accepted design by operator direction on 2026-11-05; contact, PWA push, and chat thread controls added on 2026-11-06. Experimental foundation implementation has started in an isolated branch; production integration and adoption remain pending.
 
 [ADR-0019: Distinct residents, a shared world, and fair access to cognition](adrs/0019-distinct-residents-and-a-shared-world.md) defines the decision. This roadmap specifies implementation order and the evidence required before adoption. It does not enroll another resident, change Ember's runtime, or establish that multi-resident operation already works.
 
@@ -20,7 +20,9 @@ Documentation qualification on 2026-11-05: independent consistency review, all 3
 
 Extension qualification on 2026-11-06: independent consistency review and checks of all 39 relative links/heading targets across the four documentation files, ADR sections, phases A-F, the unique index entry, code fences, and whitespace pass. The two external protocol references were reviewed during design research. No application tests, implementation, live notifications, or model calls were performed for this extension.
 
-This deliverable is Phase A only. Phases B-F below are future work. Do not change active configuration, selected releases, services, credentials, resident data, wake state, model settings, or Ember's pilot while recording these decisions. Implementation and mechanical qualification use disposable roots and deterministic providers before any proposed adoption. No live inference is needed to review this roadmap.
+The original documentation deliverable completed Phase A only. On 2026-11-06, operator-authorized implementation began in `/tmp/tamagi-adr-0019` on `codex/adr-0019-household`, based on `codex/dependable-home`. The [foundation guide](household-foundations.md) and [qualification record](qualification/0019-foundations-2026-11-06.md) describe the registry, real fixture subprocesses, broker, provider-driver seam, conversations/read state/outbox intents, shared-world core, and deterministic tests. These cover selected mechanics across B–D; no complete phase beyond A is claimed.
+
+Do not change active configuration, selected releases, services, credentials, resident data, wake state, model settings, or Ember's pilot during this development. Implementation and mechanical qualification use disposable roots and deterministic providers before any proposed adoption. Production one-resident parity, model/tool transport, UI/push delivery, recovery/migration and enrollment remain future gates.
 
 ## Architecture and work ownership
 
@@ -165,7 +167,7 @@ Require explicit operator adoption after that review. Documentation acceptance d
 
 For each phase, retain its source/lockfile revisions, disposable initial-state manifest, runner/scenario versions, expected invariants, actual outcomes, failures, and links to evidence. Preserve the distinction between mechanical fixtures, scripted scenarios, live trials, and sustained use. Future reports should fill the phase table with actual evidence instead of replacing pending statements with unsupported success claims.
 
-Every scenario below is required future evidence. None has been run or passed as part of this documentation deliverable.
+Every scenario below remains a full acceptance requirement. The [foundation qualification](qualification/0019-foundations-2026-11-06.md) records the selected mechanical cases now exercised; it does not mark any scenario group or phase fully qualified.
 
 | Scenario group | Required observation | Phase |
 | --- | --- | --- |
@@ -187,4 +189,4 @@ Every scenario below is required future evidence. None has been run or passed as
 
 Later behavioral trials examine voluntary conversation, chosen solitude, disagreement, cooperation, interrupted commitments, correction of a mistaken belief, and rejoining a discussion. Keep actual observations separate from scripted cases. Do not score subjective welfare, happiness, compliance, continuous activity, or output volume as success.
 
-No framework tests, migration, multi-resident inference, enrollment, deployment, or restoration were performed by this documentation-only deliverable. Existing single-resident operation remains the baseline until the later gates are explicitly satisfied.
+The original documentation deliverable performed no framework tests or live operations. The later experimental foundation adds disposable tests and scripted worker/provider scenarios only. No live multi-resident inference, migration, enrollment, deployment or restoration has been performed. Existing single-resident operation remains the baseline until the later gates are explicitly satisfied.

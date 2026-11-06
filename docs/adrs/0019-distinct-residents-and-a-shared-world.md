@@ -1,6 +1,6 @@
 # ADR-0019: Distinct residents, a shared world, and fair access to cognition
 
-Status: Accepted design by operator direction on 2026-11-05; extended on 2026-11-06 with resident-initiated contact, PWA Web Push, and chat thread controls. Documentation only; implementation and qualification remain pending. See the [multi-resident roadmap](../multi-resident-roadmap.md).
+Status: Accepted design by operator direction on 2026-11-05; extended on 2026-11-06 with resident-initiated contact, PWA Web Push, and chat thread controls. An [isolated experimental foundation](../household-foundations.md) now implements selected internal mechanics; production integration and full qualification remain pending. See the [multi-resident roadmap](../multi-resident-roadmap.md).
 
 ## Context
 
