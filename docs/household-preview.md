@@ -1,5 +1,9 @@
 # Interactive household development preview
 
+For interactive work in the normal TamAGI interface, use the later
+[native household candidate](household-native.md). This scripted panel remains a
+foundation-debugging tool.
+
 This is a separate browser test panel for [ADR-0019's experimental foundations](household-foundations.md). It uses three newly seeded fixtures, real private runtime subprocesses, canonical household services, and a scripted provider. It does not start the production TamAGI app or connect a language model. The existing chat shell, onboarding and PWA push are not part of this panel.
 
 Run in the isolated worktree:

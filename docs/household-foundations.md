@@ -1,6 +1,6 @@
 # Household foundations: isolated implementation
 
-Status: experimental ADR-0019 implementation started on 2026-11-06 on `codex/adr-0019-household`, based on `codex/dependable-home` at `244dd695f7efbebee163da5df09f98412f4d96b4`. The development worktree is `/tmp/tamagi-adr-0019`. Household mode is not connected to application startup or enabled for any existing installation.
+Historical foundation checkpoint: experimental ADR-0019 implementation started on 2026-11-06 on `codex/adr-0019-household`, based on `codex/dependable-home` at `244dd695f7efbebee163da5df09f98412f4d96b4`. The development worktree is `/tmp/tamagi-adr-0019`. At that checkpoint household mode was not connected to application startup. The later [native integration candidate](household-native.md) supplies the current opt-in application path; no existing live installation has been enrolled.
 
 This delivers a runnable foundation across parts of roadmap Phases B–D. It does **not** complete any of those phases. The [roadmap](multi-resident-roadmap.md) retains their full parity, integration, recovery, and adoption gates. Ember and Echo are not fixtures; all residents are newly seeded with distinguishable synthetic records.
 
