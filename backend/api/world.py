@@ -40,7 +40,8 @@ async def get_world_state():
     runtime = getattr(agent,'runtime',None)
     if runtime:
         activity=runtime.activity_state()
-        location=runtime.store.get('world_object',activity.get('location','home'))
+        location=(runtime.world_action('inspect',activity.get('location','home'))
+                  if runtime.household is not None else runtime.store.get('world_object',activity.get('location','home')))
         return {'needs_world_seed':False,'location':location['data']['name'] if location else 'Home',
           'mood':activity.get('mood',''),'focus':activity.get('focus',''),'available_actions':['Choose freely','Continue a pursuit','Rest'],
           'timestamp':runtime.store.get('activity',runtime.actor_id)['updated'],'activity_status':activity['status'],

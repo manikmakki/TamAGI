@@ -1,0 +1,403 @@
+"""Canonical native chat admission and resident work supervision.
+
+Browser connections observe work; they never own its lifetime. Every resident
+activation receives a fixed transcript watermark and one coordinator grant.
+"""
+from __future__ import annotations
+
+import asyncio
+import copy
+import httpx
+
+from backend.core.runtime.interactions import AdmissionError
+from .conversations import Conversations
+from .contracts import AccessDenied, Conflict, NotFound
+from .store import uid
+
+
+TERMINAL = {"completed", "failed", "stopped", "interrupted", "resting", "waiting", "blocked", "declined", "budget_exhausted"}
+
+
+class NativeInteractions:
+    def __init__(self, registry, model, hosts):
+        self.registry, self.store, self.model, self.hosts = registry, registry.store, model, hosts
+        def validate(lineage, author):
+            if lineage.get("completion_attempt_id"):
+                return model.validate_completion_lineage(lineage, author)
+            return model.broker.validate_message_lineage(lineage, author)
+        self.conversations = Conversations(self.store, registry.participants, validate)
+        self.tasks, self.observers = {}, set()
+        self._commands = set()
+        self._pulse_task = None
+        # An interrupted coordinator never silently repeats uncertain effects.
+        for record in self.records():
+            if record["data"]["status"] not in TERMINAL:
+                self._update(record["id"], status="interrupted", status_detail="Coordinator restarted; inspect retained work before continuing.")
+        for record in self.store.list("native_grant"):
+            if record["data"]["status"] not in TERMINAL:
+                self.store.put("native_grant", record["id"], {**record["data"], "status": "interrupted"})
+        for record in self.store.list("reply_offer"):
+            if record["data"]["status"] in {"pending", "deferred"}:
+                self.store.put("reply_offer", record["id"], {**record["data"], "status": "closed",
+                    "recovery_note": "Coordinator restarted; previous opportunities were not automatically replayed."})
+
+    def start(self):
+        self._pulse_task = asyncio.create_task(self._pulse())
+
+    async def _pulse(self):
+        while True:
+            await asyncio.sleep(2)
+            await self._deliver_shared_events()
+            for offer in self.store.list("reply_offer"):
+                data = offer["data"]
+                if data["status"] != "deferred":
+                    continue
+                actor = data["recipient"]
+                try:
+                    ready = await self.hosts[actor].json("GET", "/_native/ready")
+                    if not ready.get("pending"):
+                        self.model.broker.set_available(actor, ready.get("due") is True)
+                    if not ready.get("due"):
+                        continue
+                    if self.model.broker.exchange(data["exchange_id"])["status"] != "running":
+                        self.store.put("reply_offer", offer["id"], {**data, "status": "closed"})
+                        continue
+                    self.store.put("reply_offer", offer["id"], {**data, "status": "pending"})
+                    message = self.store.get("message", data["message_ids"][-1])
+                    self.enqueue_contact(actor, data["conversation_id"], {"id": message["id"], **message["data"]}, data["lineage"])
+                except (RuntimeError, NotFound, httpx.TransportError):
+                    continue
+
+    async def _deliver_shared_events(self):
+        # Persist an independent delivery cursor per resident. These wake
+        # observations never create an execution or inference allowance.
+        from .world import World
+        world = World(self.store)
+        for actor, host in self.hosts.items():
+            key = "native_wake_cursor:" + actor
+            for event in self.store.events(self.store.meta(key, 0))[:128]:
+                eligible = event["kind"] in {"notebook_changed", "world_changed"}
+                if eligible and event["kind"] == "world_changed":
+                    try:
+                        world.get(actor, event["data"]["object_id"])
+                    except (AccessDenied, NotFound):
+                        eligible = False
+                if eligible:
+                    try:
+                        await host.json("POST", "/_native/wake", {k: event[k] for k in ("id", "kind", "created")})
+                    except (RuntimeError, httpx.TransportError):
+                        break
+                self.store.set_meta(key, event["seq"])
+
+    def get(self, identity):
+        record = self.store.get("native_work", identity)
+        if not record:
+            raise AdmissionError("Unknown request", 404)
+        return record
+
+    def records(self, limit=100000):
+        return list(reversed(self.store.list("native_work")))[0:limit]
+
+    def public(self, record):
+        return {"work_id": record["id"], "created_at": record["created"],
+                **{k: v for k, v in record["data"].items() if k not in {"events", "payload", "children"}}}
+
+    def _update(self, identity, **changes):
+        record = self.get(identity)
+        return self.store.put("native_work", identity, {**record["data"], **changes}, expected=record["revision"])
+
+    def emit(self, identity, event):
+        record = self.get(identity)
+        data = record["data"]
+        cursor = data.get("cursor", 0) + 1
+        event = {**event, "work_id": identity, "request_id": data["request_id"],
+                 "conversation_id": data["conversation_id"], "event_id": cursor}
+        changes = {"cursor": cursor, "events": [*data.get("events", []), event][-512:]}
+        if event.get("type") == "tool_approval_required":
+            changes["approval"] = event
+        elif event.get("type") in {"tool_result", "message", "work_ended"}:
+            changes["approval"] = None
+        self._update(identity, **changes)
+        for queue in tuple(self.observers):
+            if queue.empty():
+                queue.put_nowait(True)
+
+    def snapshot(self, identity, after=0):
+        if type(after) is not int or after < 0:
+            raise AdmissionError("Invalid event cursor")
+        record = self.get(identity)
+        events, cursor = record["data"].get("events", []), record["data"].get("cursor", 0)
+        reset = after > cursor or bool(after and events and after < events[0]["event_id"] - 1)
+        return {"work": self.public(record), "cursor": cursor, "reset": reset,
+                "events": [e for e in events if reset or e["event_id"] > after]}
+
+    def subscribe(self):
+        queue = asyncio.Queue(maxsize=1)
+        self.observers.add(queue)
+        queue.put_nowait(True)
+        return queue
+
+    async def wait(self, identity):
+        queue = self.subscribe()
+        try:
+            while True:
+                data = self.get(identity)["data"]
+                if data["status"] in TERMINAL:
+                    return data.get("result") or {"response": "", "conversation_id": data["conversation_id"],
+                        "state": {}, "skills_used": [], "memories_recalled": 0, "turn_status": data["status"]}
+                await queue.get()
+        finally:
+            self.observers.discard(queue)
+
+    async def submit(self, payload, client_id=None, *, kind="chat"):
+        payload = copy.deepcopy(payload)
+        resident = self.registry.resolve(payload.get("resident_id"))["resident_id"]
+        request_id = client_id or uid("request")
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+            raise AdmissionError("Invalid request identity")
+        text = payload.get("message", "")
+        if not isinstance(text, str) or not text.strip() or len(text) > 32000:
+            raise AdmissionError("Enter a message of at most 32000 characters")
+        payload["resident_id"] = resident
+
+        def admit():
+            exchange = uid("exchange")
+            self.model.broker.open_exchange(exchange, "user")
+            lineage = {"exchange_id": exchange, "origin": "user"}
+            conversation_id = payload.get("conversation_id")
+            if conversation_id:
+                conversation = self.conversations._conversation(conversation_id, "operator")
+                if resident not in conversation["data"]["participants"]:
+                    raise AccessDenied("Selected resident is not a participant in this thread")
+                message = self.conversations.send("operator", conversation_id, text,
+                    "input:" + request_id, mentions=payload.get("mentions"), lineage=lineage)
+            else:
+                members = payload.get("participants") or [resident]
+                if not isinstance(members, list) or resident not in members or any(m not in self.hosts and m != "operator" for m in members):
+                    raise AccessDenied("Choose available full residents for this thread")
+                members = list(dict.fromkeys(["operator", *members]))
+                result = self.conversations.create("operator", members, "input:" + request_id,
+                    title=text[:80], group=len(members) > 2, opening=text,
+                    mentions=payload.get("mentions"), lineage=lineage)
+                conversation_id, message = result["conversation"]["id"], result["message"]
+            identity = uid("work")
+            self.store.put("native_work", identity, {"request_id": request_id, "conversation_id": conversation_id,
+                "resident_id": resident, "exchange_id": exchange, "status": "queued", "kind": kind,
+                "cursor": 0, "events": [], "children": [], "responders": [], "input_message": self.ui_message(message),
+                "payload": payload, "approval": None, "result": None})
+            return identity
+
+        identity = self.store.command("operator", request_id, "native.chat", payload, admit)
+        if self.get(identity)["data"]["status"] == "queued" and identity not in self.tasks:
+            self.tasks[identity] = asyncio.create_task(self._run(identity))
+        return self.public(self.get(identity))
+
+    def ui_message(self, message):
+        names = {p["id"]: p["name"] for p in self.registry.participants()}
+        author = message["author"]
+        return {"id": message["id"], "role": "user" if author == "operator" else "assistant",
+                "content": message["content"], "timestamp": message["timestamp"], "sequence": message["sequence"],
+                "metadata": {**message.get("metadata", {}), "author_id": author, "author_name": names.get(author, author),
+                    "mentions": message.get("addressees", []) if message.get("explicit_mentions") else [],
+                    "sequence": message["sequence"], "message_id": message["id"]}}
+
+    def grant(self, identity, resident):
+        record = self.store.get("native_grant", identity)
+        if not record or record["data"]["resident_id"] != resident or record["data"]["status"] in TERMINAL:
+            raise AccessDenied("Resident grant is unavailable")
+        return record["data"]
+
+    def enqueue_contact(self, actor, conversation_id, message, lineage):
+        # One dispatcher owns this exchange/thread, including messages posted by
+        # tools while its current activation is still in progress.
+        for record in self.records():
+            data = record["data"]
+            if data["exchange_id"] == lineage["exchange_id"] and data["conversation_id"] == conversation_id and data["status"] not in TERMINAL:
+                return record["id"]
+        identity = uid("work")
+        self.store.put("native_work", identity, {"request_id": identity, "conversation_id": conversation_id,
+            "resident_id": actor, "exchange_id": lineage["exchange_id"], "status": "queued", "kind": "chat",
+            "cursor": 0, "events": [], "children": [], "responders": [], "input_message": self.ui_message(message),
+            "payload": {}, "approval": None, "result": None, "resident_initiated": True})
+        # Dispatch after the transaction commits; a lost browser is irrelevant.
+        def start():
+            self.tasks[identity] = asyncio.create_task(self._run(identity))
+        asyncio.get_running_loop().call_soon(start)
+        return identity
+
+    async def _run(self, identity):
+        if self.get(identity)["data"]["status"] != "queued":
+            return
+        self._update(identity, status="running")
+        counts = {}
+        try:
+            while self.get(identity)["data"]["status"] not in TERMINAL:
+                data = self.get(identity)["data"]
+                pending = [offer for actor in self.hosts for offer in self.conversations.offers(actor)
+                           if offer["data"]["exchange_id"] == data["exchange_id"]
+                           and offer["data"]["conversation_id"] == data["conversation_id"]]
+                if not pending:
+                    break
+                # Everyone gets an initial opportunity before another participant
+                # takes a second turn; the shared broker is the resource bound.
+                pending.sort(key=lambda o: (counts.get(o["data"]["recipient"], 0), o["created"], o["id"]))
+                offer = pending[0]
+                actor = offer["data"]["recipient"]
+                trigger = self.store.get("message", offer["data"]["message_ids"][-1])["data"]
+                ready = await self.hosts[actor].json("GET", "/_native/ready")
+                actual_human = trigger["author"] == "operator"
+                if not actual_human and not ready.get("due", True):
+                    self.conversations.decide_offer(actor, offer["id"], "deferred", uid("defer"))
+                    if not ready.get("pending"):
+                        self.model.broker.set_available(actor, False)
+                    continue
+                self.model.broker.set_available(actor, True)
+                exchange = self.model.broker.exchange(data["exchange_id"])
+                if exchange["status"] != "running" or exchange["calls"] >= exchange["max_calls"] or (exchange["origin"] == "user" and exchange["segment_calls"] >= 20):
+                    for remaining in pending:
+                        self.conversations.decide_offer(remaining["data"]["recipient"], remaining["id"], "exhausted", uid("decision"))
+                    break
+                snapshot = self.conversations.snapshot(actor, data["conversation_id"])
+                messages = snapshot["messages"]
+                addressed = [m for m in messages if m["id"] in offer["data"]["message_ids"]]
+                if not addressed:
+                    self.conversations.decide_offer(actor, offer["id"], "closed", uid("decision"))
+                    continue
+                grant_id = uid("grant")
+                grant = {"id": grant_id, "resident_id": actor, "exchange_id": data["exchange_id"],
+                    "conversation_id": data["conversation_id"], "origin": "user" if addressed[-1]["author"] == "operator" else "autonomy",
+                    "first_response": addressed[-1]["author"] == "operator" and not counts.get(actor),
+                    "through": snapshot["watermark"], "message": addressed[-1], "message_ids": [m["id"] for m in addressed],
+                    "offer_id": offer["id"], "status": "running", "work_id": identity}
+                # Peer activations share the actual initiating exchange; their
+                # transport origin does not mint a new allowance or user signal.
+                grant["origin"] = exchange["origin"]
+                self.store.put("native_grant", grant_id, grant)
+                child = await self.hosts[actor].json("POST", "/_native/respond", {
+                    "grant": grant, "snapshot": snapshot, "request_id": grant_id,
+                    "payload": {k: data["payload"][k] for k in ("image_data", "image_media_type") if k in data["payload"] and addressed[-1]["author"] == "operator"}})
+                children = [*self.get(identity)["data"]["children"], {"resident_id": actor, "work_id": child["work_id"], "grant_id": grant_id}]
+                self._update(identity, children=children, responders=list(dict.fromkeys([*data["responders"], actor])))
+                cursor = 0
+                while True:
+                    result = await self.hosts[actor].json("GET", f"/_native/work/{child['work_id']}?after={cursor}")
+                    for event in result["events"]:
+                        if event.get("type") not in {"accepted", "work_ended", "message"}:
+                            self.emit(identity, {**event, "resident_id": actor})
+                        elif event.get("type") == "message":
+                            self.emit(identity, {"type": "thread_changed", "resident_id": actor})
+                    cursor = result["cursor"]
+                    current = result["work"]
+                    if current["status"] in TERMINAL:
+                        if actor == data["resident_id"] and current.get("result"):
+                            self._update(identity, result={**current["result"], "resident_id": actor})
+                        break
+                    if self.get(identity)["data"]["status"] in TERMINAL:
+                        return
+                    await asyncio.sleep(.08)
+                self.store.put("native_grant", grant_id, {**self.grant(grant_id, actor), "status": current["status"]})
+                counts[actor] = counts.get(actor, 0) + 1
+                ready = await self.hosts[actor].json("GET", "/_native/ready")
+                if not ready.get("pending"):
+                    self.model.broker.set_available(actor, ready.get("due", True))
+                current_offer = self.store.get("reply_offer", offer["id"])
+                if current_offer["data"]["status"] == "pending" and not self.store.get("native_grant_commit", grant_id):
+                    self.conversations.decide_offer(actor, offer["id"], "silent", uid("decision"))
+                if current["status"] == "failed":
+                    raise RuntimeError(current.get("status_detail") or "Resident execution failed")
+            if self.get(identity)["data"]["status"] not in TERMINAL:
+                self._update(identity, status="completed")
+                self.emit(identity, {"type": "work_ended", "status": "completed"})
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if self.get(identity)["data"]["status"] not in TERMINAL:
+                # A lost acknowledgment does not prove the resident stopped.
+                # Revoke derived execution authority before reporting failure.
+                self.stop(identity)
+                self._update(identity, status="failed", status_detail=str(exc)[:500])
+                self.emit(identity, {"type": "work_ended", "status": "failed", "message": str(exc)[:500]})
+
+    def commit(self, actor, body):
+        grant_id, local = body["grant_id"], body["local_message"]
+        def apply():
+            grant = self.grant(grant_id, actor)
+            execution = self.store.get("native_grant_execution", grant_id)
+            if not execution:
+                raise AccessDenied("No model execution was admitted for this response")
+            lineage = self.model.completion_lineage_for_grant(grant_id, actor)
+            if local.get("role") != "assistant":
+                raise AccessDenied("A resident may author only its own response")
+            offer_id = None if self.store.get("native_grant_commit", grant_id) else grant.get("offer_id")
+            late = []
+            if offer_id:
+                offer = self.store.get("reply_offer", offer_id)
+                late = [m for m in offer["data"]["message_ids"] if m not in grant["message_ids"]]
+                self.store.put("reply_offer", offer_id, {**offer["data"], "message_ids": grant["message_ids"]})
+            message = self.conversations.send(actor, grant["conversation_id"], local["content"],
+                "canonical:" + body["command_id"], lineage=lineage, reply_offer_id=offer_id,
+                admitted_id=local["id"], admitted_timestamp=local.get("timestamp"), metadata=local.get("metadata"))
+            self.store.put("native_grant_commit", grant_id, {"message_id": message["id"]})
+            if late:
+                answered = self.store.get("reply_offer", offer_id)["data"]
+                self.store.put("reply_offer", offer_id, {**answered, "status": "pending", "message_ids": late,
+                    "generation": answered.get("generation", 1) + 1, "history": [*answered.get("history", []), answered]})
+            return message
+        return self.store.command(actor, body["command_id"], "native.commit", body, apply)
+
+    def stop(self, identity):
+        record = self.get(identity)
+        if record["data"]["status"] not in TERMINAL:
+            exchange_id = record["data"]["exchange_id"]
+            affected = [r for r in self.records() if r["data"]["exchange_id"] == exchange_id and r["data"]["status"] not in TERMINAL]
+            for work in affected:
+                self._update(work["id"], status="stopped")
+            for grant in self.store.list("native_grant"):
+                if grant["data"].get("exchange_id") == exchange_id and grant["data"]["status"] not in TERMINAL:
+                    self.store.put("native_grant", grant["id"], {**grant["data"], "status": "stopped"})
+                    execution = self.store.get("native_grant_execution", grant["id"])
+                    if execution:
+                        binding = self.model._binding(grant["data"]["resident_id"], execution["data"]["local_execution_id"])
+                        self.model.broker.stop_execution(binding["broker_execution_id"])
+            self.model.broker.close_exchange(exchange_id, "stopped")
+            for offer in self.store.list("reply_offer"):
+                if offer["data"]["exchange_id"] == exchange_id and offer["data"]["status"] in {"pending", "deferred"}:
+                    self.store.put("reply_offer", offer["id"], {**offer["data"], "status": "closed", "decided_at": self.store.clock()})
+            for work in affected:
+                for child in work["data"]["children"]:
+                    self._schedule_command(child["resident_id"], f"/_native/work/{child['work_id']}/stop", {})
+                self.emit(work["id"], {"type": "work_ended", "status": "stopped"})
+        return self.public(self.get(identity))
+
+    def _schedule_command(self, actor, path, body):
+        async def perform():
+            try:
+                await self.hosts[actor].json("POST", path, body)
+            except Exception as exc:
+                self.store.event("native_control_unconfirmed", actor,
+                    {"operation": path.rsplit("/", 1)[-1], "error_class": type(exc).__name__})
+        task = asyncio.create_task(perform())
+        self._commands.add(task)
+        task.add_done_callback(self._commands.discard)
+
+    def approve(self, identity, approval_id, approved=False, allow_always=False):
+        data = self.get(identity)["data"]
+        approval = data.get("approval") or {}
+        if approval.get("approval_id") != approval_id:
+            raise AdmissionError("Approval is no longer pending", 409)
+        child = next(c for c in reversed(data["children"]) if c["resident_id"] == approval["resident_id"])
+        self._schedule_command(child["resident_id"], f"/_native/work/{child['work_id']}/approval",
+            {"approval_id": approval_id, "approved": approved, "allow_always": allow_always})
+        return {"accepted": True}
+
+    async def close(self):
+        if self._pulse_task:
+            self._pulse_task.cancel()
+            await asyncio.gather(self._pulse_task, return_exceptions=True)
+        for record in self.records():
+            if record["data"]["status"] not in TERMINAL:
+                self.stop(record["id"])
+        for task in self.tasks.values():
+            task.cancel()
+        await asyncio.gather(*self.tasks.values(), return_exceptions=True)
+        await asyncio.gather(*self._commands, return_exceptions=True)

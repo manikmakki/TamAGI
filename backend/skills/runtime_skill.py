@@ -109,9 +109,13 @@ def install_runtime_skills(runtime, registry, companions):
     def request_quiet_turn():
         context = current_execution.get()
         control = runtime.chat_controls.get(context.root_id) if context else None
-        if not control or context.depth or context.origin != "user":
+        if not control or context.depth or not (context.origin == "user" or (
+            runtime.household is not None
+            and runtime.household.lineage(context)["origin"] == "user"
+            and not runtime.household.lineage(context)["helper"]
+        )):
             raise ValueError(
-                "Quiet turns are available only to the primary resident within an actual user request"
+                "Quiet turns require a full participant in a current user-origin exchange"
             )
         return control.request()
 

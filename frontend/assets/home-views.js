@@ -4,10 +4,11 @@
   const $=id=>document.getElementById(id);
   const api=(...args)=>TamagiShell.api(...args),notice=(...args)=>TamagiShell.notice(...args);
   let state=null,friend=null,thread=null,restore=null;
+  let loadedResident=null;
   const item=(title,text='')=>{const node=document.createElement('div');node.className='item';const strong=document.createElement('strong');strong.textContent=title;const p=document.createElement('p');p.className='muted';p.textContent=text;node.append(strong,p);return node;};
   const empty=(target,text='')=>{target.replaceChildren();if(text){const p=document.createElement('p');p.className='empty';p.textContent=text;target.append(p);}};
   const button=(label,handler)=>{const b=document.createElement('button');b.textContent=label;b.onclick=()=>perform(handler);return b;};
-  const link=(label,href)=>{const a=document.createElement('a');a.textContent=label;a.href=href;a.className='button';return a;};
+  const link=(label,href)=>{const a=document.createElement('a');a.textContent=label;a.href=window.TamagiHousehold?TamagiHousehold.scopeUrl(href):href;a.className='button';return a;};
   async function perform(work){try{await work();}catch(error){notice(error.message);}}
   const form=(id,handler)=>$(id).addEventListener('submit',event=>{event.preventDefault();const submit=$(id).querySelector('button');submit.disabled=true;perform(handler).finally(()=>submit.disabled=false);});
 
@@ -57,10 +58,17 @@
     $('runtime-details').textContent=JSON.stringify({resident:state.resident_id,installation:state.installation_id,authority:state.authority,automaticDeployment:state.automatic_deployment},null,2);
     $('enable-deployment').disabled=!!state.automatic_deployment;$('disable-deployment').disabled=!state.automatic_deployment;
   }
-  async function load(){state=await api('/runtime');render();}
+  async function load(){
+    const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
+    const result=await api('/runtime',household?{headers:{'X-Tamagi-Resident':actor}}:{});
+    if(household&&!household.acceptResponse(actor,token))return;
+    if(household&&loadedResident!==actor){friend=null;thread=null;restore=null;$('consultation').hidden=true;$('restore-preview').hidden=true;loadedResident=actor;}
+    state=result;render();
+  }
   async function growth(){await load();$('growth').open=true;if(!$('growth-dialog').open)$('growth-dialog').showModal();}
   async function preview(entry){
-    const path='/api/inventory/file?path='+encodeURIComponent(entry.path)+'&preview=true';
+    const rawPath='/api/inventory/file?path='+encodeURIComponent(entry.path)+'&preview=true';
+    const path=window.TamagiHousehold?TamagiHousehold.scopeUrl(rawPath,entry._residentId):rawPath;
     $('preview-title').textContent=entry.name;empty($('preview-content'));$('preview-note').textContent='Current workshop file';
     const dialog=$('preview-dialog');if(!dialog.open)dialog.showModal();
     if(['text/html','image/svg+xml'].includes(entry.media_type)){
@@ -73,13 +81,16 @@
     }
   }
   async function inventory(){
-    const data=await api('/inventory');empty($('inventory-items'),data.items.length?'':'The workshop is ready for a first creation.');
+    const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
+    const data=await api('/inventory',household?{headers:{'X-Tamagi-Resident':actor}}:{});
+    if(household&&!household.acceptResponse(actor,token))return;
+    empty($('inventory-items'),data.items.length?'':'The workshop is ready for a first creation.');
     for(const entry of data.items){
       const card=document.createElement('article');card.className='card creation-card';card.setAttribute('aria-label',entry.name);
       const icon=document.createElement('div');icon.className='creation-icon';icon.textContent=entry.media_type.startsWith('image/')?'◈':entry.media_type==='text/html'?'▧':'▤';icon.setAttribute('aria-hidden','true');
       const title=document.createElement('h2');title.textContent=entry.name;const description=document.createElement('p');description.className='muted';description.textContent=entry.description||(entry.path!==entry.name?entry.path:'');description.hidden=!description.textContent;
       const info=document.createElement('small');info.textContent='Current file · '+new Intl.NumberFormat().format(entry.size)+' bytes';
-      const actions=document.createElement('div');actions.className='row';actions.append(button('Preview',()=>preview(entry)),link('Download','/api/inventory/file?path='+encodeURIComponent(entry.path)));
+      const actions=document.createElement('div');actions.className='row';actions.append(button('Preview',()=>preview({...entry,_residentId:actor})),link('Download','/api/inventory/file?path='+encodeURIComponent(entry.path)));
       card.append(icon,title,description,info,actions);
       if(entry.versions.length){const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=entry.versions.length+' saved '+(entry.versions.length===1?'version':'versions');details.append(summary);for(const version of entry.versions.slice().reverse())details.append(item(new Date(version.created*1000).toLocaleString(),version.data.size+' bytes'),link('Download saved version','/api/runtime/artifacts/'+encodeURIComponent(version.id)));card.append(details);}
       $('inventory-items').append(card);
@@ -89,6 +100,7 @@
   }
   function finished(work,force=false){
     if(work.kind!=='companion')return;
+    if(window.TamagiHousehold&&work.resident_id!==TamagiHousehold.selectedResidentId())return false;
     if(force||work.actor_id===friend || !friend){friend=work.actor_id;thread=work.result?.thread_id||work.conversation_id;$('consultation').hidden=false;$('consult-title').textContent='With '+(work.result?.speaker||'a companion');$('friend-reply').append(item(work.result?.speaker||'Companion',work.result?.text||work.detail||work.status));return true;}
     return false;
   }

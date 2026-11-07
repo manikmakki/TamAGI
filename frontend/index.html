@@ -960,6 +960,7 @@
 <script src="/assets/avatar-echo.js"></script>
 <script src="/assets/avatar-ember.js?v=8"></script>
 <script src="/assets/avatar-runtime.js?v=8"></script>
+<script src="/assets/household-ui.js?v=1"></script>
 <script>
 const API=window.location.origin;
 const WS_URL=API.replace(/^http/,'ws')+'/api/ws';
@@ -1343,16 +1344,16 @@ function solveWorldTransforms(bones){
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
-function renderFrame(canvas,bones,manifest,activeVariants,time=0){
+function renderFrame(canvas,bones,manifest,activeVariants,time=0,avatarId=_avatarId,images=_spriteImages){
   const ctx=canvas.getContext('2d');
-  TamagiAvatarRuntime.style(canvas,_avatarId);
+  TamagiAvatarRuntime.style(canvas,avatarId);
   const W=canvas.width,H=canvas.height;
   ctx.clearRect(0,0,W,H);
   ctx.save();
-  ctx.translate(W/2,TamagiAvatarRuntime.originY(canvas,_avatarId));
+  ctx.translate(W/2,TamagiAvatarRuntime.originY(canvas,avatarId));
   const scale=2.5;
   ctx.scale(scale,scale);
-  ctx.imageSmoothingEnabled=!(window.TamagiAvatars[_avatarId]?.pixelated??true);
+  ctx.imageSmoothingEnabled=!(window.TamagiAvatars[avatarId]?.pixelated??true);
   const wt=solveWorldTransforms(bones);
   const drawOrder=Object.entries(manifest)
     .map(([pn,e])=>({pn,e,bone:bones.find(b=>b.name===e.bone),z:(bones.find(b=>b.name===e.bone)||{}).zOrder||0}))
@@ -1369,10 +1370,10 @@ function renderFrame(canvas,bones,manifest,activeVariants,time=0){
     const pox=bone.pivotOffsetX||0,poy=bone.pivotOffsetY||0;
     const imgKey=`${pn}:${variant}`;
     ctx.save();ctx.translate(-sw/2+pox*sw,-sh/2+poy*sh);
-    if(_spriteImages[imgKey]){
-      ctx.drawImage(_spriteImages[imgKey],0,0,sw,sh);
+    if(images[imgKey]){
+      ctx.drawImage(images[imgKey],0,0,sw,sh);
     }else{
-      TamagiAvatarRuntime.draw(ctx,_avatarId,pn,variant,sw,sh,drawPlaceholder,time);
+      TamagiAvatarRuntime.draw(ctx,avatarId,pn,variant,sw,sh,drawPlaceholder,time);
     }
     ctx.restore();
     ctx.restore();
@@ -1388,12 +1389,15 @@ let _spriteConfig=null;
 let _avatarId='vex';
 
 async function loadSpriteConfig(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),selectionToken=household?.selectionEpoch();
   try{
-    const cfg=await api('/sprites/config');
+    const cfg=await api('/sprites/config',household?{headers:{'X-Tamagi-Resident':actor}}:{});
+    if(household&&!household.acceptResponse(actor,selectionToken))return;
     _avatarId=TamagiAvatarRuntime.resolve(cfg);
     _rigBones=TamagiAvatarRuntime.createBones(_avatarId,createBone,()=>applyPivotDefaults(PRESETS.default.bones()));
     _spriteConfig=cfg||null;
     _spriteImages={};
+    const selectedImages={};
 
     // If the config carries a skeleton, replace the rig bones with it.
     // This lets the rig editor's exported proportions drive the avatar directly.
@@ -1416,14 +1420,15 @@ async function loadSpriteConfig(){
           const key=`${part}:${variant}`;
           const img=new Image();
           loads.push(new Promise(resolve=>{
-            img.onload=()=>{_spriteImages[key]=img;resolve();};
+            img.onload=()=>{selectedImages[key]=img;resolve();};
             img.onerror=resolve; // Missing PNG falls back to the selected character.
-            img.src=path;
+            img.src=household?household.scopeUrl(path,actor):path;
           }));
         }
       }
       await Promise.all(loads);
     }
+    if(!household||household.acceptResponse(actor,selectionToken))_spriteImages=selectedImages;
   }catch(_){}
 }
 
@@ -1467,6 +1472,7 @@ function firstSentence(s){if(!s)return'';const m=s.match(/^(.+?)(?:\.\s|\.$|\n)/
 function residentAge(seconds){const hours=Math.floor(Math.max(0,Number(seconds)||0)/3600),days=Math.floor(hours/24);return days?`${days}d ${hours%24}h old`:`${hours}h old`;}
 function updateState(s){
   if(!s)return;
+  if(window.TamagiHousehold&&s.resident_id&&s.resident_id!==TamagiHousehold.selectedResidentId())return;
   const growth=s.growth,level=growth?.level??s.level??1,stage=growth?.stage??s.stage??'egg';
   setText('p-lv',level);setText('p-xp',growth?.total??s.experience??0);
   if(s.pose_parts)setPose(s.pose_parts);
@@ -1564,7 +1570,7 @@ async function sendMessage(){
   }catch(e){setTyping(false);addMsg('assistant',`\u26A0 Error: ${e.message}. Is the backend running?`);loading=false;document.getElementById('send-btn').disabled=false;}
 }
 
-function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[]){
+function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[],metadata={}){
   const area=document.getElementById('chat-messages');
   const d=document.createElement('div');d.className=`msg ${role}`;
   // Use the stored unix timestamp when replaying history, current time for live messages
@@ -1588,8 +1594,9 @@ function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[]){
     if(m.op==='milestone'){return`<span class="sm-tag update" title="${esc(m.description||m.id)}">\u2605 mastery</span>`;}
     return'';
   }).join('');
-  const rendered=role==='assistant'?renderMd(content):esc(content);
+  const rendered=role==='assistant'?(window.TamagiHousehold?TamagiHousehold.safeMarkdown(content):renderMd(content)):esc(content);
   d.innerHTML=`<div class="bubble">${rendered}</div><div class="time">${t}${sk}${cmpTag}${smTags}</div>`;
+  window.TamagiHousehold?.decorateMessage(d,role,metadata);
   area.appendChild(d);area.scrollTop=area.scrollHeight
 }
 function setTyping(v){document.getElementById('typing').classList.toggle('on',v)}
@@ -1662,10 +1669,13 @@ function historicalWakeDescription(meta){
 const _mindEvents={};
 
 async function loadMindPanel(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
+  const scoped=household?{headers:{'X-Tamagi-Resident':actor}}:{};
   const statusRow=document.getElementById('mind-status-row');
   const entries=document.getElementById('mind-entries');
   try{
-    const [data]=await Promise.all([api('/monologue/log?limit=80'),api('/world/state').then(updateMindActivity).catch(()=>{})]);
+    const [data]=await Promise.all([api('/monologue/log?limit=80',scoped),api('/world/state',scoped).then(state=>{if(!household||household.acceptResponse(actor,token))updateMindActivity(state);}).catch(()=>{})]);
+    if(household&&!household.acceptResponse(actor,token))return;
     const total=data.total||0;
     statusRow.textContent=total?total+' event'+(total===1?'':'s')+' recorded':'';
     const events=(data.events||[]).slice().reverse();
@@ -1998,9 +2008,12 @@ await loadSpriteConfig();
 requestAnimationFrame(_rigTick);
 connectWS();await loadState();loadConversations();const needsOb=await checkOnboarding();if(!needsOb)await checkWorldSeed();setInterval(loadState,30000)});
 async function loadState(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),selectionToken=household?.selectionEpoch();
+  const scoped=household?{headers:{'X-Tamagi-Resident':actor}}:{};
   try{
-    const d=await api('/state');
+    const d=await api('/state',scoped);
     if(!d)return; // redirected to /login
+    if(household&&!household.acceptResponse(actor,selectionToken))return;
     updateState(d.state);setConnected(true);
     // Show logout button when auth is enabled
     try{
@@ -2008,7 +2021,7 @@ async function loadState(){
       document.getElementById('logout-btn').style.display=a.enabled?'inline':'none';
     }catch{}
     // Pull world context separately and update mood pill + location/focus display
-    try{const ws=await api('/world/state');updateWorldContext(ws)}catch{}
+    try{const ws=await api('/world/state',scoped);if(!household||household.acceptResponse(actor,selectionToken))updateWorldContext(ws)}catch{}
   }catch{setConnected(false)}
 }
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});

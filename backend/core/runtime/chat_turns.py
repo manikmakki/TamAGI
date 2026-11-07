@@ -37,6 +37,16 @@ class ChatTurns:
         self.limit = runtime.config.user_calls
         self.maximum = runtime.config.user_silent_turns
         self.used = 0
+        self.native_requested = False
+        self.input_label = "actual user turn"
+        if runtime.household is not None:
+            from backend.core.household.model_transport import current_household_admission
+            binding = runtime.household.lineage(self.context)
+            self.used = binding["segment"]
+            admission = current_household_admission.get() or {}
+            author = admission.get("input_author") or admission.get("message", {}).get("author")
+            if author and author != "operator":
+                self.input_label = "household reply"
         self.queued = False
         self.start_calls = 0
         self.task = asyncio.current_task()
@@ -77,7 +87,7 @@ class ChatTurns:
         run = self.runtime.store.run(self.run_id)
         used = run["calls"] - self.start_calls
         remaining = max(0, self.limit - used)
-        text = f"Turn kind: {'quiet continuation' if self.used else 'actual user turn'}. Model calls used: {used}/{self.limit}; {remaining} remain including the next call. Quiet turns used: {self.used}/{self.maximum}; one queued: {self.queued}. One action is one model call, including retries and delegated calls, not one individual tool operation. These are ceilings, never targets. No new user message is created by quiet continuation. A final response is delivered only after requested quiet work ends."
+        text = f"Turn kind: {'quiet continuation' if self.used else self.input_label}. Model calls used: {used}/{self.limit}; {remaining} remain including the next call. Quiet turns used: {self.used}/{self.maximum}; one queued: {self.queued}. One action is one model call, including retries and delegated calls, not one individual tool operation. These are ceilings, never targets. No new user message is created by quiet continuation. A final response is delivered only after requested quiet work ends."
         text += " Plain text does not schedule work. When you choose to act on an accepted request, dispatch the relevant tools; request a quiet turn explicitly if you want to continue before replying. You may instead report a blocker, decline, rest, or end."
         if remaining <= max(3, self.limit // 5):
             text += " Find a stopping point; save a useful next step if work remains."
@@ -87,7 +97,12 @@ class ChatTurns:
                 text += " This is the last call in this turn; finish now. Exhaustion discards queued continuations."
         return text
 
-    def finish_segment(self, status, messages):
+    async def authorize_request(self):
+        if self.runtime.household is not None:
+            await self.runtime.household.request_quiet(self.context, self.used)
+            self.native_requested = True
+
+    async def finish_segment(self, status, messages):
         run = self.runtime.store.run(self.run_id)
         self.runtime.store.put(
             "chat_turn",
@@ -112,7 +127,13 @@ class ChatTurns:
             and self.input_epoch == self.runtime.input_epoch
             and not self.runtime.waiting_users
         ):
+            if self.runtime.household is not None:
+                if not self.native_requested:
+                    await self.authorize_request()
+                state = await self.runtime.household.advance_quiet(self.context, self.used)
+                self.used = state["segment"] - 1
             self.used += 1
+            self.native_requested = False
             self.queued = False
             self.start_calls = run["calls"]
             self.save()
@@ -167,7 +188,8 @@ async def run_chat_turns(
         runtime.store.run(context.execution_id)["payload"]
     ).get("conversation_id")
     control = None
-    if context.origin == "user" and context.depth == 0:
+    native_user_exchange = runtime.household is not None and runtime.household.lineage(context)["origin"] == "user"
+    if (context.origin == "user" or native_user_exchange) and context.depth == 0:
         control = ChatTurns(
             runtime,
             conversation_id,
@@ -263,6 +285,8 @@ async def run_chat_turns(
                             True, output="Expression already applied in this turn"
                         )
                     else:
+                        if call.name == "request_quiet_turn" and control:
+                            await control.authorize_request()
                         receipt = await agent.skills.execute(
                             call.name,
                             _event_callback=event_callback,
@@ -322,7 +346,7 @@ async def run_chat_turns(
                         terminal = "completed"
                         break
             if terminal:
-                if control and control.finish_segment(terminal, messages):
+                if control and await control.finish_segment(terminal, messages):
                     result.text = ""
                     once.clear()
                     await emit(
@@ -339,13 +363,13 @@ async def run_chat_turns(
     except asyncio.CancelledError:
         if not control or not control.used or not control.interrupt_requested:
             if control:
-                control.finish_segment("interrupted", messages)
+                await control.finish_segment("interrupted", messages)
             save_work("interrupted")
             raise
         result.text = ""
         result.status = "interrupted"
         result.detail = "Quiet continuation interrupted by actual user input"
-        control.finish_segment("interrupted", messages)
+        await control.finish_segment("interrupted", messages)
         current_terminal.set({"status": "interrupted"})
     except Exception as exc:
         result.status = (
@@ -355,7 +379,7 @@ async def run_chat_turns(
         result.text = ""
         result.detail = str(exc)
         if control:
-            control.finish_segment(result.status, messages)
+            await control.finish_segment(result.status, messages)
         current_terminal.set({"status": result.status, "detail": str(exc)})
     finally:
         runtime.quiet_tasks.discard(asyncio.current_task())

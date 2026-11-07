@@ -326,10 +326,20 @@ class RuntimeConfig(BaseModel):
     tool_result_bytes: int = Field(default=32768, ge=4096, le=262144)
 
 
+class HouseholdConfig(BaseModel):
+    """Explicit opt-in coordinator; standalone installations remain unchanged."""
+
+    enabled: bool = False
+    root: str = ""
+    operator_name: str = "You"
+    provider_mode: Literal["remote", "offline"] = "remote"
+
+
 class TamAGIConfig(BaseModel):
     """Root configuration model."""
 
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    household: HouseholdConfig = Field(default_factory=HouseholdConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     tamagi: TamagiIdentity = Field(default_factory=TamagiIdentity)
     server: ServerConfig = Field(default_factory=ServerConfig)

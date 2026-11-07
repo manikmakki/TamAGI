@@ -9,11 +9,13 @@
   const legacyEvent = handleWsEvent;
   const legacySend = sendMessage;
   let durable=true;
-  let view = 'chat', selection = 0, hydrating = true, drawerFocus = null, archiveTab = 'chats', polling = false;
+  let view = 'chat', selection = 0, historyRequest = 0, hydrating = true, drawerFocus = null, archiveTab = 'chats', polling = false;
   let chatPosition={scroll:0,bottom:true};
   const titles = {chat:'Chat',map:'Map',journal:'Journal',inventory:'Inventory',companions:'Companions',archive:'Archive',settings:'Settings'};
   const active = work => work && ['queued','running'].includes(work.status);
   const currentWork = () => [...works.values()].filter(w => w.kind === 'chat' && w.conversation_id === convId && active(w)).sort((a,b) => b.created_at-a.created_at)[0];
+  const draftKey = id => window.TamagiHousehold?.draftKey(id) || id || 'new';
+  const conversationKey = () => window.TamagiHousehold?.storageKey('conversation') || 'tamagi-conversation';
 
   async function request(path, options = {}) {
     const headers = options.body instanceof FormData ? {} : {'Content-Type':'application/json'};
@@ -37,7 +39,7 @@
     if(pending){
       submissions.delete(work.request_id);
       if(pending.selection===selection && pending.conversation===convId && $('input').value.trim()===pending.message && pendingFile===pending.file){
-        $('input').value='';autoResize($('input'));clearAttachment();drafts.delete(convId||'new');convId=work.conversation_id;localStorage.setItem('tamagi-conversation',convId);activeRequestId=work.request_id;renderHistory(convId,true).catch(e=>notice(e.message));
+        $('input').value='';autoResize($('input'));clearAttachment();drafts.delete(draftKey(convId));convId=work.conversation_id;localStorage.setItem(conversationKey(),convId);activeRequestId=work.request_id;renderHistory(convId,true).catch(e=>notice(e.message));
       }
     }
     if (initial && !active(work)) {delivered.add(work.work_id);if(!seen.has(work.work_id))unread.add(work.work_id);}
@@ -47,7 +49,7 @@
         if (work.kind === 'chat' && work.conversation_id === convId) {renderHistory(convId, true).catch(e=>notice(e.message));if(view==='chat')markSeen(work.work_id);else unread.add(work.work_id);}
         else if (work.kind === 'companion' && view === 'companions' && window.TamagiHomeViews?.finished(work)) markSeen(work.work_id);
         else unread.add(work.work_id);
-        if (work.result?.state) updateState(work.result.state);
+        if (work.result?.state && (!window.TamagiHousehold || work.resident_id===TamagiHousehold.selectedResidentId())) updateState(work.result.state);
         loadConversations();
       }
     }
@@ -58,7 +60,7 @@
     if(event.type==='work_resync'){cursors.delete(event.work_id);progress.delete(event.work_id);return;}
     if (event.type === 'accepted') {
       remember(event);
-      if (activeRequestId === event.request_id && !convId) {convId=event.conversation_id;localStorage.setItem('tamagi-conversation',convId);}
+      if (activeRequestId === event.request_id && !convId) {convId=event.conversation_id;localStorage.setItem(conversationKey(),convId);}
       return;
     }
     if (event.type === 'work_snapshot') {
@@ -68,6 +70,14 @@
     if (!event.work_id) return;
     if (event.event_id && event.event_id <= (cursors.get(event.work_id)||0)) return;
     if (event.event_id) cursors.set(event.work_id,event.event_id);
+    if (event.type === 'thread_changed' && window.TamagiHousehold) {
+      // A resident reply can finish while other participants are still working.
+      // Refresh canonical content without completing the shared exchange.
+      if (event.conversation_id === convId) renderHistory(convId,false,true).catch(e=>notice(e.message));
+      loadConversations();
+      TamagiHousehold.refresh().catch(e=>notice(e.message));
+      return;
+    }
     const work = works.get(event.work_id);
     if (!work) return;
     if (event.type === 'quiet_turn') {work.quiet_turns=event.ordinal;updateActivity();}
@@ -113,17 +123,17 @@
     } finally {polling=false;}
   }
   function saveDraft() {
-    drafts.set(convId||'new',{text:$('input').value,file:pendingFile,scroll:$('chat-messages').scrollTop});
+    drafts.set(draftKey(convId),{text:$('input').value,file:pendingFile,scroll:$('chat-messages').scrollTop});
   }
   function restoreDraft() {
-    const saved=drafts.get(convId||'new');
+    const saved=drafts.get(draftKey(convId));
     $('input').value=saved?.text||'';autoResize($('input'));clearAttachment();
     if(saved?.file){pendingFile=saved.file;$('chip-name').textContent=pendingFile.name;$('chip-icon').textContent=pendingFile.type.startsWith('image/')?'🖼':'📄';$('attach-chip').classList.add('on');$('attach-btn').classList.add('has-file');}
   }
-  async function renderHistory(id, bottom=false) {
+  async function renderHistory(id, bottom=false, preserveScroll=false) {
     if(!id)return;
-    const version=selection, data=await request('/conversations/'+encodeURIComponent(id));
-    if(version!==selection||id!==convId)return;
+    const version=selection, requestVersion=++historyRequest, data=await request('/conversations/'+encodeURIComponent(id));
+    if(version!==selection||id!==convId||requestVersion!==historyRequest)return;
     const area=$('chat-messages'),scroll=area.scrollTop;area.replaceChildren();currentInterimGroup=null;clearLiveTags();liveToolOutputs={};
     const ids=new Set();
     for(const message of data.messages||[]) {
@@ -135,7 +145,7 @@
         for(const text of [...thinking,...interim]){const item=document.createElement('div');item.textContent=text;details.append(item);}area.append(details);
       }
       if(message.role==='assistant'&&!message.content?.trim())addTurnStatus(meta.turn_status||'completed');
-      else addMsg(message.role,message.content,meta.skills_used||[],message.timestamp,meta.context_compressed||0,meta.sm_mutations||[]);
+      else addMsg(message.role,message.content,meta.skills_used||[],message.timestamp,meta.context_compressed||0,meta.sm_mutations||[],{...meta,message_id:message.id,sequence:message.sequence??meta.sequence});
     }
     const matching=[...works.values()].filter(w=>w.kind==='chat'&&w.conversation_id===id).sort((a,b)=>a.created_at-b.created_at);
     if(view==='chat')for(const work of matching)if(!active(work))markSeen(work.work_id);
@@ -149,16 +159,17 @@
       const latest=matching.at(-1);
       if(latest && !active(latest) && latest.status!=='completed' && !(data.messages||[]).some(m=>m.role==='assistant'&&m.metadata?.execution_id===latest.execution_id))addTurnStatus(latest.status);
     }
-    restoreScroll(area,bottom?area.scrollHeight:(drafts.get(id)?.scroll??scroll));
+    restoreScroll(area,bottom?area.scrollHeight:preserveScroll?scroll:(drafts.get(draftKey(id))?.scroll??scroll));
     updateActivity();
+    window.TamagiHousehold?.historyRendered(id,data);
   }
   window.openConversation = async function (id) {
-    saveDraft();selection++;convId=id;localStorage.setItem('tamagi-conversation',id);restoreDraft();
+    saveDraft();selection++;convId=id;localStorage.setItem(conversationKey(),id);restoreDraft();
     for(const work of works.values())if(work.conversation_id===id&&!active(work))markSeen(work.work_id);
     await renderHistory(id);navigate('/');loadConversations();
   };
   window.newConversation = function () {
-    saveDraft();selection++;convId=null;localStorage.removeItem('tamagi-conversation');restoreDraft();
+    saveDraft();selection++;convId=null;localStorage.removeItem(conversationKey());restoreDraft();
     $('chat-messages').innerHTML='<div class="welcome-msg" id="welcome"><strong>A new conversation.</strong><br>What shall we explore?</div>';
     activeRequestId=null;currentInterimGroup=null;clearLiveTags();navigate('/');updateActivity();$('input').focus();loadConversations();
   };
@@ -166,18 +177,19 @@
     if(!durable)return legacySend();
     const input=$('input'),message=input.value.trim(),file=pendingFile;
     if((!message&&!file)||(loading&&!quietActive))return;
-    const version=selection, originalConversation=convId;
-    const retry=[...submissions.values()].find(s=>s.conversation===convId&&s.message===message&&s.file===file);
+    const version=selection, originalConversation=convId, household=window.TamagiHousehold, residentId=household?.selectedResidentId();
+    const retry=[...submissions.values()].find(s=>s.conversation===convId&&s.message===message&&s.file===file&&(!household||s.residentId===residentId));
     const body=retry?.body||{message:message||`Attached: ${file.name}`,conversation_id:convId,request_id:uuid()};
     loading=true;$('send-btn').disabled=true;notice('');
     try {
+      if(household&&!retry){body.mentions=household.resolveMentions(message);if(!originalConversation)body.participants=household.participants();}
       if(!retry&&file?.type.startsWith('image/')){body.image_data=await toBase64(file);body.image_media_type=file.type;}
-      else if(!retry&&file){const form=new FormData();form.append('file',file);const upload=await request('/upload',{method:'POST',body:form});body.message+=` [file uploaded to workspace: ${upload.path}]`;}
-      submissions.set(body.request_id,{body,conversation:originalConversation,message,file,selection:version});
+      else if(!retry&&file){const form=new FormData();form.append('file',file);const upload=await request('/upload',{method:'POST',body:form,...(household?{headers:{'X-Tamagi-Resident':residentId}}:{})});body.message+=` [file uploaded to workspace: ${upload.path}]`;}
+      submissions.set(body.request_id,{body,conversation:originalConversation,message,file,selection:version,residentId});
       let work;
       // An uncertain acknowledgment is retried with the same identity and payload.
       for(let attempt=0;attempt<2;attempt++) {
-        try{work=await request('/chat/requests',{method:'POST',body:JSON.stringify(body)});break;}
+        try{work=await request('/chat/requests',{method:'POST',body:JSON.stringify(body),...(household?{headers:{'X-Tamagi-Resident':residentId}}:{})});break;}
         catch(error){if(attempt||!(error instanceof TypeError))throw error;}
       }
       remember(work);subscribe(work);
@@ -264,18 +276,18 @@
       for(const id of ['operator','connections','appearance'])$('settings-'+id).hidden=setting!==id;
       document.querySelectorAll('[data-setting]').forEach(link=>link.dataset.setting===setting?link.setAttribute('aria-current','page'):link.removeAttribute('aria-current'));
     }
-    document.querySelectorAll('#view-'+view+' iframe[data-src]').forEach(frame=>{if(!frame.src&&!frame.hidden)frame.src=frame.dataset.src;});
+    document.querySelectorAll('#view-'+view+' iframe[data-src]').forEach(frame=>{if(!frame.src&&!frame.hidden)frame.src=window.TamagiHousehold?TamagiHousehold.scopeUrl(frame.dataset.src):frame.dataset.src;});
     if(['journal','map','companions','settings'].includes(view))window.TamagiHomeViews?.load().catch(e=>notice(e.message));
     if(view==='inventory')window.TamagiHomeViews?.inventory().catch(e=>notice(e.message));
     if(view==='chat'&&previous==='settings'){loadSpriteConfig().catch(()=>{});loadState();}
-    if(next.growth)window.TamagiHomeViews?.growth();updateActivity();
+    if(next.growth)window.TamagiHomeViews?.growth();updateActivity();window.TamagiHousehold?.scheduleRead();
   }
   window.triggerDream = async function () {
     const button=$('dream-trigger-btn');button.disabled=true;button.textContent='Ticking…';
     try{const result=await request('/world/tick',{method:'POST'});notice(result.detail||'World Thread: '+result.status);await loadMindPanel();await loadState();}
     catch(error){notice(error.message);}finally{button.disabled=false;button.textContent='▶ Tick Now';}
   };
-  window.TamagiShell={api:request,notice,navigate,works,remember,subscribe,uuid,markSeen,view:()=>view};
+  window.TamagiShell={api:request,notice,navigate,works,remember,subscribe,uuid,markSeen,view:()=>view,saveDraft,restoreDraft,refreshHistory:()=>renderHistory(convId)};
   document.addEventListener('click',event=>{
     const link=event.target.closest('a[href]');if(!link||event.ctrlKey||event.metaKey||event.shiftKey||link.hasAttribute('download')||link.target)return;
     const url=new URL(link.href,location.href);
@@ -292,8 +304,8 @@
     for(const dialog of document.querySelectorAll('.shell-dialog'))dialog.querySelector('.dialog-close')?.addEventListener('click',()=>dialog.close());
     try {
       await poll(true);
-      const saved=localStorage.getItem('tamagi-conversation')||[...works.values()].filter(w=>w.kind==='chat').sort((a,b)=>b.created_at-a.created_at)[0]?.conversation_id;
-      if(saved){convId=saved;try{await renderHistory(saved);}catch{convId=null;localStorage.removeItem('tamagi-conversation');}}
+      const saved=localStorage.getItem(conversationKey())||[...works.values()].filter(w=>w.kind==='chat'&&(!window.TamagiHousehold||w.resident_id===TamagiHousehold.selectedResidentId())).sort((a,b)=>b.created_at-a.created_at)[0]?.conversation_id;
+      if(saved){convId=saved;try{await renderHistory(saved);}catch{convId=null;localStorage.removeItem(conversationKey());}}
       hydrating=false;
       for(const work of works.values())if(active(work)){subscribe(work);await feed(work);}
     }catch(error){hydrating=false;if(error.status===503&&error.message.includes('home platform'))durable=false;else notice(error.message);}

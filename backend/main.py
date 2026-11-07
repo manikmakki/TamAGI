@@ -7,6 +7,7 @@ Initializes all subsystems and starts the FastAPI server.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -88,6 +89,8 @@ async def lifespan(app: FastAPI):
     # Load config
     from backend.core.runtime.bootstrap import configure_instance, initialize_runtime
     config = configure_instance(load_config())
+    if config.household.enabled:
+        raise RuntimeError("Start a household with python -m backend.main, not the standalone ASGI app")
     set_config(config)
     runtime = initialize_runtime(config, Path(__file__).resolve().parents[1]) if config.runtime.enabled else None
     logger.info(f"Config loaded — LLM: {config.llm.base_url} model={config.llm.model}")
@@ -96,7 +99,12 @@ async def lifespan(app: FastAPI):
     Path(config.workspace.path).mkdir(parents=True, exist_ok=True)
 
     # Initialize LLM client
-    llm = LLMClient(config.llm)
+    native_worker = bool(os.environ.get("TAMAGI_NATIVE_BINDING"))
+    if native_worker:
+        from backend.core.household.worker_bridge import build_worker_client
+        llm = build_worker_client(config, runtime)
+    else:
+        llm = LLMClient(config.llm)
     if runtime:
         from backend.core.runtime import GovernedLLM
         llm = GovernedLLM(llm, runtime)
@@ -256,7 +264,11 @@ async def lifespan(app: FastAPI):
                 runtime.backups.expire()
         import asyncio
         runtime.transfer_housekeeping=asyncio.create_task(transfer_housekeeping())
-        runtime.deployments = DeploymentManager(runtime)
+        if not native_worker:
+            runtime.deployments = DeploymentManager(runtime)
+        else:
+            from backend.core.household.worker_bridge import NativeDeploymentDisabled
+            runtime.deployments = NativeDeploymentDisabled(runtime)
         from backend.core.runtime.live_evaluation import install_evaluator
         install_evaluator(runtime, llm)
         from backend.skills.runtime_skill import install_development_skills
@@ -353,6 +365,11 @@ async def lifespan(app: FastAPI):
     if runtime:
         from backend.core.runtime.interactions import Interactions
         runtime.interactions = Interactions(runtime, agent, config.autonomy.resume_after_conversation)
+        if native_worker:
+            from backend.core.household.worker_bridge import install_worker
+            install_worker(runtime, agent, config)
+            from backend.core.household.native_messaging import install_messaging
+            install_messaging(runtime, skills)
         runtime.interactions.start()
     world_thread.start()
     logger.info("World thread started — Living World is active")
@@ -480,7 +497,7 @@ async def readiness():
 
 from backend.core.runtime.bootstrap import configure_instance
 _config = configure_instance(get_config())
-_data_dir = str(Path(_config.history.persist_path).parent)
+_data_dir = str(Path(_config.household.root) / "session") if _config.household.enabled else str(Path(_config.history.persist_path).parent)
 
 # 1. Auth — added first so it runs innermost (after session decodes the cookie)
 app.add_middleware(AuthMiddleware)
@@ -582,6 +599,11 @@ if frontend_path.exists():
 
 def main():
     config = load_config()
+    if config.household.enabled:
+        from backend.core.household.native_app import create_household_app
+        uvicorn.run(create_household_app(config), host=config.server.host,
+                    port=config.server.port, workers=1, reload=False, log_level="info")
+        return
     uvicorn.run(
         "backend.main:app",
         host=config.server.host,

@@ -174,19 +174,21 @@ class Conversations:
         return self.store.command(author, command_id, "conversation.create", payload, apply)
 
     def send(self, author, conversation_id, content, command_id, mentions=None, lineage=None, context_refs=None,
-             reply_offer_id=None):
+             reply_offer_id=None, admitted_id=None, admitted_timestamp=None, metadata=None):
         payload = {"conversation_id": conversation_id, "content": content,
                    "mentions": mentions, "lineage": lineage, "context_refs": context_refs,
-                   "reply_offer_id": reply_offer_id}
+                   "reply_offer_id": reply_offer_id, "admitted_id": admitted_id,
+                   "admitted_timestamp": admitted_timestamp, "metadata": metadata}
 
         def apply():
             self._conversation(conversation_id, author)
             return self._append(author, conversation_id, content, mentions, self._lineage(author, lineage),
-                                context_refs, reply_offer_id)
+                                context_refs, reply_offer_id, admitted_id, admitted_timestamp, metadata)
 
         return self.store.command(author, command_id, "conversation.send", payload, apply)
 
-    def _append(self, author, conversation_id, content, mentions, lineage, context_refs=None, reply_offer_id=None):
+    def _append(self, author, conversation_id, content, mentions, lineage, context_refs=None, reply_offer_id=None,
+                admitted_id=None, admitted_timestamp=None, metadata=None):
         content = self._content(content)
         conversation = self._conversation(conversation_id, author)
         data = conversation["data"]
@@ -194,7 +196,11 @@ class Conversations:
         recipients = addressees if addressees is not None else data["participants"]
         recipients = [member for member in recipients if member != author]
         sequence = data["last_sequence"] + 1
-        message_id = _id("message")
+        if admitted_id is not None and (not isinstance(admitted_id, str) or not 1 <= len(admitted_id) <= 256):
+            raise ProtocolError("Invalid admitted message identity")
+        message_id = admitted_id or _id("message")
+        if self.store.get("message", message_id):
+            raise Conflict("Message identity already exists")
         answered_offer = self.store.get("reply_offer", reply_offer_id) if reply_offer_id else None
         if reply_offer_id and (not answered_offer or answered_offer["data"]["recipient"] != author
                                or answered_offer["data"]["conversation_id"] != conversation_id
@@ -202,12 +208,13 @@ class Conversations:
                                or answered_offer["data"]["status"] not in {"pending", "deferred"}):
             raise AccessDenied("Response must answer this participant's open offer in the same exchange")
         message = {"conversation_id": conversation_id, "author": author,
-                   "content": content, "timestamp": self.store.clock(), "sequence": sequence,
+                   "content": content, "timestamp": self.store.clock() if admitted_timestamp is None else admitted_timestamp, "sequence": sequence,
                    "membership_version": data["membership_version"],
                    "participants": list(data["participants"]), "addressees": list(recipients),
                    "explicit_mentions": addressees is not None, "lineage": dict(lineage),
                    "context_refs": self._context_refs(context_refs), "reply_offer_id": reply_offer_id,
-                   "reply_to": list(answered_offer["data"]["message_ids"]) if answered_offer else []}
+                   "reply_to": list(answered_offer["data"]["message_ids"]) if answered_offer else [],
+                   "metadata": dict(metadata or {})}
         self.store.put("message", message_id, message)
         self.store.put("conversation", conversation_id, {**data, "last_sequence": sequence},
                        expected=conversation["revision"])
