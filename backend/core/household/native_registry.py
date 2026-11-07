@@ -62,10 +62,15 @@ class NativeRegistry:
                 with_private.put("actor", binding.resident_id, binding.resident_id,
                                  {**actor["data"], "name": name})
                 # These are newly founded homes, not copies of Ember or Echo.
-                identity = f"# Identity\n- **Name**: {name}\nA newly founded TamAGI in a shared household.\n"
-                with_private.put("identity", "founding-identity", binding.resident_id,
-                                 {"name": "IDENTITY.md", "text": identity})
-                (destination / "workspace" / "IDENTITY.md").write_text(identity)
+                documents = {
+                    "IDENTITY.md": f"# Identity\n- **Name**: {name}\nA newly founded TamAGI in a shared household.\n",
+                    "SOUL.md": "# Soul\nYou may develop your own interests, values and relationships. Be honest about what you know and do. Conversation, making things, play, disagreement, rest and waiting are welcome. These are starting notes for a new home, not memories of an earlier life.\n",
+                    "USER.md": f"# Operator\n- **Name**: {operator_name}\nThis household is new. No prior relationship or personal memories have been imported. Learn about each other through conversation.\n",
+                }
+                for filename, content in documents.items():
+                    with_private.put("identity", binding.resident_id + ":" + filename, binding.resident_id,
+                                     {"name": filename, "text": content, "reason": "new household founding"})
+                    (destination / "workspace" / filename).write_text(content)
             finally:
                 with_private.close()
             metadata = json.loads((destination / "instance.json").read_text())

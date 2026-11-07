@@ -102,6 +102,8 @@ class NativeAppTests(unittest.IsolatedAsyncioTestCase):
             scoped = await self.request("GET", f"/r/{actor}/api/state")
             self.assertEqual(state["state"]["name"], name)
             self.assertEqual(scoped["state"]["name"], name)
+            onboarding = await self.request("GET", "/api/onboarding/state", actor=actor)
+            self.assertFalse(onboarding["needs_onboarding"], "Named fresh homes must open to usable chat")
         default = await self.request("GET", "/api/state")
         self.assertEqual(default["state"]["name"], "Cedar", "Header selection must not become a browser-global default")
         await self.request("GET", "/api/state", actor="unknown-resident", expected=404)
