@@ -207,3 +207,6 @@ Regressions use actual resident processes and generated read tools. They cover
 separate live/saved bubbles, Markdown and HTML sanitization, refreshing while the
 next resident is still working, and repeated activations of the same resident in
 one exchange. They also retain draft, scroll, attachment and navigation checks.
+
+The [reasoning regression record](qualification/0019-native-reasoning-2026-11-08.md)
+retains the 280-test clean-revision run, Chromium checks and expanded screenshot.
