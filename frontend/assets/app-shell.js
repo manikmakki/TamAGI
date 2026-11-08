@@ -4,6 +4,7 @@
   const $ = id => document.getElementById(id);
   const works = new Map(), cursors = new Map(), delivered = new Set(), unread = new Set(), drafts = new Map(), progress = new Map();
   const submissions = new Map();
+  const residentProgress = new Map();
   let seen;
   try{seen=new Set(JSON.parse(localStorage.getItem('tamagi-seen-work')||'[]'));}catch{seen=new Set();}
   const legacyEvent = handleWsEvent;
@@ -27,6 +28,32 @@
   }
   function notice(message='') { $('shell-notice').textContent=message; $('shell-notice').hidden=!message; }
   function restoreScroll(element,top){const previous=element.style.scrollBehavior;element.style.scrollBehavior='auto';element.scrollTop=top;element.style.scrollBehavior=previous;}
+  const progressKey = event => event.work_id+':'+(event.grant_id||event.resident_work_id||event.resident_id);
+  function retireResidentProgress(event){
+    const matches=item=>event.grant_id?item.grant_id===event.grant_id:item.resident_id===event.resident_id;
+    progress.set(event.work_id,(progress.get(event.work_id)||[]).filter(item=>!matches(item)));
+    for(const[key,entry]of residentProgress)if(entry.event.work_id===event.work_id&&matches(entry.event)){entry.wrapper.remove();residentProgress.delete(key);}
+    for(const tag of $('live-tags').querySelectorAll('[data-progress-key]'))if(event.grant_id?tag.dataset.progressKey===progressKey(event):tag.dataset.residentId===event.resident_id)tag.remove();
+  }
+  function renderProgress(event){
+    if(!window.TamagiHousehold){legacyEvent(event);return;}
+    const key=progressKey(event);
+    if(['thinking_text','interim_text'].includes(event.type)){
+      let entry=residentProgress.get(key);
+      if(!entry?.wrapper.isConnected){
+        const wrapper=makeInterimGroup({metadata:{resident_id:event.resident_id}});
+        wrapper.classList.add('hh-live-progress');wrapper.dataset.progressKey=key;
+        $('chat-messages').append(wrapper);entry={wrapper,event};residentProgress.set(key,entry);
+      }
+      appendInterimEntry(entry.wrapper.querySelector('.interim-group'),event.type==='thinking_text',event.content);
+    }else if(event.type==='tool_start'){
+      const tag=document.createElement('span');tag.className='skill-tag running';tag.dataset.skill=event.name;
+      tag.dataset.progressKey=key;tag.dataset.residentId=event.resident_id;tag.textContent='⚙ '+event.name;$('live-tags').append(tag);
+    }else if(event.type==='tool_result'){
+      const tag=[...$('live-tags').querySelectorAll('.running')].filter(item=>item.dataset.progressKey===key&&item.dataset.skill===event.name).at(-1);
+      if(tag){tag.classList.remove('running');tag.title=event.output||'';}
+    }else legacyEvent(event);
+  }
   const uuid = () => crypto.randomUUID?.() || Date.now().toString(36)+Math.random().toString(36).slice(2);
   function markSeen(id){seen.add(id);unread.delete(id);localStorage.setItem('tamagi-seen-work',JSON.stringify([...seen].slice(-500)));}
   function subscribe(work) {
@@ -57,7 +84,7 @@
   }
   function receive(event) {
     if(!durable){legacyEvent(event);return;}
-    if(event.type==='work_resync'){cursors.delete(event.work_id);progress.delete(event.work_id);return;}
+    if(event.type==='work_resync'){cursors.delete(event.work_id);progress.delete(event.work_id);if(window.TamagiHousehold)renderHistory(convId,false,true).catch(e=>notice(e.message));return;}
     if (event.type === 'accepted') {
       remember(event);
       if (activeRequestId === event.request_id && !convId) {convId=event.conversation_id;localStorage.setItem(conversationKey(),convId);}
@@ -73,6 +100,9 @@
     if (event.type === 'thread_changed' && window.TamagiHousehold) {
       // A resident reply can finish while other participants are still working.
       // Refresh canonical content without completing the shared exchange.
+      const area=$('chat-messages'),top=area.scrollTop,following=area.scrollHeight-top-area.clientHeight<30;
+      retireResidentProgress(event);
+      restoreScroll(area,following?area.scrollHeight:top);
       if (event.conversation_id === convId) renderHistory(convId,false,true).catch(e=>notice(e.message));
       loadConversations();
       TamagiHousehold.refresh().catch(e=>notice(e.message));
@@ -82,9 +112,11 @@
     if (!work) return;
     if (event.type === 'quiet_turn') {work.quiet_turns=event.ordinal;updateActivity();}
     if (event.type === 'message' || event.type === 'work_ended') {
+      progress.delete(work.work_id);
       remember({...work,status:event.turn_status||event.status||'completed',result:event.type==='message'?event:work.result});
       return;
     }
+    if(window.TamagiHousehold&&!active(work))return;
     if (event.type === 'tool_approval_required') {
       work.approval={...event,expires_at:Date.now()/1000+(event.timeout_seconds||30)};
       updateActivity(); return;
@@ -93,7 +125,7 @@
     buffer.push(event);if(buffer.length>256)buffer.shift();progress.set(work.work_id,buffer);
     if (work.kind === 'chat' && work.conversation_id === convId) {
       const area=$('chat-messages'),top=area.scrollTop,following=area.scrollHeight-top-area.clientHeight<30;
-      legacyEvent(event);
+      renderProgress(event);
       restoreScroll(area,following?area.scrollHeight:top);
     }
   }
@@ -139,15 +171,15 @@
     const version=selection, requestVersion=++historyRequest, data=await request('/conversations/'+encodeURIComponent(id));
     if(version!==selection||id!==convId||requestVersion!==historyRequest)return;
     const area=$('chat-messages'),scroll=area.scrollTop,following=area.scrollHeight-scroll-area.clientHeight<30;
-    area.replaceChildren();currentInterimGroup=null;clearLiveTags();liveToolOutputs={};
+    area.replaceChildren();residentProgress.clear();currentInterimGroup=null;clearLiveTags();liveToolOutputs={};
     const ids=new Set();
+    const completedGrants=new Set((data.messages||[]).map(message=>message.metadata?.household_grant_id).filter(Boolean));
     for(const message of data.messages||[]) {
       ids.add(message.id);
       const meta=message.metadata||{},thinking=meta.thinking_blocks||[],interim=meta.interim_messages||[];
       if(message.role==='assistant'&&(thinking.length||interim.length)) {
-        const details=document.createElement('details');details.className='msg assistant history-progress';
-        const summary=document.createElement('summary');summary.textContent=(thinking.length?'Reasoning':'Activity')+' · '+(thinking.length+interim.length)+' steps';details.append(summary);
-        for(const text of [...thinking,...interim]){const item=document.createElement('div');item.textContent=text;details.append(item);}area.append(details);
+        const wrapper=makeInterimGroup({thinking,interim,collapsed:true,metadata:meta});
+        wrapper.classList.add('history-progress');wrapper.dataset.progressMessageId=message.id;area.append(wrapper);
       }
       if(message.role==='assistant'&&!message.content?.trim())addTurnStatus(meta.turn_status||'completed');
       else addMsg(message.role,message.content,meta.skills_used||[],message.timestamp,meta.context_compressed||0,meta.sm_mutations||[],{...meta,message_id:message.id,sequence:message.sequence??meta.sequence});
@@ -159,7 +191,9 @@
     }
     const running=currentWork();activeRequestId=running?.request_id||null;
     if(running) {
-      for(const event of progress.get(running.work_id)||[])if(!['typing','tool_approval_required'].includes(event.type))legacyEvent(event);
+      const buffered=(progress.get(running.work_id)||[]).filter(event=>!completedGrants.has(event.grant_id));
+      progress.set(running.work_id,buffered);
+      for(const event of buffered)if(!['typing','tool_approval_required'].includes(event.type))renderProgress(event);
     } else {
       const latest=matching.at(-1);
       if(latest && !active(latest) && latest.status!=='completed' && !(data.messages||[]).some(m=>m.role==='assistant'&&m.metadata?.execution_id===latest.execution_id))addTurnStatus(latest.status);

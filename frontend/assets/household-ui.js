@@ -111,6 +111,11 @@
     const addressed = mentionMatches($('input').value).map(match => match.id);
     for (const id of [...new Set([operator.id,...participantIds()])]) { const chip = node('span',label(id),'hh-person'); chip.style.setProperty('--hh-person-color',color(id)); chip.classList.toggle('addressed',addressed.includes(id)); strip.append(chip); }
   }
+  function decorateProgress(element,metadata={}){
+    const author=metadata.author_id||metadata.resident_id;if(!author)return;
+    element.dataset.authorId=author;element.style.setProperty('--hh-speaker-color',color(author));
+    element.querySelector('.interim-toggle')?.append(node('span',metadata.author_name||label(author),'hh-progress-speaker'));
+  }
   function hideMentions() { choices = []; if (!$('household-mention-list')) return; $('household-mention-list').hidden = true; $('input').setAttribute('aria-expanded','false'); $('input').removeAttribute('aria-activedescendant'); }
   function paintMentionChoices() {
     const list = $('household-mention-list'); list.replaceChildren();
@@ -239,7 +244,7 @@
     setInterval(()=>{if(!document.hidden)refresh().then(scheduleRead).catch(()=>{});},5000);
   }
   window.TamagiHousehold={enabled:true,selectedResidentId:()=>selected,selectionEpoch:()=>epoch,selectResident,scopeUrl,storageKey,
-    draftKey:id=>id||'new:'+selected,participants:()=>[...participantIds()].filter(id=>id!==operator.id),resolveMentions,safeMarkdown,decorateMessage,historyRendered,refresh,scheduleRead,
+    draftKey:id=>id||'new:'+selected,participants:()=>[...participantIds()].filter(id=>id!==operator.id),resolveMentions,safeMarkdown,decorateMessage,decorateProgress,historyRendered,refresh,scheduleRead,
     clearThread:()=>{snapshot=null;current=null;if($('household-participant-strip'))paintParticipants();},acceptResponse:(id,token)=>id===selected&&token===epoch};
   const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/assets/household-ui.css?v=1';document.head.append(stylesheet);
   document.addEventListener('DOMContentLoaded',()=>start().catch(error=>notice(error.message)));

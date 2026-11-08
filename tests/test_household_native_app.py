@@ -126,6 +126,9 @@ class NativeAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(history["participants"], ["operator", self.first])
         self.assertEqual([m["metadata"]["author_id"] for m in history["messages"]], ["operator", self.first])
         self.assertEqual([e["type"] for e in private["events"]].count("thread_changed"), 1)
+        boundary = next(e for e in private["events"] if e["type"] == "thread_changed")
+        self.assertEqual(history["messages"][1]["metadata"]["household_grant_id"], boundary["grant_id"])
+        self.assertTrue(boundary["resident_work_id"])
         self.assertEqual([e["type"] for e in private["events"]].count("work_ended"), 1)
         self.assertFalse(any(e["type"] == "message" for e in private["events"]), "Child completion must not end group work")
 
@@ -157,6 +160,36 @@ class NativeAppTests(unittest.IsolatedAsyncioTestCase):
         await self.request("PUT", "/api/household/preferences", json={"colors": colors})
         self.assertEqual((await self.request("GET", "/api/household"))["preferences"]["colors"], colors)
         await self.request("PUT", "/api/household/preferences", expected=400, json={"colors": {self.first: "red"}})
+
+    async def test_group_progress_and_publications_keep_each_resident_activation_identity(self):
+        self.provider.responses = [
+            LLMResponse(content="**Cedar checks** `WORKSPACE.md`.", tool_calls=[ToolCall("cedar-read", "read", {"path": "WORKSPACE.md"})]),
+            LLMResponse(content="@Tester Cedar finished."),
+            LLMResponse(content="**Willow checks** `WORKSPACE.md`.", tool_calls=[ToolCall("willow-read", "read", {"path": "WORKSPACE.md"})]),
+            LLMResponse(content="@Cedar Willow finished; would you check once more?"),
+            LLMResponse(content="**Cedar rechecks** `WORKSPACE.md`.", tool_calls=[ToolCall("cedar-read-again", "read", {"path": "WORKSPACE.md"})]),
+            LLMResponse(content="@Tester Cedar finished the second activation."),
+        ]
+        work = await self.request("POST", "/api/chat/requests", actor=self.first, expected=202,
+            json={"request_id": "resident-progress", "message": "Both residents may inspect their home.",
+                  "participants": [self.first, self.second]})
+        done = await self.completed(work["work_id"])
+        events = done["events"]
+        boundaries = [event for event in events if event["type"] == "thread_changed"]
+        self.assertEqual([event["resident_id"] for event in boundaries], [self.first, self.second, self.first])
+        self.assertEqual(len({event["grant_id"] for event in boundaries}), 3)
+        self.assertEqual(len({event["resident_work_id"] for event in boundaries}), 3)
+        for boundary in boundaries:
+            group = [event for event in events if event.get("grant_id") == boundary["grant_id"]]
+            self.assertEqual({event["resident_id"] for event in group}, {boundary["resident_id"]})
+            self.assertEqual({event["resident_work_id"] for event in group}, {boundary["resident_work_id"]})
+            self.assertTrue(any(event["type"] == "interim_text" for event in group))
+            self.assertEqual(group[-1]["type"], "thread_changed")
+        history = await self.request("GET", "/api/conversations/" + work["conversation_id"])
+        answers = history["messages"][1:]
+        self.assertEqual([message["metadata"]["household_grant_id"] for message in answers], [event["grant_id"] for event in boundaries])
+        self.assertEqual([message["metadata"]["interim_messages"] for message in answers],
+                         [["**Cedar checks** `WORKSPACE.md`."], ["**Willow checks** `WORKSPACE.md`."], ["**Cedar rechecks** `WORKSPACE.md`."]])
 
     async def test_session_boundary_and_stopping_queued_and_running_provider_work(self):
         cookie = next(cookie for cookie in self.http.cookies.jar if cookie.name.startswith("tamagi_household_"))

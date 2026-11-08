@@ -24,6 +24,7 @@ retains the clean-revision 279-test run and actual Chromium checks for these fix
 | NATIVE-003 | Group conversations do not follow new messages when already scrolled to the bottom | Chat scrolling | Fixed in branch; operator retest pending |
 | NATIVE-004 | Images do not appear to attach or reach vision correctly in a group thread | Group attachments/vision | Transport/storage fixes in branch; real-model vision retest pending |
 | NATIVE-005 | Residents describe apparently successful creations/world changes as imagined or nonpersistent | Grounding and persistence investigation | Retained creations verified; query/context fixes in branch; behavioral retest pending |
+| NATIVE-006 | Saved reasoning loses bubble/Markdown formatting and live reasoning accumulates below multiple residents' messages | Reasoning presentation and progress lifecycle | Fixed in branch; operator retest pending |
 
 ## NATIVE-001 — Open in chat and selected resident disagree
 
@@ -178,3 +179,31 @@ whole disposable household, reopens it, checks the original revision and bytes,
 and queries the place through another resident's actual graph tool. This verifies
 those persistence paths. It does not guarantee future model explanations, repair
 old contradictory memories, or qualify shared artifact publication/migration.
+
+## NATIVE-006 — Reasoning formatting and a live bubble spanning resident turns
+
+Reported on 2026-11-08 with screenshots: saved steps display as a plain browser
+`Activity · 2 steps` disclosure, while an expanded live Reasoning bubble stays
+below several messages and collects steps from different residents/activations.
+
+Confirmed causes:
+
+- The durable shell rendered saved reasoning with a separate `<details>` element
+  and `textContent`, bypassing the existing styled bubble and Markdown renderer.
+- Native child completion becomes `thread_changed` so the shared exchange stays
+  running. The shell retained all prior child progress in the root work buffer
+  and replayed it after every canonical refresh. The legacy renderer's single
+  `currentInterimGroup` merged those replayed steps and pinned them below history.
+
+Saved and live reasoning now share the existing collapsible bubble structure,
+Thinking/Reasoning labels, step counts and Markdown rendering. Native Markdown is
+sanitized. Each progress bubble displays its actual resident's name. Progress
+and tool tags are scoped to the worker activation grant; completion retires only
+that activation. A canonical publication also carries its trusted grant ID, so
+history refreshes can discard progress already represented by a saved message.
+Existing saved messages get the corrected presentation without rewriting history.
+
+Regressions use actual resident processes and generated read tools. They cover
+separate live/saved bubbles, Markdown and HTML sanitization, refreshing while the
+next resident is still working, and repeated activations of the same resident in
+one exchange. They also retain draft, scroll, attachment and navigation checks.

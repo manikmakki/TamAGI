@@ -24,3 +24,4 @@ body[data-household=true] .input-bar{position:relative}
 /* Reserve attachment space so image decoding cannot move a pinned transcript. */
 .hh-attachment{display:block;width:100%;height:220px;object-fit:contain;margin-top:.6rem;border-radius:.5rem}
 .hh-attachment-error{display:block;margin-top:.6rem}
+.hh-progress-speaker{margin-left:auto;color:var(--hh-speaker-color);font-style:normal}

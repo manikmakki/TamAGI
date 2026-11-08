@@ -11,7 +11,7 @@ from backend.auth import hash_password
 from backend.config import TamAGIConfig
 from backend.core.household.native_app import create_household_app
 from backend.core.household.native_registry import NativeRegistry
-from backend.core.llm import LLMResponse
+from backend.core.llm import LLMResponse, ToolCall
 
 
 class Provider:
@@ -23,10 +23,13 @@ class Provider:
 
     async def chat(self, messages, tools=None, **options):
         self.calls += 1
-        await asyncio.sleep(1 if self.calls == 1 else 4)
+        await asyncio.sleep(1 if self.calls <= 2 else 3)
         if any("Browser image" in str(message.content) for message in messages):
             assert any(isinstance(message.content, list) and any(block.get("type") == "image_url" for block in message.content)
                        for message in messages), "The native worker did not receive its image"
+        if not any(message.role == "tool" for message in messages):
+            return LLMResponse(content="**Checking the workspace** with `read`. <img src=x onerror=\"window.reasoningUnsafe=true\">",
+                tool_calls=[ToolCall(f"browser-read-{self.calls}", "read", {"path": "WORKSPACE.md"})])
         return LLMResponse(content=f"@Tester Actual worker browser answer {self.calls}.")
 
     async def chat_stream(self, messages, tools=None, **options):

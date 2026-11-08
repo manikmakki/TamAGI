@@ -319,9 +319,11 @@ class NativeInteractions:
                     result = await self.hosts[actor].json("GET", f"/_native/work/{child['work_id']}?after={cursor}")
                     for event in result["events"]:
                         if event.get("type") not in {"accepted", "work_ended", "message"}:
-                            self.emit(identity, {**event, "resident_id": actor})
+                            self.emit(identity, {**event, "resident_id": actor, "grant_id": grant_id,
+                                                 "resident_work_id": child["work_id"]})
                         elif event.get("type") == "message":
-                            self.emit(identity, {"type": "thread_changed", "resident_id": actor})
+                            self.emit(identity, {"type": "thread_changed", "resident_id": actor,
+                                                 "grant_id": grant_id, "resident_work_id": child["work_id"]})
                     cursor = result["cursor"]
                     current = result["work"]
                     if current["status"] in TERMINAL:
@@ -372,7 +374,8 @@ class NativeInteractions:
                 self.store.put("reply_offer", offer_id, {**offer["data"], "message_ids": grant["message_ids"]})
             message = self.conversations.send(actor, grant["conversation_id"], local["content"],
                 "canonical:" + body["command_id"], lineage=lineage, reply_offer_id=offer_id,
-                admitted_id=local["id"], admitted_timestamp=local.get("timestamp"), metadata=local.get("metadata"))
+                admitted_id=local["id"], admitted_timestamp=local.get("timestamp"),
+                metadata={**(local.get("metadata") or {}), "household_grant_id": grant_id})
             self.store.put("native_grant_commit", grant_id, {"message_id": message["id"]})
             if late:
                 answered = self.store.get("reply_offer", offer_id)["data"]

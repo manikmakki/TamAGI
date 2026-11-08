@@ -1021,22 +1021,11 @@ function handleWsEvent(ev){
   }else if(ev.type==='thinking_text'||ev.type==='interim_text'){
     const isThinking=ev.type==='thinking_text';
     if(!currentInterimGroup){
-      const wrapper=document.createElement('div');
-      wrapper.className='msg assistant';
-      const label=isThinking?'Thinking':'Reasoning';
-      wrapper.innerHTML='<div class="interim-group" data-has-thinking="'+(isThinking?'1':'0')+'" data-count="0"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">'+label+'</span> · <span class="interim-count">0 steps</span></span></button><div class="interim-body"></div></div>';
+      const wrapper=makeInterimGroup();
       document.getElementById('chat-messages').appendChild(wrapper);
       currentInterimGroup=wrapper.querySelector('.interim-group');
-    } else if(isThinking&&currentInterimGroup.dataset.hasThinking==='0'){
-      currentInterimGroup.dataset.hasThinking='1';
-      currentInterimGroup.querySelector('.interim-kind').textContent='Thinking';
     }
-    const entry=document.createElement('div');
-    entry.className=isThinking?'thinking-entry':'interim-entry';
-    entry.innerHTML=renderMd(ev.content);
-    currentInterimGroup.querySelector('.interim-body').appendChild(entry);
-    const count=currentInterimGroup.querySelectorAll('.thinking-entry,.interim-entry').length;
-    currentInterimGroup.querySelector('.interim-count').textContent=count+(count===1?' step':' steps');
+    appendInterimEntry(currentInterimGroup,isThinking,ev.content);
     document.getElementById('chat-messages').scrollTop=99999;
   }else if(ev.type==='pose_change'){
     setPose(ev.pose_parts);
@@ -1051,6 +1040,23 @@ function handleWsEvent(ev){
 }
 function clearLiveTags(){document.getElementById('live-tags').innerHTML=''}
 function toggleInterim(btn){btn.closest('.interim-group').classList.toggle('collapsed');}
+function makeInterimGroup({thinking=[],interim=[],collapsed=false,metadata={}}={}){
+  const wrapper=document.createElement('div');wrapper.className='msg assistant';
+  wrapper.innerHTML='<div class="interim-group'+(collapsed?' collapsed':'')+'" data-has-thinking="0" data-count="0"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">Reasoning</span> · <span class="interim-count">0 steps</span></span></button><div class="interim-body"></div></div>';
+  const group=wrapper.querySelector('.interim-group');
+  for(const text of thinking)appendInterimEntry(group,true,text);
+  for(const text of interim)appendInterimEntry(group,false,text);
+  window.TamagiHousehold?.decorateProgress(wrapper,metadata);
+  return wrapper;
+}
+function appendInterimEntry(group,isThinking,text){
+  if(isThinking){group.dataset.hasThinking='1';group.querySelector('.interim-kind').textContent='Thinking';}
+  const entry=document.createElement('div');entry.className=isThinking?'thinking-entry':'interim-entry';
+  entry.innerHTML=window.TamagiHousehold?TamagiHousehold.safeMarkdown(text):renderMd(text);
+  group.querySelector('.interim-body').appendChild(entry);
+  const count=group.querySelectorAll('.thinking-entry,.interim-entry').length;
+  group.dataset.count=String(count);group.querySelector('.interim-count').textContent=count+(count===1?' step':' steps');
+}
 function showApprovalBanner(ev){
   const msgs=document.getElementById('chat-messages');
   const banner=document.createElement('div');
