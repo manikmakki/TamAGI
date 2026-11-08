@@ -19,6 +19,7 @@ def main():
     from scripts.qualify_household import _manifest
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", default="127.0.0.1", help="Listener address; use 0.0.0.0 for LAN access")
     parser.add_argument("--port", type=int, default=7744)
     parser.add_argument("--root", type=Path)
     parser.add_argument("--model-config", type=Path, help="Copy only the authorized model transport into the private coordinator config")
@@ -44,10 +45,10 @@ def main():
         (root / "config.yaml").write_text(yaml.safe_dump(config.model_dump(), sort_keys=False))
         (root / "config.yaml").chmod(0o600)
     app = create_household_app(config, registry=registry)
-    print(f"\nNative TamAGI: http://127.0.0.1:{args.port}/\nHousehold: {registry.root}\n"
+    print(f"\nNative TamAGI: http://{args.host}:{args.port}/\nHousehold: {registry.root}\n"
           + (f"Password: {password}\n" if password else "Use this household's existing password.\n")
           + "Real resident workers; background autonomy disabled. Ctrl+C stops this process.\n", flush=True)
-    uvicorn.run(app, host="127.0.0.1", port=args.port, proxy_headers=False, access_log=False)
+    uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False, access_log=False)
 
 
 if __name__ == "__main__":

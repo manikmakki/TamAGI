@@ -28,6 +28,7 @@ cd /tmp/tamagi-adr-0019
 ```
 
 The foreground process serves `http://127.0.0.1:7744/`. Ctrl+C stops the household.
+Pass `--host 0.0.0.0` to make the password-protected listener accessible on the LAN.
 The default residents are Cedar, Willow and River, with distinct built-in avatar
 art. These are new residents, not restored versions of Ember or Echo. Choose
 different names with `--names`. Reopen a retained development household with:
