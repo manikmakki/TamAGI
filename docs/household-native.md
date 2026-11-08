@@ -80,6 +80,10 @@ The [2026-11-07 qualification record](qualification/0019-native-2026-11-07.md)
 retains the 275-test final run, native Chromium evidence and authorized real-model
 connectivity check.
 
+Subsequent operator testing findings and selector design feedback are tracked in
+the [manual testing notes](household-native-testing.md). These remain open;
+the earlier checks do not cover every reported interaction.
+
 The development candidate still needs production resident adoption/history
 migration, coordinated household backup/restore and release activation, verified
 shared artifact bytes, companion group-activation wiring, PWA push delivery and
