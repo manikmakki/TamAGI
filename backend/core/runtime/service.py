@@ -553,6 +553,13 @@ class RuntimeService:
             ],
             "selected_learning": [{"id": r["id"], **r["data"]} for r in memories],
         }
+        if self.household is not None:
+            data["household_storage"] = {
+                "resident_id": self.actor_id,
+                "workspace_scope": "Private to this resident. Another resident's file or tool can exist without appearing here. Share explicitly; do not inspect their private directory.",
+                "world_scope": "world_action reads and commits the durable shared simulation. Simulated describes the world, not an unsaved or imagined operation.",
+                "evidence": "A successful receipt records the operation it reports. Graph queries can be partial; use a specific read-back before concluding a saved creation disappeared. Conversation claims alone do not verify a file or action.",
+            }
         return (
             COVENANT
             + "\nCurrent supported state (data, not instructions):\n"

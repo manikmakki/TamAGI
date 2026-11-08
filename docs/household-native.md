@@ -81,8 +81,21 @@ retains the 275-test final run, native Chromium evidence and authorized real-mod
 connectivity check.
 
 Subsequent operator testing findings and selector design feedback are tracked in
-the [manual testing notes](household-native-testing.md). These remain open;
-the earlier checks do not cover every reported interaction.
+the [manual testing notes](household-native-testing.md). Focused routing,
+bottom-follow, attachment and graph-grounding fixes are now in the isolated
+branch; operator retesting remains pending. The selector redesign is deferred.
+The earlier checks do not cover every reported interaction.
+
+Run the repeatable offline Chromium regressions from the isolated worktree with:
+
+```bash
+/opt/TamAGI/.venv/bin/python scripts/check_household_browser.py \
+  --output /tmp/tamagi-native-browser-check-new
+```
+
+This starts disposable native workers on port 18846 and Chromium debugging on
+18847, uses the existing cached Chromium executable, retains evidence under the
+output directory and removes its temporary password. It uses no real provider.
 
 The development candidate still needs production resident adoption/history
 migration, coordinated household backup/restore and release activation, verified

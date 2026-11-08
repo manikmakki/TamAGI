@@ -618,7 +618,9 @@ class TamAGIAgent:
         human_input = household is None or current_user_record.metadata.get("author_id") == "operator"
         if household is not None:
             attributed_input = household.provider_content(current_user_record)
-            if isinstance(user_llm_content, list):
+            if isinstance(attributed_input, list):
+                user_llm_content = attributed_input
+            elif isinstance(user_llm_content, list):
                 user_llm_content[0] = {"type": "text", "text": attributed_input}
             else:
                 user_llm_content = attributed_input

@@ -6,7 +6,9 @@ activation receives a fixed transcript watermark and one coordinator grant.
 from __future__ import annotations
 
 import asyncio
+import base64
 import copy
+import hashlib
 import httpx
 
 from backend.core.runtime.interactions import AdmissionError
@@ -159,6 +161,19 @@ class NativeInteractions:
         if not isinstance(text, str) or not text.strip() or len(text) > 32000:
             raise AdmissionError("Enter a message of at most 32000 characters")
         payload["resident_id"] = resident
+        image = payload.get("image_data")
+        image_bytes = None
+        if image is not None:
+            try:
+                if not isinstance(image, str) or not image or len(image) > 12 * 1024 * 1024:
+                    raise ValueError()
+                image_bytes = base64.b64decode(image, validate=True)
+                if not image_bytes or len(image_bytes) > 8 * 1024 * 1024:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise AdmissionError("Image data must be valid base64 and at most 8 MiB") from None
+            if payload.get("image_media_type", "image/jpeg") not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
+                raise AdmissionError("Choose a JPEG, PNG, GIF or WebP image")
 
         def admit():
             exchange = uid("exchange")
@@ -180,17 +195,38 @@ class NativeInteractions:
                     title=text[:80], group=len(members) > 2, opening=text,
                     mentions=payload.get("mentions"), lineage=lineage)
                 conversation_id, message = result["conversation"]["id"], result["message"]
+            stored_payload = dict(payload)
+            if image_bytes is not None:
+                descriptor = {"media_type": payload.get("image_media_type", "image/jpeg"),
+                              "sha256": hashlib.sha256(image_bytes).hexdigest(), "size": len(image_bytes)}
+                self.store.put("conversation_attachment", message["id"], {
+                    **descriptor, "conversation_id": conversation_id, "image_data": image})
+                record = self.store.get("message", message["id"])
+                message = {**record["data"], "id": record["id"],
+                           "metadata": {**record["data"].get("metadata", {}), "image": descriptor}}
+                self.store.put("message", message["id"], {k: v for k, v in message.items() if k != "id"})
+                stored_payload.pop("image_data", None)
             identity = uid("work")
             self.store.put("native_work", identity, {"request_id": request_id, "conversation_id": conversation_id,
                 "resident_id": resident, "exchange_id": exchange, "status": "queued", "kind": kind,
                 "cursor": 0, "events": [], "children": [], "responders": [], "input_message": self.ui_message(message),
-                "payload": payload, "approval": None, "result": None})
+                "payload": stored_payload, "approval": None, "result": None})
             return identity
 
         identity = self.store.command("operator", request_id, "native.chat", payload, admit)
         if self.get(identity)["data"]["status"] == "queued" and identity not in self.tasks:
             self.tasks[identity] = asyncio.create_task(self._run(identity))
         return self.public(self.get(identity))
+
+    def attachment(self, viewer, conversation_id, message_id, through=None):
+        self.conversations._conversation(conversation_id, viewer)
+        message = self.store.get("message", message_id)
+        source = self.store.get("conversation_attachment", message_id)
+        if (not message or message["data"]["conversation_id"] != conversation_id
+                or through is not None and message["data"]["sequence"] > through
+                or not source or source["data"]["conversation_id"] != conversation_id):
+            raise NotFound("Attached image is unavailable in this transcript")
+        return source["data"]
 
     def ui_message(self, message):
         names = {p["id"]: p["name"] for p in self.registry.participants()}
@@ -275,7 +311,7 @@ class NativeInteractions:
                 self.store.put("native_grant", grant_id, grant)
                 child = await self.hosts[actor].json("POST", "/_native/respond", {
                     "grant": grant, "snapshot": snapshot, "request_id": grant_id,
-                    "payload": {k: data["payload"][k] for k in ("image_data", "image_media_type") if k in data["payload"] and addressed[-1]["author"] == "operator"}})
+                    "payload": {}})
                 children = [*self.get(identity)["data"]["children"], {"resident_id": actor, "work_id": child["work_id"], "grant_id": grant_id}]
                 self._update(identity, children=children, responders=list(dict.fromkeys([*data["responders"], actor])))
                 cursor = 0

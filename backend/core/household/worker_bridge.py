@@ -7,6 +7,8 @@ records below are observed projections and an outbox, never a second chat author
 from __future__ import annotations
 
 import copy
+import base64
+import hashlib
 import json
 import os
 import sqlite3
@@ -150,7 +152,8 @@ class NativeWorkerBridge:
         metadata = {**message.get("metadata", {}), "author_id": author,
             "author_name": message.get("author_name") or message.get("speaker") or self.names.get(author, author),
             "canonical": True, "sequence": message["sequence"],
-            "participants": message.get("participants", []), "exchange_id": message.get("lineage", {}).get("exchange_id")}
+            "participants": message.get("participants", []), "exchange_id": message.get("lineage", {}).get("exchange_id"),
+            "conversation_id": message["conversation_id"]}
         return Message("assistant" if author == self.runtime.actor_id else "user", message["content"],
                        id=message["id"], timestamp=message.get("timestamp", 0), metadata=metadata)
 
@@ -181,7 +184,17 @@ class NativeWorkerBridge:
     def provider_content(self, message):
         if message.metadata.get("author_id") == self.runtime.actor_id:
             return message.content
-        return f"[Attributed message from {self.speaker(message)}; participant_id={message.metadata.get('author_id', 'operator')}]\n{message.content}"
+        text = f"[Attributed message from {self.speaker(message)}; participant_id={message.metadata.get('author_id', 'operator')}]\n{message.content}"
+        if image := message.metadata.get("image"):
+            grant = admission_context().get() or {}
+            source = self._request("GET", "/_native/conversations/" + quote(message.metadata["conversation_id"], safe="")
+                + "/attachments/" + quote(message.id, safe=""), params={"grant_id": grant.get("id", "")})
+            content = base64.b64decode(source["image_data"], validate=True)
+            if len(content) != image["size"] or hashlib.sha256(content).hexdigest() != image["sha256"]:
+                raise ProtocolError("Attached image content changed")
+            return [{"type": "text", "text": text}, {"type": "image_url", "image_url": {
+                "url": f"data:{image['media_type']};base64,{source['image_data']}"}}]
+        return text
 
     def save_conversation(self, conversation):
         current = admission_context().get()

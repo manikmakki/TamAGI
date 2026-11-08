@@ -270,6 +270,13 @@ def create_household_app(config, *, provider=None, registry=None):
             watermark = min(watermark, through)
         return {"conversation": conv, "messages": manager.conversations.history(actor, identity, through=watermark), "watermark": watermark}
 
+    @app.get("/_native/conversations/{identity}/attachments/{message_id}")
+    async def private_attachment(identity: str, message_id: str, request: Request, grant_id: str):
+        actor = worker_auth(request)
+        grant = manager.grant(grant_id, actor)
+        through = grant["through"] if grant["conversation_id"] == identity else None
+        return manager.attachment(actor, identity, message_id, through)
+
     @app.get("/api/household")
     async def household():
         return bootstrap()
@@ -326,6 +333,13 @@ def create_household_app(config, *, provider=None, registry=None):
     @app.get("/api/conversations/{identity}")
     async def conversation(identity: str):
         return history(identity)
+
+    @app.get("/api/conversations/{identity}/attachments/{message_id}")
+    async def attachment(identity: str, message_id: str):
+        import base64
+        source = manager.attachment("operator", identity, message_id)
+        return Response(base64.b64decode(source["image_data"], validate=True), media_type=source["media_type"],
+                        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
 
     @app.post("/api/chat/requests", status_code=202)
     async def submit(request: Request):

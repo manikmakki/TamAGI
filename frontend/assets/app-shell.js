@@ -46,7 +46,7 @@
     if (!active(work) && !delivered.has(work.work_id)) {
       delivered.add(work.work_id);
       if (!initial) {
-        if (work.kind === 'chat' && work.conversation_id === convId) {renderHistory(convId, true).catch(e=>notice(e.message));if(view==='chat')markSeen(work.work_id);else unread.add(work.work_id);}
+        if (work.kind === 'chat' && work.conversation_id === convId) {renderHistory(convId, false, true).catch(e=>notice(e.message));if(view==='chat')markSeen(work.work_id);else unread.add(work.work_id);}
         else if (work.kind === 'companion' && view === 'companions' && window.TamagiHomeViews?.finished(work)) markSeen(work.work_id);
         else unread.add(work.work_id);
         if (work.result?.state && (!window.TamagiHousehold || work.resident_id===TamagiHousehold.selectedResidentId())) updateState(work.result.state);
@@ -91,7 +91,11 @@
     }
     const buffer = progress.get(work.work_id)||[];
     buffer.push(event);if(buffer.length>256)buffer.shift();progress.set(work.work_id,buffer);
-    if (work.kind === 'chat' && work.conversation_id === convId) legacyEvent(event);
+    if (work.kind === 'chat' && work.conversation_id === convId) {
+      const area=$('chat-messages'),top=area.scrollTop,following=area.scrollHeight-top-area.clientHeight<30;
+      legacyEvent(event);
+      restoreScroll(area,following?area.scrollHeight:top);
+    }
   }
   async function feed(work) {
     const snapshot = await request('/chat/requests/'+encodeURIComponent(work.work_id)+'?after='+(cursors.get(work.work_id)||0));
@@ -134,7 +138,8 @@
     if(!id)return;
     const version=selection, requestVersion=++historyRequest, data=await request('/conversations/'+encodeURIComponent(id));
     if(version!==selection||id!==convId||requestVersion!==historyRequest)return;
-    const area=$('chat-messages'),scroll=area.scrollTop;area.replaceChildren();currentInterimGroup=null;clearLiveTags();liveToolOutputs={};
+    const area=$('chat-messages'),scroll=area.scrollTop,following=area.scrollHeight-scroll-area.clientHeight<30;
+    area.replaceChildren();currentInterimGroup=null;clearLiveTags();liveToolOutputs={};
     const ids=new Set();
     for(const message of data.messages||[]) {
       ids.add(message.id);
@@ -159,7 +164,7 @@
       const latest=matching.at(-1);
       if(latest && !active(latest) && latest.status!=='completed' && !(data.messages||[]).some(m=>m.role==='assistant'&&m.metadata?.execution_id===latest.execution_id))addTurnStatus(latest.status);
     }
-    restoreScroll(area,bottom?area.scrollHeight:preserveScroll?scroll:(drafts.get(draftKey(id))?.scroll??scroll));
+    restoreScroll(area,bottom||(preserveScroll&&following)?area.scrollHeight:preserveScroll?scroll:(drafts.get(draftKey(id))?.scroll??scroll));
     updateActivity();
     window.TamagiHousehold?.historyRendered(id,data);
   }

@@ -12,7 +12,7 @@
   const label = id => person(id)?.name || id;
   const bound = location.pathname.match(/^\/r\/([^/]+)\//)?.[1];
   let selected = bound ? decodeURIComponent(bound) : residents.find(entry => entry.id === localStorage.getItem(storageKey('resident')))?.id || bootstrap.default_resident_id || residents[0]?.id;
-  let epoch = 0, current = null, snapshot = null, colors = bootstrap.preferences?.colors || {}, reading = false, readFrame = null;
+  let epoch = 0, opening = 0, current = null, snapshot = null, colors = bootstrap.preferences?.colors || {}, reading = false, readFrame = null;
   let choices = [], choiceIndex = 0, mentionStart = 0;
   const newParticipants = new Map(), lastThreads = new Map(), readWatermarks = new Map();
   const originalFetch = window.fetch.bind(window);
@@ -98,6 +98,12 @@
     if (metadata.message_id) element.dataset.messageId = metadata.message_id;
     element.style.setProperty('--hh-speaker-color',color(author));
     element.querySelector('.bubble')?.after(node('div',metadata.author_name || label(author),'hh-speaker'));
+    if (metadata.image) {
+      const image=node('img',undefined,'hh-attachment');image.alt='Attached image';
+      image.src='/api/conversations/'+encodeURIComponent(convId)+'/attachments/'+encodeURIComponent(metadata.message_id);
+      image.onerror=()=>{image.replaceWith(node('span','Attached image unavailable','hh-attachment-error'));};
+      element.querySelector('.bubble')?.append(image);
+    }
     highlightMentions(element.querySelector('.bubble'),metadata.mentions || []);
   }
   function paintParticipants() {
@@ -216,8 +222,18 @@
   async function start() {
     if (!$('chat-messages')) return; mount();
     const oldNew=window.newConversation, oldOpen=window.openConversation;
-    window.newConversation=function(){snapshot=null;current=null;oldNew();paintParticipants();hideMentions();};
-    window.openConversation=async function(id){await oldOpen(id);paintParticipants();scheduleRead();};
+    window.newConversation=function(){opening++;snapshot=null;current=null;oldNew();paintParticipants();hideMentions();};
+    window.openConversation=async function(id){
+      const attempt=++opening,token=epoch,thread=await request('/api/conversations/'+encodeURIComponent(id));
+      if(attempt!==opening||token!==epoch)return;
+      if(!thread.participants?.includes(selected)){
+        const entry=residents.find(item=>thread.participants?.includes(item.id));
+        if(!entry)throw new Error('No available resident participates in this thread.');
+        const switching=selectResident(entry.id,{openThread:false}),switchedEpoch=epoch;
+        await switching;if(attempt!==opening||epoch!==switchedEpoch)return;
+      }
+      await oldOpen(id);paintParticipants();scheduleRead();
+    };
     window.loadConversations=async function(){try{const residentId=selected,result=await request('/api/conversations',{headers:{'X-Tamagi-Resident':residentId}});if(residentId!==selected)return;const list=$('conv-list');list.replaceChildren();for(const thread of result.conversations||[]){const button=node('button',undefined,'conv-item hh-thread-choice'+(thread.id===convId?' active':''));button.type='button';button.append(node('div',thread.title||'Conversation','ci-title'),node('small',(thread.participants||[]).map(label).join(' · '),'ci-meta'));button.onclick=()=>window.openConversation(thread.id).catch(error=>notice(error.message));list.append(button);}}catch(error){notice(error.message);}};
     await refresh();for(const input of $('household-color-form').querySelectorAll('input[type=color]'))input.value=color(input.dataset.actorId);
     setInterval(()=>{if(!document.hidden)refresh().then(scheduleRead).catch(()=>{});},5000);

@@ -6,6 +6,9 @@ uses private Unix sockets, and has no usable direct provider configuration.
 from __future__ import annotations
 
 import asyncio
+import base64
+import struct
+import zlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -16,6 +19,7 @@ import yaml
 from backend.config import TamAGIConfig
 from backend.core.household.native_app import create_household_app
 from backend.core.household.native_registry import NativeRegistry
+from backend.core.household.contracts import AccessDenied, NotFound
 from backend.core.llm import LLMResponse, ToolCall
 
 
@@ -188,6 +192,102 @@ class NativeAppTests(unittest.IsolatedAsyncioTestCase):
             history = await self.request("GET", "/api/conversations/" + work["conversation_id"])
             self.assertEqual([m["role"] for m in history["messages"]], ["user"], "Stop blocks late canonical publication")
         self.assertEqual((await self.request("GET", "/api/household"))["unread_count"], 0)
+
+    async def test_group_image_survives_peer_trigger_and_later_turns(self):
+        # Above the old 8 MiB wire limit after base64 expansion, but within the
+        # advertised 8 MiB decoded attachment limit. No upstream model is used.
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+        content = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1024, 6200, 8, 0, 0, 0, 0))
+                   + chunk(b"IDAT", zlib.compress((b"\x00" * 1025) * 6200, level=0)) + chunk(b"IEND", b""))
+        image = base64.b64encode(content).decode()
+        self.provider.responses = [LLMResponse(content="@Willow Please inspect the same picture."),
+                                   LLMResponse(content="@Tester I received the picture too.")]
+        body = {"request_id": "group-image", "message": "What is in this image?",
+                "participants": [self.first, self.second], "image_data": image, "image_media_type": "image/png"}
+        work = await self.request("POST", "/api/chat/requests", actor=self.first, expected=202, json=body)
+        await self.completed(work["work_id"])
+        history = await self.request("GET", "/api/conversations/" + work["conversation_id"])
+        original = history["messages"][0]
+        self.assertEqual(original["metadata"]["image"]["size"], len(content))
+        self.assertEqual(len(self.registry.store.list("conversation_attachment")), 1)
+        self.assertEqual(len(self.provider.calls), 2)
+        for call in self.provider.calls:
+            images = [block for m in call if isinstance(m.content, list) for block in m.content if block["type"] == "image_url"]
+            self.assertEqual([b["image_url"]["url"] for b in images], ["data:image/png;base64," + image])
+        grants = [r["data"] for r in self.registry.store.list("native_grant")]
+        self.assertEqual(grants[1]["message"]["author"], self.first, "Second worker is triggered by a peer, not synthetic user input")
+        url = f"/api/conversations/{work['conversation_id']}/attachments/{original['id']}"
+        response = await self.http.get(url)
+        self.assertEqual(response.content, content)
+        self.assertEqual(response.headers["content-type"], "image/png")
+        with self.assertRaises(AccessDenied):
+            self.app.state.interactions.attachment("outsider", work["conversation_id"], original["id"])
+        with self.assertRaises(NotFound):
+            self.app.state.interactions.attachment(self.first, work["conversation_id"], original["id"], through=0)
+        await self.request("GET", f"/_native/conversations/{work['conversation_id']}/attachments/{original['id']}?grant_id=anything", expected=401)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(self.app), base_url="http://testserver") as stranger:
+            self.assertEqual((await stranger.get(url)).status_code, 401)
+        # A later image-free request still sees the original message's bytes.
+        follow = await self.request("POST", "/api/chat/requests", actor=self.first, expected=202,
+            json={"request_id": "image-followup", "message": "@Cedar Look at that picture again.",
+                  "conversation_id": work["conversation_id"], "mentions": [self.first]})
+        await self.completed(follow["work_id"])
+        self.assertTrue(any(isinstance(m.content, list) for m in self.provider.calls[-1]))
+
+    async def test_invalid_image_is_rejected_before_input_or_exchange_is_created(self):
+        for image, media in [("not base64", "image/png"), ("", "image/png"), ("eA==", "text/html")]:
+            await self.request("POST", "/api/chat/requests", actor=self.first, expected=400,
+                json={"request_id": "invalid-image", "message": "Picture", "image_data": image, "image_media_type": media})
+        self.assertFalse(self.registry.store.list("conversation"))
+        self.assertFalse(self.registry.store.list("native_work"))
+        self.assertFalse(self.registry.store.list("broker_exchange"))
+
+    async def test_real_worker_creations_and_attachment_survive_household_restart(self):
+        self.provider.responses = [
+            LLMResponse(tool_calls=[ToolCall("save-place", "world_action", {
+                "action": "create", "attributes": {"kind": "place", "name": "Stored Garden", "description": "A saved shared place."}}),
+                ToolCall("save-file", "write", {"path": "workshop/dice-note.txt", "content": "Saved dice experiment."})]),
+            LLMResponse(content="@Tester Saved the garden and my private file."),
+        ]
+        pixel = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jN2kAAAAASUVORK5CYII=")
+        work = await self.request("POST", "/api/chat/requests", actor=self.first, expected=202,
+            json={"request_id": "restart-creations", "message": "@Cedar Save a place and a note; here is a picture.",
+                  "participants": [self.first, self.second], "mentions": [self.first],
+                  "image_data": base64.b64encode(pixel).decode(), "image_media_type": "image/png"})
+        await self.completed(work["work_id"])
+        world = [r for r in self.registry.store.list("world_object") if r["data"]["name"] == "Stored Garden"]
+        self.assertEqual(len(world), 1)
+        saved_id, revision = world[0]["id"], world[0]["revision"]
+        private = Path(self.registry.descriptors[self.first]["root"]) / "workspace/workshop/dice-note.txt"
+        self.assertEqual(private.read_text(), "Saved dice experiment.")
+        other = Path(self.registry.descriptors[self.second]["root"]) / "workspace/workshop/dice-note.txt"
+        self.assertFalse(other.exists(), "Private files are not silently shared")
+        await self.http.aclose()
+        await self.lifespan.__aexit__(None, None, None)
+        self.registry = NativeRegistry(self.root)
+        self.provider = DeterministicProvider()
+        config = TamAGIConfig.model_validate(yaml.safe_load((self.root / "config.yaml").read_text()))
+        self.app = create_household_app(config, provider=self.provider, registry=self.registry)
+        self.lifespan = self.app.router.lifespan_context(self.app)
+        await self.lifespan.__aenter__()
+        self.http = httpx.AsyncClient(transport=httpx.ASGITransport(self.app), base_url="http://testserver")
+        await self.request("POST", "/api/auth/login", json={"password": "disposable-gateway-fixture"})
+        self.assertEqual(self.registry.store.get("world_object", saved_id)["revision"], revision)
+        self.assertEqual(private.read_text(), "Saved dice experiment.")
+        history = await self.request("GET", "/api/conversations/" + work["conversation_id"])
+        message_id = history["messages"][0]["id"]
+        response = await self.http.get(f"/api/conversations/{work['conversation_id']}/attachments/{message_id}")
+        self.assertEqual(response.content, pixel)
+        self.provider.responses = [LLMResponse(tool_calls=[ToolCall("read-place", "query_world_graph", {
+            "node_type": "location", "query": "Stored Garden"})]), LLMResponse(content="@Tester I can read the saved place.")]
+        follow = await self.request("POST", "/api/chat/requests", actor=self.second, expected=202,
+            json={"request_id": "restart-readback", "conversation_id": work["conversation_id"],
+                  "message": "@Willow Read the saved place.", "mentions": [self.second]})
+        await self.completed(follow["work_id"])
+        tools = [m for m in self.provider.calls[-1] if m.role == "tool"]
+        self.assertTrue(any("Stored Garden" in str(m.content) and saved_id in str(m.content) for m in tools))
+        self.assertTrue(any(isinstance(m.content, list) for m in self.provider.calls[0]), "Reopened worker receives the original image")
 
     async def test_lost_acceptance_acknowledgment_revokes_authority_before_reporting_failure(self):
         self.provider.gate.clear()

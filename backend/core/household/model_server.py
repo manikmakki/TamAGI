@@ -57,7 +57,9 @@ class NativeModelServer:
             raise ProtocolError("Native broker requires finite JSON") from error
         if not isinstance(value, dict) or set(required) - set(value) or set(value) - set(required) - set(optional):
             raise ProtocolError("Invalid native broker request fields")
-        if len(encoded(value).encode()) > 8 * 1024 * 1024:
+        # An accepted 8 MiB image expands to over 10 MiB in base64, before
+        # transcript/tool context. Apply the same ceiling to tokenize and generate.
+        if len(encoded(value).encode()) > 16 * 1024 * 1024:
             raise ProtocolError("Native completion request is too large")
         return value
 

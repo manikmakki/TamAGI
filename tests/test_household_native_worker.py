@@ -33,6 +33,8 @@ from backend.core.runtime.interactions import AdmissionError, Interactions
 from backend.core.runtime.memory import CanonicalMemory
 from backend.skills.registry import SkillRegistry
 from backend.skills.write_skill import WriteSkill
+from backend.skills.read_world_graph_skill import ReadWorldGraphSkill
+from backend.core.self_model.store import SelfModel
 from backend.skills.runtime_skill import RuntimeSkill, param
 
 
@@ -215,6 +217,34 @@ class NativeWorkerTests(unittest.IsolatedAsyncioTestCase):
         human_grant, human_snapshot = self.input("operator", "Actual operator input.", key="human")
         await self.manager.submit_household({}, human_grant, human_snapshot, "human")
         self.assertEqual(self.runtime.input_epoch, 1)
+
+    async def test_graph_read_refreshes_saved_shared_places_and_labels_partial_results(self):
+        self.agent.self_model = SelfModel(self.root / "data/world-projection.json")
+        # Simulate a different resident creating a place after this worker's
+        # personal projection was loaded. Query must read canonical state.
+        peer = self.peer["resident_id"]
+        saved = self.world.world.create(peer, "peer-garden", peer + ":garden", "place", "The Garden", visibility="shared")
+        read = ReadWorldGraphSkill(self.agent)
+        result = await read.execute(node_type="location", query="The Garden")
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["nodes"][0]["id"], "world:" + saved["id"])
+        default = await read.execute(limit=2)
+        self.assertLessEqual(default.data["count"], 2)
+        self.assertGreater(default.data["total_count"], default.data["count"])
+        self.assertIn("not an inventory", default.output)
+        self.assertIn("Private to this resident", self.runtime.context())
+        # Reopen canonical storage and a fresh personal projection, without
+        # copying the old graph; this is actual read-back after connection close.
+        self.registry.store.db.close()
+        from backend.core.household.store import HouseholdStore
+        self.registry.store = HouseholdStore(self.registry.root / "household.sqlite3")
+        self.world.store = self.registry.store
+        from backend.core.household.world import World
+        self.world.world = World(self.registry.store)
+        self.agent.self_model = SelfModel(self.root / "data/reopened-projection.json")
+        reopened = await read.execute(node_id="world:" + saved["id"])
+        self.assertTrue(reopened.success)
+        self.assertEqual(reopened.data["node"]["name"], "The Garden")
 
     async def test_queued_future_input_cannot_replace_an_earlier_context_snapshot(self):
         first, first_snapshot = self.input(content="First peer input.", key="first")

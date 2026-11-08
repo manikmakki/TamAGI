@@ -21,3 +21,6 @@ body[data-household=true] .input-bar{position:relative}
 .hh-check{display:flex;align-items:center;gap:10px;padding:9px;font-size:12px}.hh-check input{accent-color:var(--accent);width:17px;height:17px}
 .hh-color-row{display:flex!important;align-items:center;justify-content:space-between;gap:15px;max-width:360px;margin:8px 0}.hh-color-row input[type=color]{width:65px!important;height:38px;padding:3px!important;margin:0!important}
 @media(max-width:700px){.hh-chat-toolbar{gap:5px;padding:7px 9px}.hh-chat-toolbar button{font-size:9px;padding:7px;min-height:35px}.hh-participant-strip{padding:3px 10px}.hh-person{font-size:8px}.hh-wheel-toggle{font-size:9px;padding:4px 6px}.hh-mention-list{left:12px;right:12px}.hh-wheel-options{width:265px;height:265px}}
+/* Reserve attachment space so image decoding cannot move a pinned transcript. */
+.hh-attachment{display:block;width:100%;height:220px;object-fit:contain;margin-top:.6rem;border-radius:.5rem}
+.hh-attachment-error{display:block;margin-top:.6rem}
