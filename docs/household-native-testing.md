@@ -14,6 +14,9 @@ The earlier [qualification record](qualification/0019-native-2026-11-07.md)
 describes the scenarios tested at that checkpoint, rather than establishing that
 these newly reported cases work.
 
+The [2026-11-08 regression record](qualification/0019-native-fixes-2026-11-08.md)
+retains the clean-revision 279-test run and actual Chromium checks for these fixes.
+
 | ID | Finding | Classification | Status |
 | --- | --- | --- | --- |
 | NATIVE-001 | Open in chat can display another resident's thread while retaining the current resident selection | Resident/thread routing | Fixed in branch; operator retest pending |

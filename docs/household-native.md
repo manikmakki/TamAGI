@@ -86,6 +86,10 @@ bottom-follow, attachment and graph-grounding fixes are now in the isolated
 branch; operator retesting remains pending. The selector redesign is deferred.
 The earlier checks do not cover every reported interaction.
 
+The [2026-11-08 regression record](qualification/0019-native-fixes-2026-11-08.md)
+retains the 279-test run, whole-process restart/read-back and targeted Chromium
+checks for these fixes.
+
 Run the repeatable offline Chromium regressions from the isolated worktree with:
 
 ```bash
