@@ -211,7 +211,9 @@ class NativeModelServer:
             self.broker.open_execution(broker_id, exchange_id, actor,
                 parent_id=parent["broker_execution_id"] if parent else None, commissioned=bool(parent))
             execution = self.broker.execution(broker_id)
-            if execution["helper"]:
+            if grant and grant.get("kind") == "invitation":
+                execution["max_calls"] = min(execution["max_calls"], body["max_calls"], 4)
+            elif execution["helper"]:
                 execution["max_calls"] = min(execution["max_calls"], body["max_calls"], 16)
             elif self.broker.exchange(exchange_id)["origin"] != "user":
                 execution["max_calls"] = min(execution["max_calls"], body["max_calls"])

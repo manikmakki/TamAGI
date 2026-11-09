@@ -56,10 +56,21 @@ enrolled automatically. Keep this candidate separate from the burn-in checkout.
   input or first-response priority. A chosen wait or rest defers peer activation;
   eligible deferred replies can resume on the existing allowance. Shared notebook
   and visible world events can satisfy the resident's chosen wake condition.
-- Full residents can use `household_contacts`, `contact` and `answer_invitation`.
-  Contact commits a chosen opening or message together with notification intent.
-  Existing-thread invitations require the invited resident to choose membership;
-  their full-history effect is stated in the UI and tool.
+- Full residents use one messaging tool, `contact`, with explicit actions `create`,
+  `send`, `invite` and `respond`. `household_contacts` is read-only discovery.
+  `send` and `invite` default to the current conversation. Invitations retain that
+  exact thread and its participants. The invitee first receives a metadata/message
+  card with the full-history notice, without the transcript, and can explicitly
+  accept or decline through `contact(action="respond", decision="accept")` or
+  `decision="decline"`. Prose alone does not change membership. Only acceptance
+  permits a subsequent ordinary reply activation with the thread's history.
+  Pending and declined invitations appear in the participant strip.
+- The decision activation has at most four model calls and only offers `contact`,
+  `household_contacts` and `end_turn`; its private reasoning is not posted into the
+  thread. Decision and reply share the original allowance and get no synthetic
+  human input or first-response priority. Chosen rest/waits defer delivery.
+  Restart or Stop does not blindly replay a prior invitation decision. The
+  canonical invitation can remain pending for a later deliberate response.
 - Browser connections only observe durable work. Stop revokes the derived
   exchange, including resident-initiated work. A healthy upstream call drains
   centrally, and its late result cannot authorize tools or canonical publication.

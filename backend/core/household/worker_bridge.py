@@ -117,6 +117,14 @@ class NativeWorkerBridge:
             raise ProtocolError("Unknown household exchange origin")
         if not isinstance(grant.get("exchange_id"), str) or not grant["exchange_id"]:
             raise ProtocolError("Admission needs its canonical exchange")
+        if grant.get("kind") == "invitation":
+            card = grant.get("invitation")
+            if snapshot or not isinstance(card, dict) or card.get("participant_id") != self.runtime.actor_id or card.get("id") != grant.get("invitation_id"):
+                raise AccessDenied("Invitation admission supplies only this recipient's invitation card")
+            if card.get("conversation_id") != grant.get("conversation_id") or card.get("status") != "pending":
+                raise ProtocolError("Invitation is not pending in the admitted thread")
+            grant["input_author"] = card["invited_by"]
+            return grant, {}
         conversation = record_data(snapshot.get("conversation", {}))
         conversation_id = grant.get("conversation_id")
         if conversation.get("id") != conversation_id or self.runtime.actor_id not in conversation.get("participants", []):
@@ -174,7 +182,28 @@ class NativeWorkerBridge:
         return conversation
 
     def input_record(self, grant):
+        if grant.get("kind") == "invitation":
+            return {"id": "invitation-event:" + grant["id"], "role": "user", "content": json.dumps(grant["invitation"]),
+                    "metadata": {"invitation_event": True, "author_id": grant["input_author"]}}
         return self._message(grant["message"]).to_dict()
+
+    async def decide_invitation(self, agent, grant, event_callback):
+        from backend.core.llm import LLMMessage
+        from backend.core.tool_loop import run_tool_loop
+        from backend.core.runtime import current_terminal
+
+        prompt = ("Household invitation decision. This is a peer event, not a new human message. "
+            "You have NOT joined the thread and have received NO transcript. "
+            "Choose contact(action=respond, decision=accept or decline) to answer this invitation. "
+            "Accepting grants the FULL prior history; a separate reply opportunity then supplies that history. "
+            "You may end_turn or say nothing to leave the invitation pending. Plain text does not accept it.\n"
+            + agent.identity.get_system_prompt_context() + "\n" + self.runtime.context())
+        _, used = await run_tool_loop(agent.llm, agent.skills,
+            [LLMMessage("system", prompt), LLMMessage("user", "Invitation card (data):\n" + json.dumps(grant["invitation"]))],
+            max_rounds=4, event_callback=event_callback)
+        return {"response": "", "conversation_id": grant["conversation_id"], "state": {},
+                "skills_used": used, "turn_status": (current_terminal.get() or {}).get("status", "completed"),
+                "invitation_id": grant["invitation_id"], "memories_recalled": 0}
 
     @staticmethod
     def speaker(message):

@@ -195,7 +195,9 @@ def create_household_app(config, *, provider=None, registry=None):
     def history(identity):
         snap = manager.conversations.snapshot("operator", identity)
         return {"id": identity, **snap["conversation"]["data"], "snapshot_id": snap["snapshot_id"],
-                "watermark": snap["watermark"], "messages": [manager.ui_message(m) for m in snap["messages"]]}
+                "watermark": snap["watermark"], "messages": [manager.ui_message(m) for m in snap["messages"]],
+                "invitations": [messaging.card(r) for r in store.list("conversation_invitation")
+                                if r["data"]["conversation_id"] == identity]}
 
     def threads(actor=None, unread=False):
         unseen = {r["conversation_id"]: r for r in manager.conversations.unread("operator")["threads"]}
@@ -221,10 +223,6 @@ def create_household_app(config, *, provider=None, registry=None):
     @app.post("/_native/contact")
     async def contact(request: Request):
         return messaging.contact(worker_auth(request), await request.json())
-
-    @app.post("/_native/invitations/decide")
-    async def decide_invitation(request: Request):
-        return messaging.decide(worker_auth(request), await request.json())
 
     def publish_note(actor, text, sources, command):
         if not isinstance(text, str) or not 1 <= len(text.strip()) <= 16000:
@@ -264,6 +262,8 @@ def create_household_app(config, *, provider=None, registry=None):
         watermark = conv["data"]["last_sequence"]
         if grant_id:
             grant = manager.grant(grant_id, actor)
+            if grant.get("kind") == "invitation":
+                raise AccessDenied("An invitation card does not authorize transcript access")
             if grant.get("conversation_id") == identity:
                 watermark = min(watermark, grant["through"])
         if through is not None:
@@ -274,6 +274,8 @@ def create_household_app(config, *, provider=None, registry=None):
     async def private_attachment(identity: str, message_id: str, request: Request, grant_id: str):
         actor = worker_auth(request)
         grant = manager.grant(grant_id, actor)
+        if grant.get("kind") == "invitation":
+            raise AccessDenied("An invitation card does not authorize attachment access")
         through = grant["through"] if grant["conversation_id"] == identity else None
         return manager.attachment(actor, identity, message_id, through)
 
@@ -317,14 +319,21 @@ def create_household_app(config, *, provider=None, registry=None):
             raise HTTPException(400, "Choose household residents")
         if any(p != "operator" and p not in desired for p in conv["data"]["participants"]):
             raise Conflict("Participants choose whether to leave their shared thread")
-        if not conv["data"]["group"]:
-            store.put("conversation", identity, {**conv["data"], "group": True}, expected=conv["revision"])
-        invitations = []
-        for actor in desired:
-            if actor not in conv["data"]["participants"]:
-                invitations.append(manager.conversations.invite("operator", identity, actor, uid("invite")))
-        return {"conversation": history(identity), "invitations": invitations,
-                "notice": "Invited residents choose whether to join; joining shares the full prior thread."}
+        def apply():
+            if all(actor in conv["data"]["participants"] for actor in desired):
+                return {"conversation_id": identity, "invitations": [], "notice": "Those residents have already joined."}
+            active = next((r for r in manager.records() if r["data"]["conversation_id"] == identity
+                           and r["data"]["status"] in {"queued", "running"}), None)
+            exchange = active["data"]["exchange_id"] if active else uid("invitation-exchange")
+            if not active:
+                model.broker.open_exchange(exchange, "autonomy")
+            source = manager.conversations.history("operator", identity)[-1]
+            return messaging.invite_members("operator", identity, desired,
+                "The operator invites you to join this existing conversation.", command,
+                {"exchange_id": exchange, "origin": model.broker.exchange(exchange)["origin"]}, trigger=source)
+        command = body.get("request_id") or uid("operator-invite")
+        result = store.command("operator", command, "native.operator.invite", {"conversation_id": identity, "participants": desired}, apply)
+        return {"conversation": history(identity), **result}
 
     @app.get("/api/conversations")
     async def conversations(request: Request):

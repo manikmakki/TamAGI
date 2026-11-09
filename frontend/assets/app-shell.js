@@ -97,11 +97,11 @@
     if (!event.work_id) return;
     if (event.event_id && event.event_id <= (cursors.get(event.work_id)||0)) return;
     if (event.event_id) cursors.set(event.work_id,event.event_id);
-    if (event.type === 'thread_changed' && window.TamagiHousehold) {
+    if (['thread_changed','membership_changed'].includes(event.type) && window.TamagiHousehold) {
       // A resident reply can finish while other participants are still working.
       // Refresh canonical content without completing the shared exchange.
       const area=$('chat-messages'),top=area.scrollTop,following=area.scrollHeight-top-area.clientHeight<30;
-      retireResidentProgress(event);
+      if(event.type==='thread_changed')retireResidentProgress(event);
       restoreScroll(area,following?area.scrollHeight:top);
       if (event.conversation_id === convId) renderHistory(convId,false,true).catch(e=>notice(e.message));
       loadConversations();

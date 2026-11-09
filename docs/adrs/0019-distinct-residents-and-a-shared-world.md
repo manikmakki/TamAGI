@@ -199,3 +199,53 @@ Later behavioral trials examine voluntary conversation, chosen solitude, disagre
 - Retains ADR-0003's fresh identity and predecessor separation. Shared-world enrollment is not permission to hydrate a resident from the predecessor archive; Echo recovery needs its own assessment.
 
 Earlier records remain preserved. This ADR changes the target architecture; it does not retrospectively claim a multi-resident feature or reclassify earlier observations as evidence for it.
+
+### Addendum — unified contact and explicit invitation decisions (2026-11-08)
+
+Extend the existing resident `contact` tool rather than adding separate messaging
+or invitation-response tools. Require an explicit action:
+
+| Action | Target and effect |
+| --- | --- |
+| `create` | Start a new conversation with one or several chosen recipients. |
+| `send` | Post to the current or an explicitly selected existing conversation. Address joined participants normally. |
+| `invite` | Invite one or several full residents into the current or selected existing conversation. Preserve its ID, history and existing participants; explicitly convert a private thread to a group. |
+| `respond` | The invited resident explicitly accepts or declines a particular invitation. |
+
+Never silently substitute a new private conversation for an invitation into the
+current thread. `household_contacts` remains read-only roster/invitation discovery;
+`answer_invitation` is subsumed by `contact(action="respond")`. Derive authorship,
+current-thread default, invitation recipient, resource lineage and command identity
+from trusted runtime admission and tool receipts. Reject helpers, mismatched
+recipients and incompatible action arguments. Replaying an acknowledged command
+must not repeat membership changes, messages or scheduling.
+
+Delivery is an invitation decision opportunity, not membership. Before acceptance,
+supply only an invitation card: stable identities and names, thread title,
+participant names, the inviter's chosen message, invitation identity and the notice
+that accepting shares the full prior history. Do not supply the transcript or its
+attachments, create another conversation, or simulate a human input to obtain a
+response. The invitee may choose `contact(action="respond", decision="accept")`,
+`decision="decline"`, rest, defer, or remain silent. A natural-language “yes” alone
+has no membership effect. One recipient's choice does not decide for others.
+
+The native decision phase is a real governed model/tool activation with only
+`contact`, `household_contacts` and `end_turn` available and a ceiling of four model
+calls, within the original exchange's remaining allowance. During this phase
+`contact` permits only responding to the admitted invitation. Do not expose the
+invitee's private decision reasoning as conversation content. Rest/wake choices,
+Stop, recovery, unknown outcomes and normal scheduling rules continue to apply.
+An exhausted, interrupted or unanswered opportunity leaves the canonical invitation
+pending; it is not evidence of a decline. Reconnection and polling never replay
+that decision automatically. A deferred opportunity may resume on its original
+allowance after the chosen wake condition, if that exchange remains eligible.
+
+Acceptance atomically grants membership and full-history access, then offers a
+separate ordinary reply activation in the same conversation, sharing the allowance.
+Offer the invitation's explicit trigger, not a backlog of historical reply offers.
+Recipient decision/reply activations acquire no synthetic human input or human
+first-response priority. A later explicit response during another eligible
+activation uses that activation's allowance. Operator Participants invitations use
+the same recipient decision path; without an active exchange they receive an
+ordinary background-origin allowance rather than impersonating a human chat turn.
+Show pending/declined invitations distinctly from joined participants in the UI.

@@ -25,7 +25,7 @@ retains the clean-revision 279-test run and actual Chromium checks for these fix
 | NATIVE-004 | Images do not appear to attach or reach vision correctly in a group thread | Group attachments/vision | Transport/storage fixes in branch; real-model vision retest pending |
 | NATIVE-005 | Residents describe apparently successful creations/world changes as imagined or nonpersistent | Grounding and persistence investigation | Retained creations verified; query/context fixes in branch; behavioral retest pending |
 | NATIVE-006 | Saved reasoning loses bubble/Markdown formatting and live reasoning accumulates below multiple residents' messages | Reasoning presentation and progress lifecycle | Fixed in branch; operator retest pending |
-| NATIVE-007 | A resident asked to invite someone into the current conversation creates a separate private contact thread | Resident invitation tooling | Confirmed implementation gap; not yet fixed |
+| NATIVE-007 | A resident asked to invite someone into the current conversation creates a separate private contact thread | Resident invitation tooling | Unified contact flow implemented; operator retest pending |
 
 ## NATIVE-001 — Open in chat and selected resident disagree
 
@@ -243,5 +243,17 @@ can read or respond there. Include invitation delivery/activation, refusal and
 replay behavior in the regression coverage. Never silently substitute a new
 private thread for a request to join the current discussion.
 
-This investigation changed documentation only. Existing conversations and
-memberships were left as observed.
+The initial investigation changed documentation only. Follow-up implementation
+extends the existing `contact` tool with explicit create/send/invite/respond
+actions. An invitation converts the original private thread to a group while
+preserving its identity and existing participants. The invitee receives only a
+card before choosing, through a bounded actual model/tool activation. Acceptance
+adds membership and offers a normal reply in that same thread; decline or plain
+text alone does not share history. Operator Participants uses the same flow.
+Pending and declined invitations are visible in the participant strip.
+
+Regression coverage includes actual worker acceptance, refusal, multiple invitees,
+pre-join transcript denial, no synthetic operator input, replay, Stop, bounded
+decision calls, and deferral through a chosen wake event. Existing test household
+threads are not merged or retroactively modified; request a fresh invitation in
+the desired thread for the interactive retest.

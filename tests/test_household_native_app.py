@@ -56,9 +56,9 @@ class NativeAppTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="hh-app-", dir="/tmp")
         self.root = Path(self.temporary.name) / "h"
-        self.registry = NativeRegistry.create(self.root, names=["Cedar", "Willow"],
+        self.registry = NativeRegistry.create(self.root, names=getattr(self, "resident_names", ["Cedar", "Willow"]),
             operator_name="Tester", release="deterministic-app-tests", offline=True)
-        self.first, self.second = list(self.registry.descriptors)
+        self.first, self.second = list(self.registry.descriptors)[:2]
         self.provider = DeterministicProvider()
         config = TamAGIConfig.model_validate(yaml.safe_load((self.root / "config.yaml").read_text()))
         self.app = create_household_app(config, provider=self.provider, registry=self.registry)
@@ -383,7 +383,7 @@ class NativeAppTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_real_contact_tool_commits_a_new_thread_without_new_user_allowance(self):
         self.provider.responses = [
-            LLMResponse(tool_calls=[ToolCall("initiate-contact", "contact", {"participants": ["operator"],
+            LLMResponse(tool_calls=[ToolCall("initiate-contact", "contact", {"action": "create", "participants": ["operator"],
                 "message": "I have something I chose to ask you about.", "title": "A resident opening"})]),
             LLMResponse(content="@Tester I created the conversation."),
         ]

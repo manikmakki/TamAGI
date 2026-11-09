@@ -42,6 +42,10 @@ class NativeInteractions:
             if record["data"]["status"] in {"pending", "deferred"}:
                 self.store.put("reply_offer", record["id"], {**record["data"], "status": "closed",
                     "recovery_note": "Coordinator restarted; previous opportunities were not automatically replayed."})
+        for record in self.store.list("native_invitation_offer"):
+            if record["data"]["status"] in {"pending", "deferred", "running"}:
+                self.store.put("native_invitation_offer", record["id"], {**record["data"], "status": "closed",
+                    "recovery_note": "Coordinator restarted; decision was not automatically replayed."})
 
     def start(self):
         self._pulse_task = asyncio.create_task(self._pulse())
@@ -50,6 +54,21 @@ class NativeInteractions:
         while True:
             await asyncio.sleep(2)
             await self._deliver_shared_events()
+            for invitation in self.store.list("native_invitation_offer"):
+                data = invitation["data"]
+                if data["status"] != "deferred":
+                    continue
+                try:
+                    if self.model.broker.exchange(data["exchange_id"])["status"] != "running":
+                        self.store.put("native_invitation_offer", invitation["id"], {**data, "status": "closed"})
+                        continue
+                    ready = await self.hosts[data["recipient"]].json("GET", "/_native/ready")
+                    if ready.get("due"):
+                        self.store.put("native_invitation_offer", invitation["id"], {**data, "status": "pending"})
+                        message = self.store.get("message", data["trigger_message_id"])
+                        self.enqueue_contact(data["recipient"], data["conversation_id"], {"id": message["id"], **message["data"]}, data["lineage"])
+                except (RuntimeError, NotFound, httpx.TransportError):
+                    continue
             for offer in self.store.list("reply_offer"):
                 data = offer["data"]
                 if data["status"] != "deferred":
@@ -251,8 +270,10 @@ class NativeInteractions:
             if data["exchange_id"] == lineage["exchange_id"] and data["conversation_id"] == conversation_id and data["status"] not in TERMINAL:
                 return record["id"]
         identity = uid("work")
+        members = self.conversations._conversation(conversation_id)["data"]["participants"]
+        owner = actor if actor in self.hosts and actor in members else next(member for member in members if member in self.hosts)
         self.store.put("native_work", identity, {"request_id": identity, "conversation_id": conversation_id,
-            "resident_id": actor, "exchange_id": lineage["exchange_id"], "status": "queued", "kind": "chat",
+            "resident_id": owner, "exchange_id": lineage["exchange_id"], "status": "queued", "kind": "chat",
             "cursor": 0, "events": [], "children": [], "responders": [], "input_message": self.ui_message(message),
             "payload": {}, "approval": None, "result": None, "resident_initiated": True})
         # Dispatch after the transaction commits; a lost browser is irrelevant.
@@ -260,6 +281,75 @@ class NativeInteractions:
             self.tasks[identity] = asyncio.create_task(self._run(identity))
         asyncio.get_running_loop().call_soon(start)
         return identity
+
+    def offer_invitation_reply(self, actor, invitation, lineage):
+        """Acceptance offers only the invitation trigger, never historical backlog."""
+        from .conversations import _stable
+        data = invitation["data"]
+        self.conversations._conversation(data["conversation_id"], actor)
+        trigger = self.store.get("message", data.get("trigger_message_id"))
+        if not trigger:
+            return
+        identity = _stable("offer", data["conversation_id"], lineage["exchange_id"], actor)
+        previous = self.store.get("reply_offer", identity)
+        if previous and previous["data"]["status"] in {"silent", "declined", "exhausted", "closed"}:
+            return
+        self.store.put("reply_offer", identity, {"conversation_id": data["conversation_id"],
+            "exchange_id": lineage["exchange_id"], "recipient": actor, "status": "pending",
+            "message_ids": list(dict.fromkeys([*(previous["data"]["message_ids"] if previous else []), trigger["id"]])),
+            "lineage": lineage, "created_at": self.store.clock(), "generation": 1,
+            "history": [], "invitation_id": invitation["id"]})
+        self.enqueue_contact(actor, data["conversation_id"], {"id": trigger["id"], **trigger["data"]}, lineage)
+
+    async def _invitation_decision(self, identity, offer):
+        data = offer["data"]
+        actor = data["recipient"]
+        ready = await self.hosts[actor].json("GET", "/_native/ready")
+        if not ready.get("due", True):
+            self.store.put("native_invitation_offer", offer["id"], {**data, "status": "deferred"})
+            return
+        exchange = self.model.broker.exchange(data["exchange_id"])
+        if exchange["status"] != "running" or exchange["calls"] >= exchange["max_calls"] or (exchange["origin"] == "user" and exchange["segment_calls"] >= 20):
+            self.store.put("native_invitation_offer", offer["id"], {**data, "status": "exhausted"})
+            return
+        invitation = self.store.get("conversation_invitation", data["invitation_id"])
+        if invitation["data"]["status"] != "pending" or invitation["revision"] != data["version"]:
+            self.store.put("native_invitation_offer", offer["id"], {**data, "status": "closed"})
+            return
+        from .native_messaging import NativeMessaging
+        card = NativeMessaging(self.registry, self.model, self).card(invitation)
+        grant_id = uid("grant")
+        grant = {"id": grant_id, "kind": "invitation", "resident_id": actor, "exchange_id": data["exchange_id"],
+            "conversation_id": data["conversation_id"], "origin": exchange["origin"], "first_response": False,
+            "invitation_id": invitation["id"], "invitation_version": invitation["revision"], "invitation": card,
+            "status": "running", "work_id": identity}
+        self.store.put("native_grant", grant_id, grant)
+        self.store.put("native_invitation_offer", offer["id"], {**data, "status": "running"})
+        child = await self.hosts[actor].json("POST", "/_native/respond", {
+            "grant": grant, "snapshot": {}, "request_id": grant_id, "payload": {}})
+        children = [*self.get(identity)["data"]["children"], {"resident_id": actor, "work_id": child["work_id"], "grant_id": grant_id}]
+        self._update(identity, children=children)
+        # Pre-membership decision reasoning stays private to the invitee's store.
+        while True:
+            result = await self.hosts[actor].json("GET", f"/_native/work/{child['work_id']}")
+            current = result["work"]
+            if current["status"] in TERMINAL:
+                break
+            if self.get(identity)["data"]["status"] in TERMINAL:
+                return
+            await asyncio.sleep(.08)
+        self.store.put("native_grant", grant_id, {**self.grant(grant_id, actor), "status": current["status"]})
+        latest = self.store.get("native_invitation_offer", offer["id"])
+        if latest["data"]["status"] == "running":
+            status = ("deferred" if current["status"] in {"resting", "waiting"} else
+                      "exhausted" if current["status"] == "budget_exhausted" else "silent")
+            self.store.put("native_invitation_offer", offer["id"], {**latest["data"], "status": status})
+        ready = await self.hosts[actor].json("GET", "/_native/ready")
+        if not ready.get("pending"):
+            self.model.broker.set_available(actor, ready.get("due", True))
+        self.emit(identity, {"type": "membership_changed", "resident_id": actor})
+        if current["status"] == "failed":
+            raise RuntimeError("Invitation decision execution failed")
 
     async def _run(self, identity):
         if self.get(identity)["data"]["status"] != "queued":
@@ -269,6 +359,12 @@ class NativeInteractions:
         try:
             while self.get(identity)["data"]["status"] not in TERMINAL:
                 data = self.get(identity)["data"]
+                invitations = [r for r in self.store.list("native_invitation_offer")
+                    if r["data"]["status"] == "pending" and r["data"]["exchange_id"] == data["exchange_id"]
+                    and r["data"]["conversation_id"] == data["conversation_id"]]
+                if invitations:
+                    await self._invitation_decision(identity, invitations[0])
+                    continue
                 pending = [offer for actor in self.hosts for offer in self.conversations.offers(actor)
                            if offer["data"]["exchange_id"] == data["exchange_id"]
                            and offer["data"]["conversation_id"] == data["conversation_id"]]
@@ -281,7 +377,7 @@ class NativeInteractions:
                 actor = offer["data"]["recipient"]
                 trigger = self.store.get("message", offer["data"]["message_ids"][-1])["data"]
                 ready = await self.hosts[actor].json("GET", "/_native/ready")
-                actual_human = trigger["author"] == "operator"
+                actual_human = trigger["author"] == "operator" and not offer["data"].get("invitation_id")
                 if not actual_human and not ready.get("due", True):
                     self.conversations.decide_offer(actor, offer["id"], "deferred", uid("defer"))
                     if not ready.get("pending"):
@@ -302,9 +398,11 @@ class NativeInteractions:
                 grant_id = uid("grant")
                 grant = {"id": grant_id, "resident_id": actor, "exchange_id": data["exchange_id"],
                     "conversation_id": data["conversation_id"], "origin": "user" if addressed[-1]["author"] == "operator" else "autonomy",
-                    "first_response": addressed[-1]["author"] == "operator" and not counts.get(actor),
+                    "first_response": actual_human and not counts.get(actor),
                     "through": snapshot["watermark"], "message": addressed[-1], "message_ids": [m["id"] for m in addressed],
                     "offer_id": offer["id"], "status": "running", "work_id": identity}
+                if offer["data"].get("invitation_id"):
+                    grant["invitation_reply"] = True
                 # Peer activations share the actual initiating exchange; their
                 # transport origin does not mint a new allowance or user signal.
                 grant["origin"] = exchange["origin"]
@@ -360,6 +458,8 @@ class NativeInteractions:
         grant_id, local = body["grant_id"], body["local_message"]
         def apply():
             grant = self.grant(grant_id, actor)
+            if grant.get("kind") == "invitation":
+                raise AccessDenied("An invitation decision cannot publish into an unjoined conversation")
             execution = self.store.get("native_grant_execution", grant_id)
             if not execution:
                 raise AccessDenied("No model execution was admitted for this response")
@@ -402,6 +502,9 @@ class NativeInteractions:
             for offer in self.store.list("reply_offer"):
                 if offer["data"]["exchange_id"] == exchange_id and offer["data"]["status"] in {"pending", "deferred"}:
                     self.store.put("reply_offer", offer["id"], {**offer["data"], "status": "closed", "decided_at": self.store.clock()})
+            for offer in self.store.list("native_invitation_offer"):
+                if offer["data"]["exchange_id"] == exchange_id and offer["data"]["status"] in {"pending", "deferred", "running"}:
+                    self.store.put("native_invitation_offer", offer["id"], {**offer["data"], "status": "closed"})
             for work in affected:
                 for child in work["data"]["children"]:
                     self._schedule_command(child["resident_id"], f"/_native/work/{child['work_id']}/stop", {})

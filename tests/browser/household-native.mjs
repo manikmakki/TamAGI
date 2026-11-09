@@ -99,5 +99,22 @@ try{
  checks.push('New Thread cancels an older conversation navigation still awaiting its response');
  await page.evaluate(`TamagiShell.navigate('/settings');document.querySelector('#household-color-form input[data-actor-id=${js(second)}]').value='#abcdef';document.querySelector('#household-color-form button').click();`);await page.until(`fetch('/api/household').then(r=>r.json()).then(s=>s.preferences.colors[${js(second)}]==='#abcdef')`,'native durable color save');await page.until(`document.querySelector('.msg[data-author-id=${js(second)}]').style.getPropertyValue('--hh-speaker-color')==='#abcdef'`,'saved color is rendered after asynchronous UI refresh');await page.evaluate(`TamagiShell.navigate('/')`);assert.equal(await page.evaluate(`document.querySelector('.msg[data-author-id=${js(second)}]').style.getPropertyValue('--hh-speaker-color')`),'#abcdef');checks.push('durable user color preference updates native attributed bubbles');
  await page.shot('native-desktop');await page.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,mobile:true,deviceScaleFactor:1});await page.evaluate(`document.getElementById('household-character-wheel').click()`);assert.equal(await page.evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);await page.shot('native-mobile-wheel');checks.push('390px resident wheel stays within viewport');assert.deepEqual(errors,[]);
+ await page.evaluate(`document.getElementById('household-wheel-dialog').close();window.newConversation();document.getElementById('input').value='Browser invite Cedar into this thread';document.getElementById('send-btn').click()`);
+ await page.until(`!!convId&&loading`,'private invitation conversation starts');
+ const invitedThread=await page.evaluate('convId');
+ const threadCount=await page.evaluate(`fetch('/api/household/threads').then(r=>r.json()).then(v=>v.threads.length)`);
+ await page.until(`document.getElementById('household-participant-strip').textContent.includes('Cedar · invited')`,'pending invitation is visible before acceptance');
+ assert.equal(await page.evaluate(`TamagiHousehold.participants().includes(${js(first)})`),false,'Cedar is not joined while deciding');
+ await page.shot('native-invitation');
+ await page.until(`!loading&&TamagiHousehold.participants().includes(${js(first)})`,'Cedar accepts through contact and joins');
+ assert.equal(await page.evaluate('convId'),invitedThread,'invitation preserves the exact thread');
+ assert.equal(await page.evaluate(`fetch('/api/household/threads').then(r=>r.json()).then(v=>v.threads.length)`),threadCount,'no separate contact thread was created');
+ assert.equal(await page.evaluate(`document.getElementById('household-participant-strip').textContent.includes('invited')`),false);
+ const accepted=await page.evaluate(`fetch('/api/conversations/'+convId).then(r=>r.json())`);
+ assert.equal(accepted.invitations[0].status,'joined');
+ assert.deepEqual(accepted.participants,['operator',second,first]);
+ assert.equal(accepted.messages.filter(m=>m.role==='user').length,1,'decision creates no fake human input');
+ assert.equal(accepted.messages.at(-1).metadata.author_id,first);
+ assert.deepEqual(errors,[]);checks.push('resident contact invite shows pending status, explicit acceptance and a reply in the same thread without a fork or synthetic human message');
  const report={passed:true,actual_worker_processes:true,external_provider:false,checks,uncaught_errors:errors,limits:['Injected deterministic provider; real upstream model quality and background autonomy are separate checks.'],artifacts:root};await writeFile(root+'/report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }catch(error){if(page)await page.shot('failure').catch(()=>{});console.error(JSON.stringify({passed:false,message:error.stack,errors,artifacts:root}));process.exitCode=1;}finally{page?.socket.close();browser.kill('SIGTERM');await sleep(250);await rm(profile,{recursive:true,force:true});}

@@ -313,13 +313,14 @@ class Interactions:
         if bridge is None:
             raise AdmissionError("This is not a household worker", 403)
         grant, snapshot = bridge.validate_admission(grant, snapshot)
+        invitation = grant.get("kind") == "invitation"
         client_id = client_id or grant["id"]
         if not isinstance(client_id, str) or not 1 <= len(client_id) <= 128:
             raise AdmissionError("A submission identifier must have 1–128 characters")
         payload = dict(payload)
         if set(payload) - {"image_data", "image_media_type"}:
             raise AdmissionError("Household input content is selected by its admission")
-        payload["message"] = grant["message"]["content"]
+        payload["message"] = bridge.input_record(grant)["content"] if invitation else grant["message"]["content"]
         payload["conversation_id"] = grant["conversation_id"]
         if not payload["message"].strip() or len(payload["message"]) > 32000:
             raise AdmissionError("Enter a message of 1–32000 characters")
@@ -350,14 +351,14 @@ class Interactions:
                     raise AdmissionError("Image data must be valid base64 and at most 8 MiB") from None
                 stored_payload["image_ref"] = self._image_reference(content)
             incoming = bridge.input_record(grant)
-            human = grant["origin"] == "user" and grant["input_author"] == "operator"
+            human = not invitation and not grant.get("invitation_reply") and grant["origin"] == "user" and grant["input_author"] == "operator"
             epoch = self.runtime.notice_user_input() if human else self.runtime.input_epoch
             with self.store.transaction():
                 self.store.put("interaction_input", work_id, self.runtime.actor_id,
                     {"payload": stored_payload, "message": incoming, "household_grant": grant,
                      "household_snapshot": snapshot}, category="platform")
                 self.store.put("interaction", work_id, self.runtime.actor_id,
-                    {"request_id": client_id, "kind": "chat", "household": True,
+                    {"request_id": client_id, "kind": "invitation" if invitation else "chat", "household": True,
                      "grant_id": grant["id"], "fingerprint": fingerprint,
                      "conversation_id": grant["conversation_id"], "actor_id": self.runtime.actor_id,
                      "input_author": grant["input_author"], "origin": grant["origin"],
@@ -550,9 +551,10 @@ class Interactions:
 
                 household_variable = admission_context()
                 household_token = household_variable.set(grant)
-                origin = "user" if grant["origin"] == "user" and grant["input_author"] == "operator" else "peer"
-            async with self.runtime.execution(origin) as execution:
-                if grant:
+                origin = "user" if grant["origin"] == "user" and grant["input_author"] == "operator" and grant.get("kind") != "invitation" and not grant.get("invitation_reply") else "peer"
+            invitation = bool(grant and grant.get("kind") == "invitation")
+            async with self.runtime.execution(origin, **({"allowed_tools": ["contact", "household_contacts", "end_turn"], "max_calls": 4} if invitation else {})) as execution:
+                if grant and not invitation:
                     self.runtime.household.project(self.agent, source["data"]["household_snapshot"], grant)
                 self._update(
                     work_id, status="running", execution_id=execution.execution_id
@@ -566,7 +568,9 @@ class Interactions:
                 async def progress(event):
                     self.emit(work_id, event)
 
-                if data["kind"] == "chat":
+                if invitation:
+                    result = await self.runtime.household.decide_invitation(self.agent, grant, progress)
+                elif data["kind"] == "chat":
                     result = await self.agent.chat(
                         user_message=payload["message"],
                         conversation_id=data["conversation_id"],

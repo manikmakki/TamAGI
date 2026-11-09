@@ -110,6 +110,12 @@
     const strip = $('household-participant-strip'); if (!strip) return; strip.replaceChildren();
     const addressed = mentionMatches($('input').value).map(match => match.id);
     for (const id of [...new Set([operator.id,...participantIds()])]) { const chip = node('span',label(id),'hh-person'); chip.style.setProperty('--hh-person-color',color(id)); chip.classList.toggle('addressed',addressed.includes(id)); strip.append(chip); }
+    if(current?.id===convId)for(const invitation of current.invitations||[]){
+      if(['pending','declined'].includes(invitation.status)&&!participantIds().includes(invitation.participant_id)){
+        const chip=node('span',label(invitation.participant_id)+' · '+(invitation.status==='pending'?'invited':'declined'),'hh-person');
+        chip.style.setProperty('--hh-person-color',color(invitation.participant_id));strip.append(chip);
+      }
+    }
   }
   function decorateProgress(element,metadata={}){
     const author=metadata.author_id||metadata.resident_id;if(!author)return;
@@ -180,7 +186,7 @@
     try { await request('/api/household/threads/' + encodeURIComponent(rendered.id) + '/read',{method:'POST',body:JSON.stringify({snapshot_id:rendered.snapshot_id,watermark})}); readWatermarks.set(rendered.id,Math.max(watermark,readWatermarks.get(rendered.id)||0)); await refresh(); } finally { reading = false; }
   }
   function historyRendered(id,history) {
-    current = {id,participants:history.participants || []}; if (current.participants.includes(selected)) lastThreads.set(selected,id);
+    current = {id,participants:history.participants || [],invitations:history.invitations||[]}; if (current.participants.includes(selected)) lastThreads.set(selected,id);
     snapshot = history.snapshot_id ? {id,snapshot_id:history.snapshot_id,watermark:history.watermark} : null; paintParticipants(); scheduleRead();
   }
   async function refresh() {
