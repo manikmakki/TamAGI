@@ -257,3 +257,7 @@ pre-join transcript denial, no synthetic operator input, replay, Stop, bounded
 decision calls, and deferral through a chosen wake event. Existing test household
 threads are not merged or retroactively modified; request a fresh invitation in
 the desired thread for the interactive retest.
+
+The [unified-contact regression record](qualification/0019-native-invitations-2026-11-08.md)
+retains the 289-test clean-revision qualification, actual invitation flow proof
+and Chromium pending-to-joined checks.

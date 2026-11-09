@@ -71,6 +71,18 @@ enrolled automatically. Keep this candidate separate from the burn-in checkout.
   human input or first-response priority. Chosen rest/waits defer delivery.
   Restart or Stop does not blindly replay a prior invitation decision. The
   canonical invitation can remain pending for a later deliberate response.
+
+For an interactive invitation check, ask Willow in the desired private thread:
+"Please invite Cedar into this conversation, keeping this same thread."
+The participant strip first shows **Cedar · invited**. Cedar's model then receives
+an invitation card without the transcript. An explicit
+`contact(action="respond", decision="accept")` joins and permits a subsequent
+ordinary reply with prior history; `decision="decline"` records refusal without
+sharing it. Prose alone is not acceptance. The
+[retained invitation trace](qualification/0019-native-invitations-2026-11-08/invitation-flow-proof.json)
+shows the card, dispatched response and unchanged thread identity in an automated
+actual-worker test with an injected provider. The next interactive request tests
+the real resident's choice.
 - Browser connections only observe durable work. Stop revokes the derived
   exchange, including resident-initiated work. A healthy upstream call drains
   centrally, and its late result cannot authorize tools or canonical publication.
