@@ -1,0 +1,21 @@
+{
+  "activated_at": "2026-11-09T14:23:20.633194+00:00",
+  "runtime_revision": "aaceb8b9741c536d8e46ac22fc07803bce37c353",
+  "candidate_url": "http://192.168.10.25:7744/",
+  "candidate_pid": 355694,
+  "retained_household": "/tmp/tamagi-native-vk2tks0j/home",
+  "existing_login_verified": true,
+  "household_world_enabled": true,
+  "schedule": "*/15 * * * *",
+  "timezone": "America/New_York",
+  "next_at_verified": 1794234600.0,
+  "independent_worker_timers_enabled": [
+    false,
+    false,
+    false
+  ],
+  "manual_resident_or_model_input_submitted": false,
+  "production_ember_pid_unchanged": 152015,
+  "production_ember_listener": "127.0.0.1:7742",
+  "limits": "Clock/startup verification; sustained real-model behavior is not established by this record."
+}

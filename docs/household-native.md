@@ -119,6 +119,10 @@ The [2026-11-08 regression record](qualification/0019-native-fixes-2026-11-08.md
 retains the 279-test run, whole-process restart/read-back and targeted Chromium
 checks for these fixes.
 
+The [2026-11-09 World Thread record](qualification/0019-native-world-2026-11-09.md)
+retains the full 303-test run, final focused world checks, native Chromium world,
+operator-mention and public-library evidence, and retained-household activation.
+
 Run the repeatable offline Chromium regressions from the isolated worktree with:
 
 ```bash
