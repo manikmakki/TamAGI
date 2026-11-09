@@ -294,3 +294,39 @@ seconds, with 35 guarded Python processes, zero denied network operations and
 unchanged source during the run. Providers were injected and homes disposable;
 no real-model request or retained resident interaction was submitted. The report
 and raw logs are retained at `/tmp/tamagi-invite-mentions-focused-20261109-final`.
+
+## NATIVE-009 — Silent World Thread turns disappear or look empty in Journal
+
+Reported on 2026-11-09 after the retained household's first three autonomous
+opportunities. Read-only inspection found durable world_turn records for Cedar
+(28 receipts: 27 succeeded, 1 failed), Willow (38: 36 succeeded, 2 failed), and
+River (32: 24 succeeded, 8 failed). All three ended silently using
+end_turn(status="waiting", wake_event="evaluation_completed"). Cedar's existing
+Journal card had no body; Willow and River had no card at all.
+
+Two reporting defects caused this. Terminal end_turn intentionally returns no
+resident narrative, leaving the card blank. MonologueLog implements __len__, so
+`if world.monologue_log` skipped the first append to an empty Journal. The open
+Journal also did not refresh when a background tick finished.
+
+The Journal now shows a distinctly labeled Recorded activity summary derived
+from actual receipts, including successful/failed tool counts, tool names and
+chosen wake condition. Related evaluation jobs show their current recorded
+status separately from the historical tick result. Existing resident prose and
+entry IDs are preserved. Missing legacy cards are read-only projections of
+world_turn records; browsing neither rewrites history nor calls the model.
+Future ticks append even to a fresh empty logger, and the household's five-second
+refresh updates an open Journal.
+
+Investigation also found a real evaluation handoff bug: tick completion could
+mark a resident unavailable after an independent evaluation had already started,
+leaving its generation queued indefinitely. Worker readiness now includes its
+independent execution lease, and coordinator availability reconciliation protects
+live broker executions even if a readiness snapshot is stale. This does not
+turn a chosen wait into a new autonomous opportunity.
+
+Regression coverage includes a fresh worker's first silent wait, retained-entry
+identity, missing legacy projection without writes or model calls, resident
+isolation, an evaluation completing after its initiating tick waits, stale
+readiness, and Chromium Journal refresh/details at mobile width. See the
+[Journal qualification record](qualification/0019-native-journal-2026-11-09.md).

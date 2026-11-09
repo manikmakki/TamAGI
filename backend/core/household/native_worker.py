@@ -89,7 +89,7 @@ def configure_app(app):
 
         agent = get_agent()
         return {"resident_id": agent.runtime.actor_id, "ready": True,
-                "pending": agent.runtime.interactions.has_pending(),
+                "pending": agent.runtime.interactions.has_pending() or agent.runtime.root_lock.locked(),
                 "activity": agent.runtime.activity_state(),
                 "due": agent.runtime.due(ignore_decompression=True),
                 "world_due": agent.runtime.due() and not getattr(agent.identity, "needs_onboarding", False)}

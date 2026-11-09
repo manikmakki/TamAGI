@@ -578,7 +578,7 @@ class Interactions:
                 if world:
                     from .world import tick
                     result = await tick(self.agent._world_thread, execution=execution, work_id=work_id, event_callback=progress)
-                    result = {**result, "response": "", "conversation_id": None, "state": {}, "skills_used": []}
+                    result = {**result, "response": "", "conversation_id": None, "state": {}}
                 elif invitation:
                     result = await self.runtime.household.decide_invitation(self.agent, grant, progress)
                 elif data["kind"] == "chat":

@@ -177,10 +177,13 @@ async def tick(world, *, manual=False, execution=None, work_id=None, event_callb
                     r["id"] for r in runtime.store.receipts(execution.execution_id)
                 ],
                 "next_wake_at": data.get("wake_at"),
+                "wake_event": data.get("wake_event"),
+                "wait_reason": data.get("wait_reason"),
+                "skills_used": used,
             }
             remaining_events = world._pending_world_events[len(pending) :]
             with runtime.store.transaction():
-                runtime.store.put(
+                turn_record = runtime.store.put(
                     "world_turn",
                     uid("turn"),
                     runtime.actor_id,
@@ -235,21 +238,15 @@ async def tick(world, *, manual=False, execution=None, work_id=None, event_callb
                         "projection_unavailable",
                         {"projection": "pending_events", "error": type(exc).__name__},
                     )
-            if world.monologue_log:
+            if world.monologue_log is not None:
+                from .journal import world_activity_event
+                event = world_activity_event(runtime, turn_record)
                 world.monologue_log.append(
                     type="world_activity",
                     source="autonomous",
                     title=f"{location_name} — {status}",
                     content=text,
-                    metadata={
-                        "status": status,
-                        "execution_id": execution.execution_id,
-                        "receipts": result["receipts"],
-                        "next_wake_at": data.get("wake_at"),
-                        "wake_event": data.get("wake_event"),
-                        "wait_reason": data.get("wait_reason"),
-                        "timezone": runtime.config.timezone,
-                    },
+                    metadata=event['metadata'],
                 )
             if world.agent.consolidation:
                 # Reflection shares the same budget and may legitimately produce no learning.

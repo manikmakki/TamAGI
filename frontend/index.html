@@ -1691,7 +1691,7 @@ async function loadMindPanel(){
     entries.innerHTML=events.map(ev=>{
       const icon=MIND_ICONS[ev.type]||'&#x25CB;';
       const src=ev.source||'autonomous';
-      const snippet=(ev.content||'').substring(0,140).trimEnd();
+      const snippet=(ev.content||ev.metadata?.activity_summary||'').substring(0,140).trimEnd();
       const wake=historicalWakeDescription(ev.metadata||{});
       return`<div class="mind-card" onclick="openMindFlyout('${esc(ev.id)}')">
         <div class="mind-card-header">
@@ -1702,6 +1702,7 @@ async function loadMindPanel(){
         </div>
         <div class="mind-title">${esc(ev.title||'')}</div>
         ${wake?`<div class="mind-wake">${esc(wake)}</div>`:''}
+        ${!ev.content&&ev.metadata?.activity_summary?'<div class="mind-type-label">Recorded activity</div>':''}
         ${snippet?`<div class="mind-content">${esc(snippet)}&hellip;</div>`:''}
       </div>`;
     }).join('');
@@ -1772,7 +1773,7 @@ function openMindFlyout(evId){
     <div class="flyout-section">
       ${s.label?`<div class="flyout-section-label ${_flyoutSectionClass(s.label)}">${esc(s.label)}</div>`:''}
       <div class="flyout-section-text">${esc(s.text)}</div>
-    </div>`).join('');
+    </div>`).join('')+(meta.activity_summary?`<div class="flyout-section"><div class="flyout-section-label">Recorded activity</div><div class="flyout-section-text">${esc(meta.activity_summary)}</div></div>`:'');
 
   // Show flyout, hide list
   document.getElementById('mind-flyout').classList.remove('hidden');

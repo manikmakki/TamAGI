@@ -198,6 +198,7 @@
     for (const element of document.querySelectorAll('.msg[data-author-id]')) element.style.setProperty('--hh-speaker-color',color(element.dataset.authorId));
     for (const element of document.querySelectorAll('.hh-mention[data-actor-id]')) element.style.setProperty('--hh-mention-color',color(element.dataset.actorId));
     await refreshWorld();
+    if(window.TamagiShell?.view()==='journal')await window.loadMindPanel();
     return state;
   }
   async function refreshWorld() {

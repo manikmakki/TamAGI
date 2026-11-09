@@ -1,5 +1,6 @@
 """Household clock semantics and actual autonomous resident worker integration."""
 from contextlib import closing
+import asyncio
 import json
 from pathlib import Path
 import sqlite3
@@ -9,8 +10,11 @@ import unittest
 
 from backend.config import TamAGIConfig
 from backend.core.household.native_scheduler import NativeWorldScheduler
+from backend.core.household.native_service import NativeInteractions
+from backend.core.household.broker import InferenceBroker
 from backend.core.household.store import HouseholdStore
 from backend.core.llm import LLMResponse, ToolCall
+from backend.core.runtime.store import RuntimeStore
 import test_household_native_app as fixture
 
 
@@ -47,6 +51,21 @@ class HouseholdClockTests(unittest.IsolatedAsyncioTestCase):
             await self.scheduled()
             self.assertEqual((await self.scheduler.opportunity())['status'], 'waiting')
         self.assertEqual(self.selected, ['Cedar', 'Willow', 'River', 'Cedar'])
+
+    async def test_evaluation_execution_outlives_stale_ready_snapshot(self):
+        broker = InferenceBroker(self.store)
+        broker.register_resident('Cedar')
+        registry = SimpleNamespace(store=self.store, participants=lambda: [])
+        manager = NativeInteractions(registry, SimpleNamespace(broker=broker), {})
+        broker.open_exchange('evaluation', origin='evaluation')
+        broker.open_execution('evaluation-run', 'evaluation', 'Cedar')
+        manager.refresh_availability('Cedar', {'pending': False, 'due': False})
+        self.assertTrue(broker.state()['accounts']['Cedar']['available'])
+        broker.request('evaluation-call', 'evaluation-run')
+        self.assertIsNotNone(broker.dispatch(), 'Queued evaluation can progress after world turn waits')
+        broker.stop_execution('evaluation-run')
+        manager.refresh_availability('Cedar', {'pending': False, 'due': False})
+        self.assertFalse(broker.state()['accounts']['Cedar']['available'], 'Chosen wait remains after evaluation stops')
 
     async def test_only_awake_resident_receives_all_four_ticks_and_no_catchup_debt(self):
         first = self.scheduler.status()['next_at']
@@ -140,6 +159,78 @@ class NativeWorldTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('no new user task', str([m.content for m in self.provider.calls[0]]))
         await self.tick()
         self.assertEqual(len(self.private(self.second, 'world_turn')), 1)
+
+    async def test_silent_wait_has_factual_journal_and_legacy_projection_is_read_only(self):
+        self.provider.responses = [LLMResponse(tool_calls=[ToolCall('silent-wait', 'end_turn', {
+            'status': 'waiting', 'wake_event': 'evaluation_completed'})])]
+        await self.tick()
+        saved = self.private(self.first, 'monologue')
+        self.assertEqual(len(saved), 1, 'A fresh empty logger must persist its first tick')
+        path = '/r/' + self.first + '/api/monologue/log?type=world_activity'
+        entry = (await self.request('GET', path))['events'][0]
+        self.assertEqual(entry['id'], saved[0]['id'])
+        self.assertEqual(entry['content'], '', 'Recorded activity must not invent resident prose')
+        self.assertEqual(entry['metadata']['tool_count'], 1)
+        self.assertEqual(entry['metadata']['tool_outcomes'], {'succeeded': 1})
+        self.assertEqual(entry['metadata']['wake_event'], 'evaluation_completed')
+        self.assertIn('Chose to wait for evaluation completed.', entry['metadata']['activity_summary'])
+        self.assertEqual((await self.request('GET', '/r/' + self.second + '/api/monologue/log'))['events'], [])
+        dbpath = Path(self.registry.descriptors[self.first]['root']) / 'runtime.sqlite3'
+        with closing(sqlite3.connect(dbpath)) as db:
+            db.execute("DELETE FROM records WHERE kind='monologue'")
+            # Old world_turn records did not carry their wake metadata.
+            row = db.execute("SELECT id,payload FROM records WHERE kind='world_turn'").fetchone()
+            payload = json.loads(row[1])
+            for key in ('wake_event', 'wait_reason', 'skills_used'):
+                payload.pop(key, None)
+            db.execute('UPDATE records SET payload=? WHERE id=?', (json.dumps(payload), row[0]))
+            db.commit()
+        calls = len(self.provider.calls)
+        projected = await self.request('GET', path)
+        self.assertEqual(len(projected['events']), 1)
+        self.assertEqual(projected, await self.request('GET', path))
+        self.assertTrue(projected['events'][0]['id'].startswith('ml-world-'))
+        self.assertEqual(projected['events'][0]['metadata'], entry['metadata'])
+        self.assertEqual(self.private(self.first, 'monologue'), [])
+        self.assertEqual(len(self.provider.calls), calls, 'Journal projection never calls the model')
+
+    async def test_evaluation_finishes_after_world_turn_waits(self):
+        dbpath = Path(self.registry.descriptors[self.first]['root']) / 'runtime.sqlite3'
+        with closing(RuntimeStore(dbpath)) as store:
+            store.put('proposal', 'journal-evaluation-fixture', self.first,
+                      {'surface': 'world_prompt', 'value': 'A small test change'})
+        started, release = asyncio.Event(), asyncio.Event()
+        original = self.provider.chat
+        async def gated_evaluation(messages, **options):
+            if any('You choose to rest for one hour.' in str(m.content) for m in messages):
+                started.set()
+                await release.wait()
+            return await original(messages, **options)
+        self.provider.chat = gated_evaluation
+        self.provider.responses = [
+            LLMResponse(tool_calls=[ToolCall('queue-evaluation', 'runtime_change', {
+                'action': 'evaluate', 'proposal_id': 'journal-evaluation-fixture'})]),
+            LLMResponse(tool_calls=[ToolCall('wait-for-evaluation', 'end_turn', {
+                'status': 'waiting', 'wake_event': 'evaluation_completed'})])]
+        try:
+            work = await self.tick()
+            self.assertEqual(work['status'], 'waiting')
+            await asyncio.wait_for(started.wait(), 5)
+            ready = await self.app.state.hosts[self.first].json('GET', '/_native/ready')
+            self.assertTrue(ready['pending'], 'Independent evaluation holds the worker execution lease')
+            # Exercise the completion handoff even if its readiness snapshot was taken earlier.
+            self.app.state.interactions.refresh_availability(self.first, {'pending': False, 'due': False})
+            self.assertTrue(self.app.state.model.broker.state()['accounts'][self.first]['available'])
+        finally:
+            release.set()
+        await self.wait_until(lambda: any(j['status'] == 'completed' for j in self.private(self.first, 'evaluation_job')))
+        self.assertEqual([j['status'] for j in self.private(self.first, 'evaluation_job')], ['completed'])
+        ready = await self.app.state.hosts[self.first].json('GET', '/_native/ready')
+        self.assertFalse(ready['pending'])
+        self.assertNotEqual(self.private(self.first, 'activity')[0].get('wake_event'), 'evaluation_completed')
+        journal = await self.request('GET', '/r/' + self.first + '/api/monologue/log?type=world_activity')
+        self.assertEqual([j['status'] for j in journal['events'][0]['metadata']['evaluation_jobs']], ['completed'])
+        self.assertIn('Evaluation jobs now: 1 completed.', journal['events'][0]['metadata']['activity_summary'])
 
     async def test_world_conversation_charges_initiator_and_recipient_keeps_next_tick(self):
         original = self.provider.chat

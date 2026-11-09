@@ -117,10 +117,15 @@ try{
  assert.equal(accepted.messages.at(-1).metadata.author_id,first);
  assert.deepEqual(errors,[]);checks.push('resident contact invite shows pending status, explicit acceptance and a reply in the same thread without a fork or synthetic human message');
  assert.equal(await page.evaluate(`fetch('/api/fixture/prepare-world',{method:'POST'}).then(r=>r.status)`),200);
+ await page.evaluate(`TamagiHousehold.selectResident(${js(first)},{openThread:false})`);
  await page.evaluate(`TamagiShell.navigate('/journal')`);
  await page.until(`document.getElementById('household-world-status').textContent.includes('running')`,'household clock appears in Journal');
  await page.evaluate(`document.getElementById('dream-trigger-btn').click()`);
  await page.until(`fetch('/api/household/world').then(r=>r.json()).then(s=>!!s.last_work_id&&!s.active.length)`,'Journal Tick Now runs a real autonomous worker turn',700);
+ await page.until(`document.getElementById('mind-entries').textContent.includes('Recorded activity')`,'silent autonomous turn appears in the open Journal without reloading');
+ await page.evaluate(`document.querySelector('#mind-entries .mind-card').click()`);
+ assert.equal(await page.evaluate(`document.getElementById('mind-flyout').textContent.includes('Recorded tool calls:')&&document.getElementById('mind-flyout').textContent.includes('household_artifact')`),true,'Journal details show factual receipt summary');
+ await page.evaluate(`closeMindFlyout()`);
  await page.shot('native-world');
  await page.evaluate(`TamagiShell.navigate('/')`);
  await page.until(`!document.getElementById('household-for-you').disabled`,'autonomous operator ping is visible without opening its thread');

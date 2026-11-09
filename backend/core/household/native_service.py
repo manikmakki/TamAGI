@@ -50,6 +50,17 @@ class NativeInteractions:
     def start(self):
         self._pulse_task = asyncio.create_task(self._pulse())
 
+    def refresh_availability(self, actor, ready):
+        # An independent evaluation can acquire the worker lease as a world/chat
+        # activation ends. Its live execution outranks an earlier ready snapshot.
+        executing = any(r['data']['actor_id'] == actor and r['data']['status'] == 'running'
+                        and self.model.broker.exchange(r['data']['exchange_id'])['status'] == 'running'
+                        for r in self.store.list('broker_execution'))
+        if executing:
+            self.model.broker.set_available(actor, True)
+        elif not ready.get('pending'):
+            self.model.broker.set_available(actor, ready.get('due', True))
+
     async def _pulse(self):
         while True:
             await asyncio.sleep(2)
@@ -76,8 +87,7 @@ class NativeInteractions:
                 actor = data["recipient"]
                 try:
                     ready = await self.hosts[actor].json("GET", "/_native/ready")
-                    if not ready.get("pending"):
-                        self.model.broker.set_available(actor, ready.get("due") is True)
+                    self.refresh_availability(actor, ready)
                     if not ready.get("due"):
                         continue
                     if self.model.broker.exchange(data["exchange_id"])["status"] != "running":
@@ -342,8 +352,7 @@ class NativeInteractions:
                     self._update(identity, status=current["status"], result=current.get("result"))
                     self.emit(identity, {"type": "work_ended", "status": current["status"]})
                     ready = await self.hosts[actor].json("GET", "/_native/ready")
-                    if not ready.get("pending"):
-                        self.model.broker.set_available(actor, ready.get("due", True))
+                    self.refresh_availability(actor, ready)
                     return
                 await asyncio.sleep(.08)
         except asyncio.CancelledError:
@@ -397,8 +406,7 @@ class NativeInteractions:
                       "exhausted" if current["status"] == "budget_exhausted" else "silent")
             self.store.put("native_invitation_offer", offer["id"], {**latest["data"], "status": status})
         ready = await self.hosts[actor].json("GET", "/_native/ready")
-        if not ready.get("pending"):
-            self.model.broker.set_available(actor, ready.get("due", True))
+        self.refresh_availability(actor, ready)
         self.emit(identity, {"type": "membership_changed", "resident_id": actor})
         if current["status"] == "failed":
             raise RuntimeError("Invitation decision execution failed")
@@ -434,8 +442,7 @@ class NativeInteractions:
                 actual_human = trigger["author"] == "operator" and not offer["data"].get("invitation_id")
                 if not actual_human and not ready.get("due", True):
                     self.conversations.decide_offer(actor, offer["id"], "deferred", uid("defer"))
-                    if not ready.get("pending"):
-                        self.model.broker.set_available(actor, False)
+                    self.refresh_availability(actor, ready)
                     continue
                 self.model.broker.set_available(actor, True)
                 exchange = self.model.broker.exchange(data["exchange_id"])
@@ -488,8 +495,7 @@ class NativeInteractions:
                 self.store.put("native_grant", grant_id, {**self.grant(grant_id, actor), "status": current["status"]})
                 counts[actor] = counts.get(actor, 0) + 1
                 ready = await self.hosts[actor].json("GET", "/_native/ready")
-                if not ready.get("pending"):
-                    self.model.broker.set_available(actor, ready.get("due", True))
+                self.refresh_availability(actor, ready)
                 current_offer = self.store.get("reply_offer", offer["id"])
                 if current_offer["data"]["status"] == "pending" and not self.store.get("native_grant_commit", grant_id):
                     self.conversations.decide_offer(actor, offer["id"], "silent", uid("decision"))
