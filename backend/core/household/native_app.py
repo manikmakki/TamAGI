@@ -46,11 +46,15 @@ def create_household_app(config, *, provider=None, registry=None):
         hosts[actor] = NativeHost(registry, descriptor, coordinator_socket)
         model.broker.register_resident(actor)
     manager = NativeInteractions(registry, model, hosts)
+    from .native_scheduler import NativeWorldScheduler
+    scheduler = NativeWorldScheduler(manager, config)
     model.grant_lookup = manager.grant
     from .native_world import NativeWorld
     world = NativeWorld(registry, model)
     from .native_messaging import NativeMessaging
     messaging = NativeMessaging(registry, model, manager)
+    from .native_artifacts import NativeArtifacts
+    artifacts = NativeArtifacts(registry, model)
     async def lost(actor):
         model.broker.set_available(actor, False)
         for record in manager.records():
@@ -85,8 +89,10 @@ def create_household_app(config, *, provider=None, registry=None):
             for host in hosts.values():
                 await host.start()
             manager.start()
+            scheduler.start()
             yield
         finally:
+            await scheduler.close()
             await manager.close()
             for host in hosts.values():
                 await host.close()
@@ -98,6 +104,7 @@ def create_household_app(config, *, provider=None, registry=None):
     app = FastAPI(title="TamAGI household", lifespan=lifespan)
     app.state.household = registry
     app.state.interactions, app.state.model, app.state.hosts = manager, model, hosts
+    app.state.world_scheduler = scheduler
     session_root = registry.root / "session"
     session_root.mkdir(mode=0o700, exist_ok=True)
 
@@ -187,7 +194,12 @@ def create_household_app(config, *, provider=None, registry=None):
                                "available": host.process is not None and host.process.returncode is None}
                               for actor, d in registry.descriptors.items() for host in [hosts[actor]]],
                 "default_resident_id": registry.manifest["default_resident_id"], "preferences": preferences,
-                "unread_count": manager.conversations.unread("operator")["count"]}
+                "unread_count": manager.conversations.unread("operator")["count"],
+                "addressed_thread_count": sum(bool(t["addressed_count"]) for t in manager.conversations.unread("operator")["threads"])}
+
+    def operator_work(record):
+        conversation = store.get("conversation", record["data"].get("conversation_id"))
+        return bool(conversation and "operator" in conversation["data"]["participants"])
 
     def resident(request, bound=None):
         return registry.resolve(bound or request.headers.get("x-tamagi-resident") or request.query_params.get("resident_id"))["resident_id"]
@@ -207,10 +219,40 @@ def create_household_app(config, *, provider=None, registry=None):
             if "operator" not in d["participants"] or (actor and actor not in d["participants"]) or (unread and record["id"] not in unseen):
                 continue
             output.append({"id": record["id"], **d, "created_at": record["created"], "updated_at": record["updated"],
-                           "message_count": d["last_sequence"], "unread_count": unseen.get(record["id"], {}).get("count", 0)})
+                           "message_count": d["last_sequence"], "unread_count": unseen.get(record["id"], {}).get("count", 0),
+                           "addressed_count": unseen.get(record["id"], {}).get("addressed_count", 0),
+                           "mention_count": unseen.get(record["id"], {}).get("mention_count", 0)})
         return output
 
     app.include_router(model.router)
+
+    @app.post("/_native/artifacts")
+    async def private_artifacts(request: Request):
+        actor = worker_auth(request)
+        raw = await request.body()
+        if len(raw) > 6 * 1024 * 1024:
+            raise ProtocolError("Artifact request is too large")
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            raise ProtocolError("Choose a valid artifact request") from None
+        if not isinstance(body, dict):
+            raise ProtocolError("Choose an artifact operation")
+        return artifacts.dispatch(actor, body)
+
+    @app.get("/api/household/artifacts")
+    async def public_artifacts():
+        return {"artifacts": artifacts.listed()}
+
+    @app.get("/api/household/artifacts/{identity}/versions/{version}/files/{path:path}")
+    async def artifact_file(identity: str, version: int, path: str):
+        import base64
+        from .native_artifacts import verified_files
+        files = verified_files(artifacts.version(identity, version)["data"]["files"])
+        if path not in files:
+            raise NotFound("No such published file")
+        return Response(files[path], media_type="application/octet-stream", headers={
+            "Content-Disposition": "attachment", "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
 
     @app.post("/_native/world")
     async def shared_world(request: Request):
@@ -287,6 +329,20 @@ def create_household_app(config, *, provider=None, registry=None):
     async def broker_state():
         return model.broker.state()
 
+    @app.get("/api/household/world")
+    async def world_schedule():
+        return scheduler.status()
+
+    @app.post("/api/world/tick", status_code=202)
+    async def world_tick():
+        return await scheduler.opportunity(manual=True)
+
+    @app.post("/api/household/world/{identity}/stop")
+    async def stop_world(identity: str):
+        if manager.get(identity)["data"]["kind"] != "world":
+            raise HTTPException(400, "Choose World Thread work")
+        return manager.stop(identity)
+
     @app.put("/api/household/preferences")
     async def preferences(request: Request):
         import re
@@ -361,7 +417,7 @@ def create_household_app(config, *, provider=None, registry=None):
         actor = resident(request)
         return {"requests": [manager.public(r) for r in manager.records(50)
                               if actor in [r["data"]["resident_id"], *r["data"]["responders"]]
-                              and "operator" in store.get("conversation", r["data"]["conversation_id"])["data"]["participants"]]}
+                              and operator_work(r)]}
 
     @app.get("/api/chat/requests/{identity}")
     async def work(identity: str, after: int = 0):
@@ -397,7 +453,7 @@ def create_household_app(config, *, provider=None, registry=None):
                 manager.conversations._conversation(record["data"]["conversation_id"], "operator")
                 return record
             def records(self, limit=50):
-                return [r for r in manager.records(limit) if "operator" in store.get("conversation", r["data"]["conversation_id"])["data"]["participants"]]
+                return [r for r in manager.records(limit) if operator_work(r)]
             def public(self, record):
                 return manager.public(record)
             def snapshot(self, identity, after=0):
@@ -419,6 +475,8 @@ def create_household_app(config, *, provider=None, registry=None):
         if path.startswith(("_native/", "api/chat", "api/conversations")):
             raise HTTPException(404, "This route belongs to the household coordinator")
         host = hosts[actor]
+        if path == "api/world/tick" and request.method == "POST":
+            return JSONResponse(await scheduler.opportunity(manual=True), status_code=202)
         if path.startswith(("api/backup", "api/restore", "api/deploy", "api/transfer")):
             raise HTTPException(409, "Use household recovery; individual resident replacement is unavailable in this candidate")
         if path == "api/config" and request.method != "GET":
@@ -459,7 +517,7 @@ def create_household_app(config, *, provider=None, registry=None):
             if request.method == "GET":
                 return {"requests": [manager.public(r) for r in manager.records(50)
                     if actor in [r["data"]["resident_id"], *r["data"]["responders"]]
-                    and "operator" in store.get("conversation", r["data"]["conversation_id"])["data"]["participants"]]}
+                    and operator_work(r)]}
             if request.method == "POST":
                 body = await request.json()
                 body["resident_id"] = actor

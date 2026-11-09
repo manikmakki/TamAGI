@@ -2,7 +2,9 @@ import asyncio
 import json
 import os
 from pathlib import Path
+from contextlib import closing
 import secrets
+import sqlite3
 import tempfile
 
 import uvicorn
@@ -26,6 +28,18 @@ class Provider:
     async def chat(self, messages, tools=None, **options):
         self.calls += 1
         await asyncio.sleep(1 if self.calls <= 2 else 3)
+        if any(m.role == 'user' and str(m.content).startswith('Summarize this conversation') for m in messages):
+            return LLMResponse(content='I reflected on the attributed conversation before choosing my next activity.')
+        if len(messages) > 1 and 'Autonomous opportunity;' in str(messages[1].content):
+            names = [call['function']['name'] for message in messages for call in (message.tool_calls or [])]
+            if 'household_artifact' not in names:
+                return LLMResponse(tool_calls=[ToolCall(f'browser-publish-{self.calls}', 'household_artifact', {
+                    'action': 'publish', 'path': 'workshop/browser-shared.txt', 'title': 'A public browser artifact'})])
+            if 'contact' not in names:
+                return LLMResponse(tool_calls=[ToolCall(f'browser-world-contact-{self.calls}', 'contact', {
+                    'action': 'create', 'participants': ['operator'], 'mentions': ['operator'],
+                    'title': 'World Thread browser ping', 'message': '@Tester I have something to share from my autonomous turn.'})])
+            return LLMResponse(tool_calls=[ToolCall(f'browser-world-end-{self.calls}', 'end_turn', {'status': 'completed'})])
         if 'Household invitation decision.' in str(messages[0].content):
             card = json.loads(messages[-1].content.split('\n', 1)[1])
             return LLMResponse(tool_calls=[ToolCall(f'browser-accept-{self.calls}', 'contact', {
@@ -56,12 +70,42 @@ root = Path(temporary.name) / "h"
 registry = NativeRegistry.create(root, names=["Cedar", "Willow"], operator_name="Tester",
                                  release="deterministic-browser-fixture", offline=True)
 config = TamAGIConfig.model_validate(yaml.safe_load((root / "config.yaml").read_text()))
+for descriptor in registry.descriptors.values():
+    project = Path(descriptor['root']) / 'workspace/workshop'
+    project.mkdir(exist_ok=True)
+    (project / 'browser-shared.txt').write_text('Published by a real native worker.\n')
 password = secrets.token_urlsafe(24)
 config.auth.password_hash = hash_password(password)
 credential = Path(os.environ.get("TAMAGI_BROWSER_CREDENTIAL", "/tmp/tamagi-native-browser-credential"))
 credential.write_text(password)
 credential.chmod(0o600)
 app = create_household_app(config, provider=Provider(registry), registry=registry)
+
+# Disposable browser-fixture control, never installed in the application. Prior
+# chat checks intentionally leave real operator decompression in place. Clear it
+# only for this explicit test, without waiting fifteen wall-clock minutes.
+@app.post('/api/fixture/prepare-world')
+async def prepare_world():
+    for descriptor in registry.descriptors.values():
+        with closing(sqlite3.connect(Path(descriptor['root']) / 'runtime.sqlite3')) as db:
+            db.execute("UPDATE meta SET value='0' WHERE key='decompression_until'")
+            db.commit()
+    config.autonomy.enabled = True
+    state = registry.store.meta('native_world_schedule')
+    registry.store.set_meta('native_world_schedule', {**state, 'next_at': registry.store.clock() + 900})
+    return {'ready': True}
+app.router.routes.insert(0, app.router.routes.pop())
+
+@app.get('/api/fixture/world-evidence')
+async def world_evidence():
+    private = []
+    for descriptor in registry.descriptors.values():
+        with closing(sqlite3.connect(Path(descriptor['root']) / 'runtime.sqlite3')) as db:
+            private.append({'name': descriptor['name'], 'receipts': [json.loads(row[0]) for row in db.execute('SELECT payload FROM receipts ORDER BY started DESC LIMIT 4')]})
+    return {'world': app.state.world_scheduler.status(),
+            'works': [app.state.interactions.public(r) for r in app.state.interactions.records() if r['data']['kind'] == 'world'],
+            'messages': [r['data'] for r in registry.store.list('message')][-5:], 'private': private}
+app.router.routes.insert(0, app.router.routes.pop())
 print("Fresh native browser household: " + str(root), flush=True)
 try:
     uvicorn.run(app, host="127.0.0.1", port=18846, access_log=False, log_level="warning")

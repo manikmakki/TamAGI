@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from .contracts import BudgetExhausted, current_terminal
 from .store import uid
@@ -10,7 +11,7 @@ from backend.core.world_state import WorldState, parse_new_state
 from backend.core.tool_loop import run_tool_loop
 
 
-async def tick(world, *, manual=False):
+async def tick(world, *, manual=False, execution=None, work_id=None, event_callback=None):
     runtime = world.agent.runtime
     if hasattr(runtime, "deployments"):
         runtime.deployments.synchronize()
@@ -21,7 +22,8 @@ async def tick(world, *, manual=False):
             "reason": "onboarding",
             "activation_started": False,
         }
-    if not runtime.due(ignore_decompression=manual, ignore_error_backoff=manual):
+    if not runtime.due(ignore_decompression=manual, ignore_error_backoff=manual,
+                       **({"exclude_work_id": work_id} if work_id else {})):
         state = runtime.activity_state()
         now = runtime.store.clock()
         if getattr(runtime, "interactions", None) and runtime.interactions.has_pending():
@@ -71,7 +73,7 @@ async def tick(world, *, manual=False):
     world._tick_running = True
     pending = []
     try:
-        async with runtime.execution("autonomy") as execution:
+        async with (nullcontext(execution) if execution else runtime.execution("autonomy")) as execution:
             await world.agent.flush_unsummarized_conversations()
             pending = world._pending_world_events[:]
             runtime.reconcile_identity()
@@ -118,6 +120,7 @@ async def tick(world, *, manual=False):
                 messages,
                 max_rounds=runtime.config.background_calls_per_activation,
                 is_autonomous=True,
+                event_callback=event_callback,
             )
             terminal = current_terminal.get()
             run = runtime.store.run(execution.execution_id)

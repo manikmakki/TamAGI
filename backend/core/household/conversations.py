@@ -421,7 +421,9 @@ class Conversations:
                         if message["sequence"] > watermark and message["author"] != human]
             if incoming:
                 threads.append({"conversation_id": conversation["id"], "title": conversation["data"]["title"],
-                                "count": len(incoming), "latest": incoming[-1], "watermark": watermark})
+                                "count": len(incoming), "latest": incoming[-1], "watermark": watermark,
+                                "addressed_count": sum(human in m["addressees"] for m in incoming),
+                                "mention_count": sum(m["explicit_mentions"] and human in m["addressees"] for m in incoming)})
         return {"count": len(threads), "threads": threads}
 
     def offers(self, participant):

@@ -297,7 +297,7 @@ async def lifespan(app: FastAPI):
         agent=agent,
         config=config.world_thread,
         monologue_log=monologue_log,
-        autonomy_enabled=config.autonomy.enabled,
+        autonomy_enabled=config.autonomy.enabled and not native_worker,
         schedule=config.autonomy.schedule,
         active_hours=(config.autonomy.active_hours_start, config.autonomy.active_hours_end),
         resume_after_conversation=config.autonomy.resume_after_conversation,
@@ -370,6 +370,8 @@ async def lifespan(app: FastAPI):
             install_worker(runtime, agent, config)
             from backend.core.household.native_messaging import install_messaging
             install_messaging(runtime, skills)
+            from backend.core.household.native_artifacts import install_artifacts
+            install_artifacts(runtime, skills)
         runtime.interactions.start()
     world_thread.start()
     logger.info("World thread started — Living World is active")

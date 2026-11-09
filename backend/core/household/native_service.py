@@ -301,6 +301,58 @@ class NativeInteractions:
             "history": [], "invitation_id": invitation["id"]})
         self.enqueue_contact(actor, data["conversation_id"], {"id": trigger["id"], **trigger["data"]}, lineage)
 
+    def submit_world(self, actor, scheduled_at):
+        self.registry.resolve(actor)
+        identity, exchange, grant_id = uid("world-work"), uid("world-exchange"), uid("grant")
+        with self.store.transaction():
+            self.model.broker.open_exchange(exchange, "autonomy")
+            self.store.put("native_world_exchange", exchange, {"sponsor_id": actor, "work_id": identity, "scheduled_at": scheduled_at})
+            grant = {"id": grant_id, "kind": "world", "resident_id": actor, "exchange_id": exchange,
+                     "conversation_id": None, "origin": "autonomy", "first_response": False,
+                     "status": "running", "work_id": identity}
+            self.store.put("native_grant", grant_id, grant)
+            self.store.put("native_work", identity, {"request_id": identity, "conversation_id": None,
+                "resident_id": actor, "exchange_id": exchange, "status": "queued", "kind": "world",
+                "cursor": 0, "events": [], "children": [], "responders": [], "payload": {},
+                "approval": None, "result": None, "grant_id": grant_id, "scheduled_at": scheduled_at})
+            self.store.event("world_tick_admitted", actor, {"work_id": identity, "exchange_id": exchange, "scheduled_at": scheduled_at})
+        self.tasks[identity] = asyncio.create_task(self._run(identity))
+        return self.public(self.get(identity))
+
+    async def _run_world(self, identity):
+        data = self.get(identity)["data"]
+        if data["status"] != "queued":
+            return
+        actor, grant_id = data["resident_id"], data["grant_id"]
+        self._update(identity, status="running")
+        try:
+            child = await self.hosts[actor].json("POST", "/_native/respond", {
+                "grant": {"id": grant_id, **self.grant(grant_id, actor)}, "snapshot": {}, "request_id": grant_id, "payload": {}})
+            self._update(identity, children=[{"resident_id": actor, "work_id": child["work_id"], "grant_id": grant_id}])
+            cursor = 0
+            while self.get(identity)["data"]["status"] not in TERMINAL:
+                result = await self.hosts[actor].json("GET", f"/_native/work/{child['work_id']}?after={cursor}")
+                for event in result["events"]:
+                    if event.get("type") not in {"accepted", "message", "work_ended"}:
+                        self.emit(identity, {**event, "resident_id": actor, "grant_id": grant_id})
+                cursor = result["cursor"]
+                current = result["work"]
+                if current["status"] in TERMINAL:
+                    self.store.put("native_grant", grant_id, {**self.grant(grant_id, actor), "status": current["status"]})
+                    self._update(identity, status=current["status"], result=current.get("result"))
+                    self.emit(identity, {"type": "work_ended", "status": current["status"]})
+                    ready = await self.hosts[actor].json("GET", "/_native/ready")
+                    if not ready.get("pending"):
+                        self.model.broker.set_available(actor, ready.get("due", True))
+                    return
+                await asyncio.sleep(.08)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if self.get(identity)["data"]["status"] not in TERMINAL:
+                self.stop(identity)
+                self._update(identity, status="failed", status_detail=str(exc)[:500])
+
     async def _invitation_decision(self, identity, offer):
         data = offer["data"]
         actor = data["recipient"]
@@ -352,6 +404,8 @@ class NativeInteractions:
             raise RuntimeError("Invitation decision execution failed")
 
     async def _run(self, identity):
+        if self.get(identity)["data"]["kind"] == "world":
+            return await self._run_world(identity)
         if self.get(identity)["data"]["status"] != "queued":
             return
         self._update(identity, status="running")
@@ -458,8 +512,8 @@ class NativeInteractions:
         grant_id, local = body["grant_id"], body["local_message"]
         def apply():
             grant = self.grant(grant_id, actor)
-            if grant.get("kind") == "invitation":
-                raise AccessDenied("An invitation decision cannot publish into an unjoined conversation")
+            if grant.get("kind") in {"invitation", "world"}:
+                raise AccessDenied("Use contact to publish an explicit message from this activation")
             execution = self.store.get("native_grant_execution", grant_id)
             if not execution:
                 raise AccessDenied("No model execution was admitted for this response")

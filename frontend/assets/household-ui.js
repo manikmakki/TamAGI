@@ -193,20 +193,35 @@
     const state = await request('/api/household'); colors = state.preferences?.colors || state.colors || colors;
     for (const update of state.residents || []) Object.assign(person(update.id) || {},update);
     if ($('household-unread')) $('household-unread').textContent = `Unread threads (${state.unread_count || 0})`;
+    if ($('household-for-you')) { $('household-for-you').textContent = `For you (${state.addressed_thread_count || 0})`; $('household-for-you').disabled = !state.addressed_thread_count; }
     paintWheel(); paintParticipants();
     for (const element of document.querySelectorAll('.msg[data-author-id]')) element.style.setProperty('--hh-speaker-color',color(element.dataset.authorId));
     for (const element of document.querySelectorAll('.hh-mention[data-actor-id]')) element.style.setProperty('--hh-mention-color',color(element.dataset.actorId));
+    await refreshWorld();
     return state;
+  }
+  async function refreshWorld() {
+    const panel=$('household-world-status');if(!panel)return;
+    const state=await request('/api/household/world');panel.replaceChildren(node('h3','Household World Thread'));
+    panel.append(node('p',state.enabled?'Scheduled opportunities are running.':'Scheduled opportunities are paused.'));
+    if(state.enabled&&state.next_at)panel.append(node('p','Next opportunity: '+new Date(state.next_at*1000).toLocaleString(undefined,{timeZone:state.timezone})+' ('+state.timezone+')'));
+    if(state.last_resident_id)panel.append(node('p','Last opportunity: '+label(state.last_resident_id)));
+    for(const work of state.active||[]){const row=node('p',label(work.resident_id)+' is taking an autonomous turn. '),stop=node('button','Stop');stop.type='button';stop.onclick=async()=>{try{await request('/api/household/world/'+encodeURIComponent(work.work_id)+'/stop',{method:'POST'});await refreshWorld();}catch(error){notice(error.message);}};row.append(stop);panel.append(row);}
   }
   function dialog(id,title) {
     const element = node('dialog',undefined,'shell-dialog hh-dialog'); element.id = id;
     const close = node('button','×','dialog-close'); close.type = 'button'; close.setAttribute('aria-label','Close'); close.onclick = () => element.close();
     element.append(close,node('h2',title)); document.body.append(element); return element;
   }
-  async function showUnread() {
+  async function showUnread(addressedOnly=false) {
     const result = await request('/api/household/threads?unread=1'), list = $('household-unread-list'); list.replaceChildren();
-    for (const thread of result.threads || []) { const button = node('button',thread.title || 'Conversation','hh-thread-choice'); button.type='button'; button.append(node('small',(thread.participants||[]).map(label).join(' · '))); button.onclick=async()=>{try{$('household-unread-dialog').close();if(!thread.participants?.includes(selected)){const entry=residents.find(item=>thread.participants?.includes(item.id));if(entry)await selectResident(entry.id,{openThread:false});}await window.openConversation(thread.id);}catch(error){notice(error.message);}};list.append(button); }
+    for (const thread of result.threads || []) { if(addressedOnly&&!thread.addressed_count)continue;const button = node('button',thread.title || 'Conversation','hh-thread-choice'); button.type='button'; button.append(node('small',(thread.participants||[]).map(label).join(' · ')));if(thread.addressed_count)button.append(node('strong',thread.mention_count?'@'+operator.name+' mentioned':'For you','hh-attention')); button.onclick=async()=>{try{$('household-unread-dialog').close();if(!thread.participants?.includes(selected)){const entry=residents.find(item=>thread.participants?.includes(item.id));if(entry)await selectResident(entry.id,{openThread:false});}await window.openConversation(thread.id);}catch(error){notice(error.message);}};list.append(button); }
     if (!list.childElementCount) list.append(node('p','You are all caught up.')); $('household-unread-dialog').showModal();
+  }
+  async function showLibrary() {
+    const result=await request('/api/household/artifacts'),list=$('household-library-list');list.replaceChildren();
+    for(const artifact of result.artifacts||[]){const section=node('section');section.append(node('h3',artifact.title),node('small',`v${artifact.version} · Published by ${label(artifact.author_id)}`),node('p',artifact.description||''));for(const path of Object.keys(artifact.files||{})){const link=node('a',path);link.href='/api/household/artifacts/'+encodeURIComponent(artifact.artifact_id)+'/versions/'+artifact.version+'/files/'+path.split('/').map(encodeURIComponent).join('/');link.download=path.split('/').pop();section.append(link,document.createElement('br'));}list.append(section);}
+    if(!list.childElementCount)list.append(node('p','No household-public artifacts have been published yet.'));$('household-library-dialog').showModal();
   }
   function showParticipants() {
     const list = $('household-participant-options'); list.replaceChildren();
@@ -215,14 +230,16 @@
   }
   function mount() {
     document.body.dataset.household='true';
+    const worldStatus=node('section',undefined,'card');worldStatus.id='household-world-status';$('view-journal')?.querySelector('.page-heading')?.after(worldStatus);
     const wheelButton=node('button','','hh-wheel-toggle');wheelButton.type='button';wheelButton.id='household-character-wheel';wheelButton.setAttribute('aria-haspopup','dialog');wheelButton.setAttribute('aria-label','Choose a resident');$('a-name').before(wheelButton);
     const wheel=dialog('household-wheel-dialog','Choose a resident');wheel.classList.add('hh-wheel-dialog');const options=node('div',undefined,'hh-wheel-options');options.id='household-wheel-options';wheel.append(options);wheelButton.onclick=()=>{paintWheel();wheel.showModal();options.querySelector('[aria-pressed=true]')?.focus();};
     const toolbar=node('div',undefined,'hh-chat-toolbar');
-    for(const[id,text,action]of[['household-new-thread','＋ New Thread',()=>window.newConversation()],['household-unread','Unread threads (0)',()=>showUnread().catch(error=>notice(error.message))],['household-participants','Participants',showParticipants]]){const button=node('button',text);button.id=id;button.type='button';button.onclick=action;toolbar.append(button);}
+    for(const[id,text,action]of[['household-new-thread','＋ New Thread',()=>window.newConversation()],['household-unread','Unread threads (0)',()=>showUnread().catch(error=>notice(error.message))],['household-for-you','For you (0)',()=>showUnread(true).catch(error=>notice(error.message))],['household-participants','Participants',showParticipants],['household-library','Shared library',()=>showLibrary().catch(error=>notice(error.message))]]){const button=node('button',text);button.id=id;button.type='button';button.onclick=action;if(id==='household-for-you'){button.disabled=true;button.classList.add('hh-attention');button.setAttribute('aria-live','polite');}toolbar.append(button);}
     const strip=node('div',undefined,'hh-participant-strip');strip.id='household-participant-strip';$('chat-messages').before(toolbar,strip);
     const mentions=node('div',undefined,'hh-mention-list');mentions.id='household-mention-list';mentions.hidden=true;mentions.setAttribute('role','listbox');mentions.setAttribute('aria-label','Mention a participant');$('input').before(mentions);$('input').setAttribute('aria-autocomplete','list');$('input').setAttribute('aria-controls',mentions.id);$('input').setAttribute('aria-expanded','false');
     $('input').addEventListener('input',updateMentions);$('input').addEventListener('click',updateMentions);$('input').addEventListener('keydown',event=>{if(!choices.length||!['ArrowDown','ArrowUp','Enter','Tab','Escape'].includes(event.key))return;event.preventDefault();event.stopImmediatePropagation();if(event.key==='Escape')hideMentions();else if(event.key==='Enter'||event.key==='Tab')completeMention(choiceIndex);else{choiceIndex=(choiceIndex+(event.key==='ArrowDown'?1:-1)+choices.length)%choices.length;paintMentionChoices();}},true);
     const unread=dialog('household-unread-dialog','Unread conversations'), unreadList=node('div');unreadList.id='household-unread-list';unread.append(unreadList);
+    const library=dialog('household-library-dialog','Household-public artifacts'),libraryList=node('div');libraryList.id='household-library-list';library.append(node('p','Published versions are available to every resident. Importing a version makes a private copy; executable skills require separate activation.'),libraryList);
     const membership=dialog('household-participants-dialog','Conversation participants'), memberList=node('div');memberList.id='household-participant-options';membership.append(memberList);const text=node('p','Invited residents choose whether to join. Joining shares all earlier messages in this thread. Current participants choose whether to leave.','muted');text.id='household-membership-notice';membership.append(text);
     const save=node('button','Use these participants');save.type='button';save.onclick=async()=>{const ids=[...memberList.querySelectorAll('input:checked')].map(input=>input.value);if(!ids.length){notice('Choose at least one resident.');return;}save.disabled=true;try{if(convId){const id=convId,result=await request('/api/household/threads/'+encodeURIComponent(id)+'/participants',{method:'POST',body:JSON.stringify({participants:ids})});if(id===convId)await TamagiShell.refreshHistory();notice(result.notice||'Invitations sent. Residents choose whether to join.');}else{newParticipants.set(selected,ids);paintParticipants();}membership.close();hideMentions();}catch(error){notice(error.message);}finally{save.disabled=false;}};membership.append(save);
     const appearance=node('article',undefined,'card hh-colors');appearance.append(node('h2','Conversation colors'),node('p','Choose a color for each speaker. Names stay visible below every message.','muted'));const form=node('form');form.id='household-color-form';

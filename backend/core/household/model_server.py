@@ -208,8 +208,10 @@ class NativeModelServer:
                     raise AccessDenied("Helpers require a current sponsoring parent")
                 self.broker.register_companion(actor, resident)
             broker_id = "native:" + key
+            tick = self.store.get("native_world_exchange", exchange_id)
             self.broker.open_execution(broker_id, exchange_id, actor,
-                parent_id=parent["broker_execution_id"] if parent else None, commissioned=bool(parent))
+                parent_id=parent["broker_execution_id"] if parent else None, commissioned=bool(parent),
+                world_sponsor=tick["data"]["sponsor_id"] if tick and not parent else None)
             execution = self.broker.execution(broker_id)
             if grant and grant.get("kind") == "invitation":
                 execution["max_calls"] = min(execution["max_calls"], body["max_calls"], 4)

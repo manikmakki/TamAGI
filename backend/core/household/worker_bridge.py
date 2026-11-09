@@ -17,7 +17,7 @@ from urllib.parse import quote
 
 import httpx
 
-from .contracts import AccessDenied, Conflict, ProtocolError, WorkerBinding
+from .contracts import AccessDenied, Conflict, NotFound, ProtocolError, WorkerBinding
 from .store import uid
 
 
@@ -102,13 +102,14 @@ class NativeWorkerBridge:
     def _request(self, method, path, **kwargs):
         response = self.client.request(method, path, **kwargs)
         if response.status_code >= 400:
-            if response.status_code == 400:
+            if response.status_code in {400, 404, 409}:
                 try:
                     detail = response.json().get("detail")
                 except (ValueError, AttributeError):
                     detail = None
                 if isinstance(detail, str) and 0 < len(detail) <= 1024:
-                    raise ProtocolError("Household request invalid: " + detail)
+                    error = {400: ProtocolError, 404: NotFound, 409: Conflict}[response.status_code]
+                    raise error("Household request: " + detail)
             raise AccessDenied("Household coordinator rejected this resident operation")
         return response.json()
 
@@ -124,6 +125,11 @@ class NativeWorkerBridge:
             raise ProtocolError("Unknown household exchange origin")
         if not isinstance(grant.get("exchange_id"), str) or not grant["exchange_id"]:
             raise ProtocolError("Admission needs its canonical exchange")
+        if grant.get("kind") == "world":
+            if snapshot or grant.get("conversation_id") is not None or grant["origin"] != "autonomy":
+                raise ProtocolError("World opportunities carry no conversation or operator input")
+            grant["input_author"] = self.runtime.actor_id
+            return grant, {}
         if grant.get("kind") == "invitation":
             card = grant.get("invitation")
             if snapshot or not isinstance(card, dict) or card.get("participant_id") != self.runtime.actor_id or card.get("id") != grant.get("invitation_id"):
@@ -189,6 +195,10 @@ class NativeWorkerBridge:
         return conversation
 
     def input_record(self, grant):
+        if grant.get("kind") == "world":
+            return {"id": "world-event:" + grant["id"], "role": "system",
+                    "content": "Scheduled autonomous opportunity; no new human task.",
+                    "metadata": {"world_event": True, "author_id": self.runtime.actor_id}}
         if grant.get("kind") == "invitation":
             return {"id": "invitation-event:" + grant["id"], "role": "user", "content": json.dumps(grant["invitation"]),
                     "metadata": {"invitation_event": True, "author_id": grant["input_author"]}}

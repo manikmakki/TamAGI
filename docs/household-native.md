@@ -20,6 +20,11 @@ for the test. The launcher copies its `llm` section only; it does not copy a liv
 resident's persona, memories, integrations or histories. It prints a new login
 password and the newly created household directory. Automatic resident activity,
 automatic deployment and index projection are disabled in newly founded workers.
+The household coordinator can now own the scheduled World Thread; add
+`--world-thread` to explicitly enable its single clock while worker timers stay
+off. The flag persists for retained households. See the
+[World Thread guide](household-world-thread.md) for rotation, sponsorship, operator
+unread indicators and public artifact publication/import.
 
 ```bash
 cd /tmp/tamagi-adr-0019
@@ -126,13 +131,14 @@ This starts disposable native workers on port 18846 and Chromium debugging on
 output directory and removes its temporary password. It uses no real provider.
 
 The development candidate still needs production resident adoption/history
-migration, coordinated household backup/restore and release activation, verified
-shared artifact bytes, companion group-activation wiring, PWA push delivery and
+migration, coordinated household backup/restore and release activation,
+companion group-activation wiring, PWA push delivery and
 device qualification. Notification intent and unread state already persist;
 device push is not yet dispatched. Personal restore/deployment endpoints fail
 closed instead of creating a partial household checkpoint. Background autonomy
-stays disabled for the interactive test; sustained household behavior and Ember's
-burn-in are separate qualifications.
+is opt-in through the household clock; sustained household behavior and Ember's
+burn-in are separate qualifications. Explicit public artifact versions and exact
+private imports now retain real bytes; they do not replace coordinated recovery.
 
 Do not replace production or enroll Ember on the strength of these development
 checks alone. See ADR-0019 for the full acceptance requirements.

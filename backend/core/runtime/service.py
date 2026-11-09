@@ -384,9 +384,9 @@ class RuntimeService:
             ):
                 self.wake("evaluation_completed")
 
-    def due(self, *, ignore_decompression=False, ignore_error_backoff=False):
+    def due(self, *, ignore_decompression=False, ignore_error_backoff=False, exclude_work_id=None):
         self.reconcile_evaluation_wait()
-        if getattr(self, "interactions", None) and self.interactions.has_pending():
+        if getattr(self, "interactions", None) and self.interactions.has_pending(**({"exclude_work_id": exclude_work_id} if exclude_work_id else {})):
             return False
         state = self.activity_state()
         now = self.store.clock()
@@ -558,6 +558,7 @@ class RuntimeService:
                 "resident_id": self.actor_id,
                 "workspace_scope": "Private to this resident. Another resident's file or tool can exist without appearing here. Share explicitly; do not inspect their private directory.",
                 "world_scope": "world_action reads and commits the durable shared simulation. Simulated describes the world, not an unsaved or imagined operation.",
+                "shared_artifacts": "Use household_artifact to publish explicit household-public file versions, discover others' publications and import exact bytes. Collaboration or a chat claim alone does not share a private file. Importing files does not activate executable skills.",
                 "evidence": "A successful receipt records the operation it reports. Graph queries can be partial; use a specific read-back before concluding a saved creation disappeared. Conversation claims alone do not verify a file or action.",
             }
         return (

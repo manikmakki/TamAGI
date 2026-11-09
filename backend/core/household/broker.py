@@ -145,7 +145,7 @@ class InferenceBroker:
             })
 
     def open_execution(
-        self, execution_id, exchange_id, actor_id, parent_id=None, commissioned=False,
+        self, execution_id, exchange_id, actor_id, parent_id=None, commissioned=False, world_sponsor=None,
     ):
         self._id(execution_id)
         if type(commissioned) is not bool:
@@ -157,6 +157,10 @@ class InferenceBroker:
             if exchange["status"] != "running":
                 raise BudgetExhausted("Exchange is closed")
             parent = self._get("execution", parent_id) if parent_id else None
+            if world_sponsor is not None:
+                if parent or actor["role"] != "resident" or exchange["origin"] != "autonomy":
+                    raise AccessDenied("World sponsorship requires a full resident autonomous root")
+                self._get("account", world_sponsor)
             if commissioned and parent is None:
                 raise ValueError("Commissioned work requires a sponsoring parent")
             if parent:
@@ -169,9 +173,11 @@ class InferenceBroker:
                 "exchange_id": exchange_id, "actor_id": actor_id,
                 "parent_id": parent_id, "root_id": exchange_id,
                 "commissioned": commissioned,
-                "sponsor_id": parent["sponsor_id"] if commissioned else actor["owner"],
+                "sponsor_id": parent["sponsor_id"] if commissioned else world_sponsor or actor["owner"],
                 "helper": bool(parent) or actor["role"] == "companion",
             }
+            if world_sponsor or parent and parent.get("world_sponsored"):
+                definition["world_sponsored"] = True
             old = self.store.get("broker_execution", execution_id)
             if old:
                 if any(old["data"].get(k) != v for k, v in definition.items()):
@@ -325,7 +331,7 @@ class InferenceBroker:
         # Sponsorship pays for cognition; it does not override the cognizing
         # resident's availability or a companion owner's wake eligibility.
         actor = self._get("actor", execution["actor_id"])
-        return (self._get("account", execution["sponsor_id"])["available"]
+        return ((execution.get("world_sponsored", False) or self._get("account", execution["sponsor_id"])["available"])
                 and self._get("account", actor["owner"])["available"])
 
     def _sync_runnable(self):

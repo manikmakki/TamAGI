@@ -456,6 +456,21 @@ class BrokerTests(unittest.TestCase):
         with self.assertRaises(BudgetExhausted):
             self.request(a)
 
+    def test_world_sponsored_full_resident_does_not_consume_recipient_service_or_helper_limit(self):
+        execution = self.execution('b', exchange='world-discussion', world_sponsor='a')
+        self.broker.set_available('a', False)
+        self.call(execution, 7)
+        accounts = self.broker.state()['accounts']
+        self.assertEqual(accounts['a']['measured_service_seconds'], 7)
+        self.assertEqual(accounts['b']['measured_service_seconds'], 0)
+        self.assertFalse(self.broker.execution(execution)['helper'])
+        self.assertEqual(self.broker.execution(execution)['max_calls'], 128)
+        self.broker.set_available('b', False)
+        self.request(execution)
+        self.assertIsNone(self.broker.dispatch(), 'Sponsorship must not override the recipient\'s own rest')
+        with self.assertRaises(AccessDenied):
+            self.execution('b', exchange='operator-discussion', origin='user', world_sponsor='a')
+
     def test_participant_cannot_complete_before_queued_or_running_generation_drains(self):
         execution = self.execution()
         pending = self.request(execution)

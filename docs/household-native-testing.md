@@ -25,7 +25,8 @@ retains the clean-revision 279-test run and actual Chromium checks for these fix
 | NATIVE-004 | Images do not appear to attach or reach vision correctly in a group thread | Group attachments/vision | Transport/storage fixes in branch; real-model vision retest pending |
 | NATIVE-005 | Residents describe apparently successful creations/world changes as imagined or nonpersistent | Grounding and persistence investigation | Retained creations verified; query/context fixes in branch; behavioral retest pending |
 | NATIVE-006 | Saved reasoning loses bubble/Markdown formatting and live reasoning accumulates below multiple residents' messages | Reasoning presentation and progress lifecycle | Fixed in branch; operator retest pending |
-| NATIVE-007 | A resident asked to invite someone into the current conversation creates a separate private contact thread | Resident invitation tooling | Unified contact flow implemented; operator retest pending |
+| NATIVE-007 | A resident asked to invite someone into the current conversation creates a separate private contact thread | Resident invitation tooling | Operator confirmed successful Cedar-to-Willow invitation and visible pending state on 2026-11-09, after NATIVE-008 fix |
+| NATIVE-008 | Redundant invitee mentions reject an otherwise valid invitation and hide the repair guidance | Invitation argument handling | Fixed; operator confirmed the real-model retry worked on 2026-11-09 |
 
 ## NATIVE-001 — Open in chat and selected resident disagree
 

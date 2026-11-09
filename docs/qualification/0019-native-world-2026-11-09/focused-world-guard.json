@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "tests": 9,
+  "seconds": 25.264,
+  "guarded_python_processes": 16,
+  "denied_network_operations": 0,
+  "real_model_used": false,
+  "live_instance_used": false
+}

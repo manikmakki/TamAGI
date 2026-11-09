@@ -9,7 +9,7 @@ class Page{
  constructor(socket){this.socket=socket;this.next=0;this.pending=new Map();socket.onmessage=event=>{const value=JSON.parse(event.data);if(value.id){const p=this.pending.get(value.id);if(p){this.pending.delete(value.id);clearTimeout(p.timer);value.error?p.reject(new Error(JSON.stringify(value.error))):p.resolve(value.result);}}else if(value.method==='Runtime.exceptionThrown')errors.push(value.params.exceptionDetails.exception?.description||value.params.exceptionDetails.text);};}
  send(method,params={}){return new Promise((resolve,reject)=>{const id=++this.next,timer=setTimeout(()=>reject(new Error('CDP timeout '+method)),20000);this.pending.set(id,{resolve,reject,timer});this.socket.send(JSON.stringify({id,method,params}));});}
  async evaluate(expression){const value=await this.send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(value.exceptionDetails)throw new Error(value.exceptionDetails.exception?.description||value.exceptionDetails.text);return value.result?.value;}
- async until(expression,text){for(let n=0;n<250;n++){try{if(await this.evaluate(expression))return;}catch{}await sleep(70);}throw new Error(text);}
+ async until(expression,text,attempts=250){for(let n=0;n<attempts;n++){try{if(await this.evaluate(expression))return;}catch{}await sleep(70);}throw new Error(text);}
  async shot(name){const value=await this.send('Page.captureScreenshot',{format:'png'});await writeFile(root+'/'+name+'.png',Buffer.from(value.data,'base64'));}
 }
 let page;
@@ -116,5 +116,28 @@ try{
  assert.equal(accepted.messages.filter(m=>m.role==='user').length,1,'decision creates no fake human input');
  assert.equal(accepted.messages.at(-1).metadata.author_id,first);
  assert.deepEqual(errors,[]);checks.push('resident contact invite shows pending status, explicit acceptance and a reply in the same thread without a fork or synthetic human message');
- const report={passed:true,actual_worker_processes:true,external_provider:false,checks,uncaught_errors:errors,limits:['Injected deterministic provider; real upstream model quality and background autonomy are separate checks.'],artifacts:root};await writeFile(root+'/report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
-}catch(error){if(page)await page.shot('failure').catch(()=>{});console.error(JSON.stringify({passed:false,message:error.stack,errors,artifacts:root}));process.exitCode=1;}finally{page?.socket.close();browser.kill('SIGTERM');await sleep(250);await rm(profile,{recursive:true,force:true});}
+ assert.equal(await page.evaluate(`fetch('/api/fixture/prepare-world',{method:'POST'}).then(r=>r.status)`),200);
+ await page.evaluate(`TamagiShell.navigate('/journal')`);
+ await page.until(`document.getElementById('household-world-status').textContent.includes('running')`,'household clock appears in Journal');
+ await page.evaluate(`document.getElementById('dream-trigger-btn').click()`);
+ await page.until(`fetch('/api/household/world').then(r=>r.json()).then(s=>!!s.last_work_id&&!s.active.length)`,'Journal Tick Now runs a real autonomous worker turn',700);
+ await page.shot('native-world');
+ await page.evaluate(`TamagiShell.navigate('/')`);
+ await page.until(`!document.getElementById('household-for-you').disabled`,'autonomous operator ping is visible without opening its thread');
+ await page.evaluate(`document.getElementById('household-for-you').click()`);
+ await page.until(`document.getElementById('household-unread-dialog').open&&document.getElementById('household-unread-list').textContent.includes('World Thread browser ping')`,'For you links the autonomous thread');
+ assert.equal(await page.evaluate(`document.getElementById('household-unread-list').textContent.includes('@Tester mentioned')`),true);
+ await page.shot('native-operator-ping');
+ await page.evaluate(`[...document.querySelectorAll('#household-unread-list button')].find(b=>b.textContent.includes('World Thread browser ping')).click()`);
+ await page.until(`document.querySelector('.msg .bubble')?.textContent.includes('something to share')`,'operator opens the autonomous thread');
+ const worldThread=await page.evaluate(`fetch('/api/conversations/'+convId).then(r=>r.json())`);
+ assert.equal(worldThread.messages.length,1);assert.equal(worldThread.messages[0].metadata.author_id,first);
+ assert.equal(worldThread.messages[0].role,'assistant');
+ await page.evaluate(`document.getElementById('household-library').click()`);
+ await page.until(`document.getElementById('household-library-dialog').open&&document.getElementById('household-library-list').textContent.includes('A public browser artifact')`,'published bytes appear in the public library');
+ assert.equal(await page.evaluate(`fetch(document.querySelector('#household-library-list a').href).then(r=>r.text())`),'Published by a real native worker.\n');
+ assert.equal(await page.evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);
+ await page.shot('native-shared-library');
+ assert.deepEqual(errors,[]);checks.push('Journal clock and Tick Now use the coordinator and actual autonomous worker','autonomous operator mention appears in For you and opens one attributed thread without synthetic human input','public library displays an explicitly published immutable file and serves exact bytes at mobile width');
+ const report={passed:true,actual_worker_processes:true,external_provider:false,checks,uncaught_errors:errors,limits:['Injected deterministic provider; sustained autonomous behavior and real upstream model quality remain separate checks.'],artifacts:root};await writeFile(root+'/report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+}catch(error){if(page){await page.shot('failure').catch(()=>{});try{await writeFile(root+'/world-failure.json',JSON.stringify(await page.evaluate(`fetch('/api/fixture/world-evidence').then(r=>r.json())`),null,2));}catch{}}console.error(JSON.stringify({passed:false,message:error.stack,errors,artifacts:root}));process.exitCode=1;}finally{page?.socket.close();browser.kill('SIGTERM');await sleep(250);await rm(profile,{recursive:true,force:true});}

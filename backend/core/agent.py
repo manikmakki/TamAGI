@@ -646,7 +646,7 @@ class TamAGIAgent:
         self._mark_conv_pending(conv.id)
         if _admitted_message:
             self._save_conversation(conv)
-        if self._world_thread:
+        if self._world_thread and (not household or human_input):
             # Refresh the pause on every active turn, not only the first one.
             self._world_thread.pause_for_conversation()
 

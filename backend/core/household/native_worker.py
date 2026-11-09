@@ -91,7 +91,8 @@ def configure_app(app):
         return {"resident_id": agent.runtime.actor_id, "ready": True,
                 "pending": agent.runtime.interactions.has_pending(),
                 "activity": agent.runtime.activity_state(),
-                "due": agent.runtime.due(ignore_decompression=True)}
+                "due": agent.runtime.due(ignore_decompression=True),
+                "world_due": agent.runtime.due() and not getattr(agent.identity, "needs_onboarding", False)}
 
     @app.post("/_native/wake")
     async def shared_event(body: dict):
