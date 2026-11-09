@@ -1,0 +1,6 @@
+{
+  "guarded_python_processes": 3,
+  "denied_network_operations": 0,
+  "real_model_calls": 0,
+  "active_restored_workers": 0
+}

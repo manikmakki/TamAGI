@@ -478,7 +478,7 @@ def create_household_app(config, *, provider=None, registry=None):
         if path == "api/world/tick" and request.method == "POST":
             return JSONResponse(await scheduler.opportunity(manual=True), status_code=202)
         if path.startswith(("api/backup", "api/restore", "api/deploy", "api/transfer")):
-            raise HTTPException(409, "Use household recovery; individual resident replacement is unavailable in this candidate")
+            raise HTTPException(409, "Browser recovery and deployment are unavailable; resident recovery uses the offline operator command")
         if path == "api/config" and request.method != "GET":
             raise HTTPException(409, "Household provider configuration belongs to the coordinator")
         headers = {key: value for key, value in request.headers.items()

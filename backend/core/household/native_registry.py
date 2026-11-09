@@ -109,8 +109,6 @@ class NativeRegistry:
         self.descriptors = {d["resident_id"]: d for d in self.manifest["residents"]}
         if not self.descriptors or len(self.descriptors) != len(self.manifest["residents"]):
             raise Conflict("Resident identities must be unique")
-        for descriptor in self.descriptors.values():
-            self.validate(descriptor)
         lock_path = self.root / "coordinator.lock"
         if lock_path.is_symlink():
             raise AccessDenied("Coordinator lock cannot be a symlink")
@@ -118,6 +116,10 @@ class NativeRegistry:
         try:
             fcntl.flock(self._lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.store = HouseholdStore(self.root / "household.sqlite3")
+            from .resident_recovery import reconcile_transition
+            reconcile_transition(self)
+            for descriptor in self.descriptors.values():
+                self.validate(descriptor)
             with self.store.transaction():
                 old = self.store.meta("household_id")
                 if old and old != self.household_id:

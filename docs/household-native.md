@@ -138,8 +138,10 @@ The development candidate still needs production resident adoption/history
 migration, coordinated household backup/restore and release activation,
 companion group-activation wiring, PWA push delivery and
 device qualification. Notification intent and unread state already persist;
-device push is not yet dispatched. Personal restore/deployment endpoints fail
-closed instead of creating a partial household checkpoint. Background autonomy
+device push is not yet dispatched. Browser restore/deployment endpoints fail
+closed. [Individual resident recovery](resident-recovery.md) now has an offline
+operator command; it does not replace coordinated household recovery or qualify
+production adoption. Background autonomy
 is opt-in through the household clock; sustained household behavior and Ember's
 burn-in are separate qualifications. Explicit public artifact versions and exact
 private imports now retain real bytes; they do not replace coordinated recovery.

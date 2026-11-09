@@ -1,0 +1,190 @@
+{
+  "passed": true,
+  "source": "encrypted checkpoints of the actual Cedar/Willow/River test household",
+  "destructive_target": "inactive disposable migrations only",
+  "residents": [
+    {
+      "name": "Cedar",
+      "resident_id": "resident-aca3f63e429f423fb441088a7f540478",
+      "passed": true,
+      "migration": true,
+      "private_regression_recovery": true,
+      "complete_private_data_loss_recovery": true,
+      "verified_files": 336,
+      "preserved_records": {
+        "actor": {
+          "count": 1,
+          "sha256": "0d60bdc59f30b3a9996a0c5a0d1d7dce7bdec3014ab5f3fc3d456e7123e43101"
+        },
+        "identity": {
+          "count": 3,
+          "sha256": "fc22a8c15c5fb69b1177007a48ec1b7cf12891d0114b22072901032bbff22dde"
+        },
+        "memory": {
+          "count": 38,
+          "sha256": "04f4d4d5ab0eff9aabae92f14c7be9380cb158157b8236737d98c0fa1ba69e5e"
+        },
+        "conversation": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "household_projection": {
+          "count": 5,
+          "sha256": "91811ae9bec3451780d841f5f818cbd22e5ba51e1633dd9a6748a20bd45f5ddb"
+        },
+        "growth_recognition": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "growth_stage": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "artifact": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "graph": {
+          "count": 1,
+          "sha256": "d18f4ff75ffc58d5831b31703274db8049b26441f8afc9debd4400b5198c736c"
+        },
+        "pursuit": {
+          "count": 2,
+          "sha256": "0659efa78b914cb857a46bb6300e4b7d851b417250995a5f3d5fb1fd6353cce4"
+        },
+        "personality": {
+          "count": 1,
+          "sha256": "c3f74eb9d3fab358a40598bf78f8219f475a2b026dd2c0279a4a7ce2c9215987"
+        },
+        "companion": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "active_workers_started": 0,
+      "real_model_calls": 0
+    },
+    {
+      "name": "Willow",
+      "resident_id": "resident-7c2cdaafeb82499c8532f0305f044e9d",
+      "passed": true,
+      "migration": true,
+      "private_regression_recovery": true,
+      "complete_private_data_loss_recovery": true,
+      "verified_files": 337,
+      "preserved_records": {
+        "actor": {
+          "count": 1,
+          "sha256": "bb82b8addb45cb4b59fc196bab9d6e1094ede0d9cd512ed401074b2c21413c4d"
+        },
+        "identity": {
+          "count": 3,
+          "sha256": "0cfa0e82b5ae48c98c69d0c314c5282bbaf7c4b3fc119463ae148c5aedcdaed2"
+        },
+        "memory": {
+          "count": 36,
+          "sha256": "16f4f3a71bfd6367959d82aaa1362dac4ba45c67eb79033f9dd12dd862d35151"
+        },
+        "conversation": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "household_projection": {
+          "count": 6,
+          "sha256": "06717dd7627992b1c2313c49cdca4c8a07c7c45571cd897a01698cb8aa1e0355"
+        },
+        "growth_recognition": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "growth_stage": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "artifact": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "graph": {
+          "count": 1,
+          "sha256": "d9c07559a73b04bb7c866e199be2f06ef2ce7d007e865c78b78f829ecfbb40e9"
+        },
+        "pursuit": {
+          "count": 2,
+          "sha256": "14409946da5b455bcbcb50fe87fae6f0fbf579858a2da2f839cab35573d251d2"
+        },
+        "personality": {
+          "count": 1,
+          "sha256": "e74f17c3a0c42dc1b7bbd3d51bcc6d035b160ec2b535ace4675ad24421d5398c"
+        },
+        "companion": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "active_workers_started": 0,
+      "real_model_calls": 0
+    },
+    {
+      "name": "River",
+      "resident_id": "resident-9c375094845347ec8f7f48ccc0e4a766",
+      "passed": true,
+      "migration": true,
+      "private_regression_recovery": true,
+      "complete_private_data_loss_recovery": true,
+      "verified_files": 334,
+      "preserved_records": {
+        "actor": {
+          "count": 1,
+          "sha256": "0361114fe77882c5f606e62cc5dea7a57971d662dadc497181667a0254118d42"
+        },
+        "identity": {
+          "count": 3,
+          "sha256": "46c4d7921f17d74a4583dbe52c47694d79ecd16b3ce3df4ee2ce7b79a29bc6e7"
+        },
+        "memory": {
+          "count": 17,
+          "sha256": "0919ef810ea5eb56db6a0b43a0067a8ad88cff4da0fbb5f8077b1e771b375f7d"
+        },
+        "conversation": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "household_projection": {
+          "count": 2,
+          "sha256": "dd4e2b21ac7fd4f187b6a34adc9f5628a33ace13e07347137e2088030ec74e9b"
+        },
+        "growth_recognition": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "growth_stage": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "artifact": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "graph": {
+          "count": 1,
+          "sha256": "d3c16ed7595e22717d8e9e7dd6da0009c9a85748cb7603cedc88ae38b1dc767a"
+        },
+        "pursuit": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "personality": {
+          "count": 1,
+          "sha256": "898a7e7e1f5f3fb0ce835fa6f163d3d05296b1cbec2bf8bee8d061d06a7bb81f"
+        },
+        "companion": {
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "active_workers_started": 0,
+      "real_model_calls": 0
+    }
+  ]
+}

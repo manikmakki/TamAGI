@@ -81,6 +81,20 @@ def sanitized(value):
 class PortableBackup:
     FORMAT = "tamagi.portable.v1"
 
+    def export_sources(self):
+        """Archive inputs; callers must hold the applicable checkpoint boundary."""
+        return [
+            ("workspace", self.runtime.workspace, None),
+            ("source", getattr(self.runtime, "release_source_root", self.runtime.source_root),
+             {"backend", "frontend", "scripts", "tests", "docs", "pyproject.toml",
+              "requirements.txt", "requirements.lock", "Dockerfile", "docker-compose.yml",
+              "tamagi.service", "tamagi-platform.service", "LICENSE.md"}),
+            ("data", self.runtime.store.path.parent / "data", {"sprites", "sprite_config.json"}),
+        ]
+
+    def describe_manifest(self, manifest):
+        return manifest
+
     def __init__(self, runtime, job_root=None, max_bytes=10 * 1024**3):
         self.runtime = runtime
         self.root = Path(job_root or runtime.store.path.parent / "transfer").resolve()
@@ -216,35 +230,7 @@ class PortableBackup:
             self.runtime.store.checkpoint(stage / "runtime.sqlite3")
             files = {"runtime.sqlite3": stage / "runtime.sqlite3"}
             omissions = []
-            sources = [
-                ("workspace", self.runtime.workspace, None),
-                (
-                    "source",
-                    getattr(
-                        self.runtime, "release_source_root", self.runtime.source_root
-                    ),
-                    {
-                        "backend",
-                        "frontend",
-                        "scripts",
-                        "tests",
-                        "docs",
-                        "pyproject.toml",
-                        "requirements.txt",
-                        "requirements.lock",
-                        "Dockerfile",
-                        "docker-compose.yml",
-                        "tamagi.service",
-                        "tamagi-platform.service",
-                        "LICENSE.md",
-                    },
-                ),
-                (
-                    "data",
-                    self.runtime.store.path.parent / "data",
-                    {"sprites", "sprite_config.json"},
-                ),
-            ]
+            sources = self.export_sources()
             for prefix, base, allowed_roots in sources:
                 if not base.exists():
                     continue
@@ -306,6 +292,7 @@ class PortableBackup:
                 ],
                 "note": "Artifacts and conversation text may contain embedded secrets; this is not a complete machine image.",
             }
+            manifest = self.describe_manifest(manifest)
             # MCP environments are integration configuration; carry secret names, not raw environment values.
             for server in manifest["configuration"].get("mcp", {}).get("servers", []):
                 server["env"] = {
@@ -414,7 +401,7 @@ class PortableBackup:
                         target.chmod(0o600)
             manifest = json.loads((extracted / "manifest.json").read_text())
             if (
-                manifest.get("format") != self.FORMAT
+                manifest.get("format") not in getattr(self, "FORMATS", {self.FORMAT})
                 or manifest.get("schema") != self.runtime.store.SCHEMA
             ):
                 raise ArchiveError("Unsupported archive format or schema")

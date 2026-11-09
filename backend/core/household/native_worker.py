@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import fcntl
 import hmac
 import json
 import os
@@ -156,6 +157,15 @@ def main():
     token = os.environ.get("TAMAGI_NATIVE_TOKEN", "")
     if len(token) < 32:
         parser.error("Worker authentication token is missing")
+    lock_path = household / "ipc" / (binding.resident_id + ".lock")
+    if lock_path != lock_path.resolve() or lock_path.is_symlink():
+        parser.error("Worker lifetime lock must belong to this household")
+    worker_lock = lock_path.open("a")
+    try:
+        fcntl.flock(worker_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        worker_lock.close()
+        parser.error("This resident already has a live worker or recovery operation")
     os.environ["TAMAGI_CONFIG"] = str(arguments.config)
     from backend.config import load_config, set_config
 
@@ -168,7 +178,10 @@ def main():
     import uvicorn
 
     configure_app(app)
-    uvicorn.run(app, uds=str(socket), log_level="warning", access_log=False)
+    try:
+        uvicorn.run(app, uds=str(socket), log_level="warning", access_log=False)
+    finally:
+        worker_lock.close()
 
 
 if __name__ == "__main__":

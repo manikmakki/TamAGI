@@ -396,3 +396,27 @@ Both used fresh offline homes and injected providers, with no denied network
 operations or uncaught JavaScript errors. Companion detail responses also retain
 their captured resident context. The service-worker cache/version list was
 updated so installed clients can pick up the changed UI assets.
+
+## NATIVE-012 — Resident-first recovery and cold checkpoint rehearsal
+
+2026-11-09: the operator prioritized individual recovery after regression,
+private data loss and migration to a fresh installation. Shared-state and public
+artifact recovery follow as a separate layer. ADR-0019 and the roadmap record
+this addendum; the [operator guide](resident-recovery.md) documents the new offline
+backup, preview, restore and migrate commands. Browser recovery remains disabled.
+
+The [recovery qualification](qualification/0019-resident-recovery-2026-11-09.md)
+retains 319 passing offline tests, CLI round trips, distinct restored worker
+hydration, peer/shared-state preservation and interrupted-selection recovery.
+The actual Cedar/Willow/River household stopped cleanly at idle for three encrypted
+checkpoints and resumed on the same LAN port/password with the shared clock.
+Each checkpoint passed migration, controlled private regression recovery and
+complete private-root loss recovery in inactive disposable homes, with file and
+canonical record hashes checked. Original resident roots were not replaced and
+production Ember was not touched. A subsequent backup preserves prior household
+historical context alongside new context instead of overwriting it.
+
+This is mechanical continuity qualification, not production adoption or an Echo
+rehydration result. Whole-household shared-state recovery, historical transcript
+UI, hot maintenance and cross-release compatibility retain separate work. The
+idle shutdown does not close NATIVE-010's queued-evaluation shutdown follow-up.
