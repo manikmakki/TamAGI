@@ -331,6 +331,18 @@ isolation, an evaluation completing after its initiating tick waits, stale
 readiness, and Chromium Journal refresh/details at mobile width. See the
 [Journal qualification record](qualification/0019-native-journal-2026-11-09.md).
 
+### NATIVE-009 follow-up — Explicit Journal attribution
+
+The operator noted that cards did not visibly identify the resident who took a
+turn. Household Journals remain scoped to the selected resident; the shared
+clock can report another resident's latest opportunity. The page now names its
+owner in the heading, every entry names its resident, and the detail panel
+repeats the attribution. Names come from the coordinator roster for the captured
+resident request, after the existing selection-epoch guard. Switching Journal
+owners clears the prior detail view and cached entries. Resident narrative and
+stored records are unchanged. This is a frontend-only change served on browser
+refresh, with no worker restart or interruption of scheduled turns.
+
 ## NATIVE-010 — Old coordinator did not finish shutdown with stranded evaluation requests
 
 Observed during the authorized 2026-11-09 reload for NATIVE-009. The public 7744

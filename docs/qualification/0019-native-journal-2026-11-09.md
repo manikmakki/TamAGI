@@ -54,3 +54,16 @@ records were retained. No manual model request was submitted for this check.
 Production Ember remained PID 152015 on port 7742. The old coordinator required
 targeted termination after its workers exited; NATIVE-010 records that separate
 shutdown follow-up.
+
+A frontend follow-up adds the selected resident's name to the Journal heading,
+each card and its detail view. The subsequent
+[Chromium regression](0019-native-journal-2026-11-09/attribution-browser.json)
+passed, including name/ID attribution, switching to Willow's empty Journal,
+closing Cedar's prior details and restoring his card on return. See the reviewed
+[attributed mobile Journal](0019-native-journal-2026-11-09/native-world-attributed.png)
+and [guard report](0019-native-journal-2026-11-09/attribution-guard.json): three
+guarded processes, zero denied network operations and zero uncaught JavaScript
+errors. Raw artifacts: `/tmp/tamagi-journal-attribution-browser-20261109`.
+No backend changes or worker restart were needed; the existing port 7744 process
+serves the updated static UI on browser refresh. The 308-test result above
+predates this UI-only follow-up; Chromium covers its new behavior.

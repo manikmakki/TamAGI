@@ -579,6 +579,7 @@
     .mind-source-badge[data-source="autonomous"] { background: rgba(255,107,157,0.12); color: var(--accent-secondary); }
     .mind-time { margin-left: auto; font-size: 8px; color: var(--text-muted); white-space: nowrap; }
     .mind-title { font-size: 10px; color: var(--text-primary); line-height: 1.4; margin-bottom: 3px; font-weight: 500; }
+    .mind-resident { font-size: 11px; color: var(--text-primary); font-weight: 600; margin-bottom: 5px; overflow-wrap: anywhere; }
     .mind-content { font-size: 9px; color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
     .mind-type-label { font-size: 8px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
     /* flyout */
@@ -960,7 +961,7 @@
 <script src="/assets/avatar-echo.js"></script>
 <script src="/assets/avatar-ember.js?v=8"></script>
 <script src="/assets/avatar-runtime.js?v=8"></script>
-<script src="/assets/household-ui.js?v=1"></script>
+<script src="/assets/household-ui.js?v=2"></script>
 <script>
 const API=window.location.origin;
 const WS_URL=API.replace(/^http/,'ws')+'/api/ws';
@@ -1673,6 +1674,7 @@ function historicalWakeDescription(meta){
 
 // Cache of full event objects keyed by id — populated in loadMindPanel
 const _mindEvents={};
+let _mindResidentId;
 
 async function loadMindPanel(){
   const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
@@ -1682,9 +1684,18 @@ async function loadMindPanel(){
   try{
     const [data]=await Promise.all([api('/monologue/log?limit=80',scoped),api('/world/state',scoped).then(state=>{if(!household||household.acceptResponse(actor,token))updateMindActivity(state);}).catch(()=>{})]);
     if(household&&!household.acceptResponse(actor,token))return;
+    const residentName=household?.residentName(actor);
+    if(household){
+      document.querySelector('#view-journal .page-heading h1').textContent=residentName+'’s Journal';
+      if(_mindResidentId!==actor){
+        closeMindFlyout();
+        for(const id of Object.keys(_mindEvents))delete _mindEvents[id];
+        _mindResidentId=actor;
+      }
+    }
     const total=data.total||0;
     statusRow.textContent=total?total+' event'+(total===1?'':'s')+' recorded':'';
-    const events=(data.events||[]).slice().reverse();
+    const events=(data.events||[]).map(ev=>({...ev,journalResidentId:actor,journalResidentName:residentName})).reverse();
     if(!events.length){entries.innerHTML='<div class="drawer-empty">No inner monologue yet.</div>';return;}
     // Store full event data for flyout
     events.forEach(ev=>{ _mindEvents[ev.id]=ev; });
@@ -1693,7 +1704,8 @@ async function loadMindPanel(){
       const src=ev.source||'autonomous';
       const snippet=(ev.content||ev.metadata?.activity_summary||'').substring(0,140).trimEnd();
       const wake=historicalWakeDescription(ev.metadata||{});
-      return`<div class="mind-card" onclick="openMindFlyout('${esc(ev.id)}')">
+      return`<div class="mind-card" ${ev.journalResidentId?`data-resident-id="${esc(ev.journalResidentId)}"`:''} onclick="openMindFlyout('${esc(ev.id)}')">
+        ${ev.journalResidentName?`<div class="mind-resident">${esc(ev.journalResidentName)}</div>`:''}
         <div class="mind-card-header">
           <span class="mind-type-icon">${icon}</span>
           <span class="mind-source-badge" data-source="${esc(src)}">${esc(src)}</span>
@@ -1748,6 +1760,7 @@ function openMindFlyout(evId){
   // Meta block
   const metaEl=document.getElementById('flyout-meta');
   const metaRows=[];
+  if(ev.journalResidentName)metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">◉</span><span class="flyout-meta-val">Resident: ${esc(ev.journalResidentName)}</span></div>`);
   const wake=historicalWakeDescription(meta);
   if(wake)metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">◷</span><span class="flyout-meta-val">${esc(wake)}</span></div>`);
   if(meta.location) metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">📍</span><span class="flyout-meta-val">${esc(meta.location)}</span></div>`);

@@ -267,7 +267,7 @@
     await refresh();for(const input of $('household-color-form').querySelectorAll('input[type=color]'))input.value=color(input.dataset.actorId);
     setInterval(()=>{if(!document.hidden)refresh().then(scheduleRead).catch(()=>{});},5000);
   }
-  window.TamagiHousehold={enabled:true,selectedResidentId:()=>selected,selectionEpoch:()=>epoch,selectResident,scopeUrl,storageKey,
+  window.TamagiHousehold={enabled:true,selectedResidentId:()=>selected,residentName:label,selectionEpoch:()=>epoch,selectResident,scopeUrl,storageKey,
     draftKey:id=>id||'new:'+selected,participants:()=>[...participantIds()].filter(id=>id!==operator.id),resolveMentions,safeMarkdown,decorateMessage,decorateProgress,historyRendered,refresh,scheduleRead,
     clearThread:()=>{snapshot=null;current=null;if($('household-participant-strip'))paintParticipants();},acceptResponse:(id,token)=>id===selected&&token===epoch};
   const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/assets/household-ui.css?v=1';document.head.append(stylesheet);
