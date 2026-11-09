@@ -43,3 +43,14 @@ Qualification used disposable homes and no real model calls. The Python guard
 is not OS confinement of arbitrary native commands. Subsequent real-model
 evaluation behavior remains an interactive burn-in check. This change does not
 qualify household migration or production adoption.
+
+The retained LAN test household was reopened on port 7744 at runtime revision
+`fbf9012`, with the shared fifteen-minute clock enabled. Authenticated reads
+confirmed all three historical tick cards and their exact tool totals. See the
+[activation record](0019-native-journal-2026-11-09/activation.json). Previous
+queued evaluations settled as **failed or interrupted** during shutdown/recovery;
+none was replayed, marked passed or activated. Created files and original turn
+records were retained. No manual model request was submitted for this check.
+Production Ember remained PID 152015 on port 7742. The old coordinator required
+targeted termination after its workers exited; NATIVE-010 records that separate
+shutdown follow-up.

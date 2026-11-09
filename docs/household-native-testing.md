@@ -330,3 +330,21 @@ identity, missing legacy projection without writes or model calls, resident
 isolation, an evaluation completing after its initiating tick waits, stale
 readiness, and Chromium Journal refresh/details at mobile width. See the
 [Journal qualification record](qualification/0019-native-journal-2026-11-09.md).
+
+## NATIVE-010 — Old coordinator did not finish shutdown with stranded evaluation requests
+
+Observed during the authorized 2026-11-09 reload for NATIVE-009. The public 7744
+listener closed and all three native worker processes exited, but old coordinator
+PID 355694 remained alive after two Ctrl+C requests. Read-only preflight had
+confirmed no active chat/world work and no running or unknown upstream attempt;
+there were stranded queued evaluation attempts. Targeted termination of only
+that old coordinator was needed before reopening the retained household.
+
+The new process recovered all Journal cards and retained resident files/history.
+Prior evaluation jobs settled as failed or interrupted, not successful, and were
+not replayed. This observation does not establish the exact shutdown cause.
+Follow-up before production adoption: reproduce shutdown with queued independent
+evaluation requests, inspect the coordinator/private-server drain, and add a
+bounded shutdown regression without abandoning uncertain upstream occupancy.
+The Journal/availability fix does not claim to resolve this separate shutdown
+case.
