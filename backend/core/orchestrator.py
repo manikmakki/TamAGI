@@ -194,8 +194,17 @@ class Orchestrator:
         self.skills = skills
         self.config = config
 
-        # Subagent LLM: dedicated client if configured, otherwise share Tama's
-        if config.subagent_llm is not None:
+        from backend.core.runtime import get_runtime, GovernedLLM
+        runtime = get_runtime()
+        # Household workers never construct a second upstream connection.
+        native = runtime is not None and getattr(runtime, "household", None) is not None
+        if native and config.subagent_llm is not None:
+            if any(getattr(config.subagent_llm, key) != getattr(llm.config, key)
+                   for key in ("base_url", "model", "temperature", "max_tokens", "num_ctx")):
+                raise ValueError("Household specialists must use the centrally selected provider profile")
+            self._subagent_llm = llm
+            self._owns_subagent_llm = False
+        elif config.subagent_llm is not None:
             self._subagent_llm = LLMClient(config.subagent_llm)
             self._owns_subagent_llm = True
             logger.info(
@@ -206,8 +215,6 @@ class Orchestrator:
             self._subagent_llm = llm
             self._owns_subagent_llm = False
 
-        from backend.core.runtime import get_runtime, GovernedLLM
-        runtime=get_runtime()
         if runtime and self._owns_subagent_llm:
             self._subagent_llm=GovernedLLM(self._subagent_llm,runtime)
 

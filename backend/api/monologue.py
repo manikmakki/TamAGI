@@ -21,14 +21,25 @@ def set_monologue_log(log) -> None:
 
 @router.get("/log")
 async def get_monologue_log(
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=50, ge=1, le=200),
     source: str | None = Query(default=None),
     type: str | None = Query(default=None),
 ):
     """Return the most recent monologue events, newest last."""
-    if _monologue_log is None:
+    from backend.core.runtime import get_runtime
+    runtime = get_runtime()
+    if runtime:
+        from backend.core.runtime.journal import journal_events
+        events = journal_events(runtime)
+    elif _monologue_log is not None:
+        events = _monologue_log.recent(limit=getattr(_monologue_log, '_max_entries', 1000))
+    else:
         return {"events": [], "total": 0}
-    events = _monologue_log.recent(limit=limit, source=source or None, type=type or None)
-    return {"events": events, "total": len(_monologue_log)}
+    total = len(events)
+    if source:
+        events = [event for event in events if event['source'] == source]
+    if type:
+        events = [event for event in events if event['type'] == type]
+    return {"events": events[-limit:], "total": total}
 
 

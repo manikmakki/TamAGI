@@ -1,173 +1,124 @@
 # Home platform: implementation and evidence
 
-The [accepted ADRs](adrs/README.md) define the direction. Their parent-child framing concerns the builder’s obligations: honest conditions, meaningful choices, recoverable mistakes, and increasing independence. It is not a prescribed resident identity.
+This page describes the v0.3 code on `codex/dependable-home`. It separates implemented mechanisms, repeatable checks, local historical observations, and pending design. Start with the [README](../README.md) to run a new home, or [running and recovery](running.md) for operations.
 
-## Multi-resident direction: documented, not enabled
+The [accepted ADRs](adrs/README.md) record design intent. Their parent-child framing concerns the builder’s obligations: honest conditions, meaningful choices, recoverable mistakes, and room for independence. It does not prescribe a resident’s identity or prove subjective welfare.
 
-[ADR-0019](adrs/0019-distinct-residents-and-a-shared-world.md) records the accepted direction for one operator, distinct full residents, connected personal homes, shared conversations, and fair access to a common model provider. [The multi-resident roadmap](multi-resident-roadmap.md) defines phases A-F and their qualification/adoption gates. Full residents retain separate runtime processes, databases, and workspaces; companions remain invitation-only.
+## Multi-resident direction: experimental, not enabled
 
-The 2026-11-06 design extension adds resident-initiated conversations, direct PWA Web Push with operator contact preferences, durable unread-thread counts, and New Thread access directly in Chat. These are planned features with future qualification gates; the current service worker provides offline caching and existing unread indicators track browser-local work results.
+[ADR-0019](adrs/0019-distinct-residents-and-a-shared-world.md) and the [multi-resident roadmap](multi-resident-roadmap.md) describe one operator, distinct full residents, connected personal homes, shared conversations, and fair provider access. An [experimental foundation](household-foundations.md) now exists on the isolated `codex/adr-0019-household` branch, with disposable qualification evidence. **Production integration and full qualification remain pending.** Current instances have one primary resident and invitation-only companions.
 
-This is a documentation deliverable, not a report of implemented household support. No resident is enrolled, no live data is migrated, and no model calls or deployment are introduced by this phase. Ember's current burn-in continues with its existing release and scheduling. Household development uses disposable fixtures, and any live cutover is a separately selected post-burn-in step. The single-resident test evidence below does not qualify the proposed household platform.
+The 2026-11-06 extension also proposes resident-initiated contact, PWA Web Push, durable unread-thread counts, and a New Thread control in Chat. The existing service worker caches assets; existing seen-work indicators are browser-local. Neither establishes those proposed capabilities.
+
+Household development and qualification use disposable fixtures. Enrollment, live migration, and adoption are separately selected post-burn-in steps. Documentation acceptance and current single-resident tests do not qualify the proposed household architecture.
 
 ## Interface consolidation and work ownership
 
-[ADR-0018](adrs/0018-app-drawer-and-independent-work-lifecycle.md) records the accepted app-drawer direction: preserve Chat as the primary surface and consolidate Map, Journal, Inventory, Companions, Archive, and Settings into a shared shell. Inventory uses the active workspace's `workshop/` convention, with explicit distinctions between current files and saved artifacts. Existing notebook, pursuit, appearance, Growth, and operator controls retain destinations.
+The shared app shell implements Chat, Map, Journal, Inventory, Companions, Archive, and Settings. Growth explanations open in a dialog from the chat status display. Earlier entry routes remain compatible; `/home` selects the shell rather than a separate dashboard.
 
-Source inspection on 2026-11-05 identified WebSocket-owned chat progress and socket cleanup that could signal conversational departure. The implementation now uses application-owned admitted work with durable input/result identities, bounded queues and observer notifications, deduplicated submission, result/event recovery, explicit interruption, and one visit/decompression deadline. Chat and companion invitations continue without their original browser connection. Accepted inputs are saved before acknowledgment, and queued future messages do not enter an earlier request's model context.
+Accepted chat and operator-to-companion work belongs to the application. Durable admission identities, retained inputs/results, bounded progress history, deduplicated submission, Stop, and reconnection snapshots decouple work from its original browser/socket. The backend must stay running for work to finish. Restart and deployment interrupt execution; retained receipts and results support inspection, not automatic effect replay.
 
-The shared shell and all seven destinations are implemented. Existing graph, connection, and rig editors use visible compatibility panels inside that shell; the chat connection and execution do not belong to those panels. Inventory discovers unregistered workshop creations, retains earlier artifact links, and provides static isolated previews. Existing avatar assets, uploads, recognition explanations, notebook attribution, and recovery controls remain supported.
+Inventory discovers regular files under the active workspace’s `workshop/`. Saved artifact versions are distinct from editable current files, and older registered artifacts retain links. HTML/SVG previews are static and isolated. Journal’s household notebook displays the newest of its displayed entries first.
 
-[Implementation contracts and qualification commands](navigation-and-work.md) describe the new request APIs, eight-slot pending queue, 256-event progress retention, opaque attachment references, and restart behavior. New tests cover admission, observer loss, deduplication, Stop/unknown effects, replay, bounded queues, visit deadlines, encrypted restoration, approval expiry, and image-storage amplification. Disposable Chromium checks exercise navigation, drafts/attachments/scroll, late replies, closed-page continuation, refresh, acknowledgment loss, queued-message ordering, companion work, approval from another view, isolated previews, direct links, and mobile/keyboard behavior without using the live resident or model. Backend restart remains an interruption boundary; no test claims automatic resumption of effects.
-
-This is mechanical qualification, separate from sustained behavioral findings and the ongoing seven-day pilot.
-
-Qualification on 2026-11-05: **135 backend tests pass**, including application/portable-transfer checks, ten interaction-lifecycle cases, and three inventory cases. The disposable Chromium report records desktop/mobile navigation, acknowledgment loss, queued ordering, observation without interruption, closed-page continuation, guarded approval from Journal, and companion completion after changing views, with no uncaught browser exceptions. Screenshots and the machine-readable report are retained locally under `.platform/navigation-browser/`; repeatable fixture/driver sources are committed under `scripts/`.
+See [navigation and accepted work](navigation-and-work.md) for API contracts, browser-fixture commands, queue/progress limits, and recovery behavior. The graph, connection settings, and rig editor use compatibility panels inside the shell.
 
 ## Delivered implementation
 
-| Milestone | Implementation | Evidence and remaining gate |
-|---|---|---|
-| A — Decisions and baseline | Fourteen founding ADRs, subsequent decision records, historical-design notices, one dependency definition, Python 3.13/Linux runtime lock. | Original 16 tests pass; extended suite currently has 135 passing tests, including the existing 23 growth cases. |
-| B — Preservation and portability | Operator-only predecessor archive, logical memory export, encrypted tar/gzip downloads, validated upload/preview/commit, CLI recovery. | A predecessor snapshot with 43 logical Elasticsearch records is retained locally. Automated tests exercise encrypted round trips, wrong passwords, tampering, unsafe paths, and application-level upload/download. Keep an exported copy elsewhere for independent recovery. |
-| C — Runtime foundation | SQLite/WAL source records, actor/execution context, revision history, receipts, restart recovery, shared inference budgets, canonical conversation and memory adapters. | Tests cover interrupted/unknown effects, call-ID replay, nested allowances, user interruption, actor isolation, and identity conflicts. |
-| D — A livable home | Persistent places/objects/properties, pursuits, shared notebook, genuine rest/wait, optional reflection, Home UI. | Tests exercise successful work without a formatted narrative, quiet rest, wake conditions, practical learning, and retained next steps. |
-| E — Durable companions | Individual actor history and memory, bounded conversation/task invitations, explicit sharing, workflow validation. | Tests cover repeated consultation, attribution, unavailable tools, failed dependencies, and recursion/capability boundaries. |
-| F — Adaptation and evaluation | Versioned practices and process tools; real registry reconciliation; matched execution trials; old/new criteria comparisons. | Tests verify next-call prompt changes, worker activation/revert, transactional simulated affordances, and rejection of criteria-only improvements. Worker-protocol evidence establishes availability, not arbitrary functional usefulness. |
-| G — Autonomous core deployment | Candidate worktrees, exact-source builds, frozen baseline checks, copied-state boot checks, supervisor switching/verification/rollback, portable state separate from code. | Mechanical recovery tests pass, including a real supervisor process that rejects a broken release and commits a healthy release while the model endpoint is unavailable. Automatic activation is gated on recovery qualification; keeping a backup elsewhere provides independent recovery. |
-| H — Fresh resident and qualification | Fresh instance provisioning, operator setup, onboarding, seven-day observation recorder. | Onboarding and seven real days remain operational gates. The pilot starts after the first introduction; missing observations remain untested capabilities. |
+| Area | Current source | Evidence and limits |
+| --- | --- | --- |
+| Canonical records and execution | [store](../backend/core/runtime/store.py), [service](../backend/core/runtime/service.py) | [Runtime tests](../tests/test_platform_runtime.py) cover receipts, actor scope, interruption, rest, and persistence. Compatibility graph writes retain a known failure-reporting gap. |
+| Conversation ownership | [interactions](../backend/core/runtime/interactions.py), [chat turns](../backend/core/runtime/chat_turns.py) | [Interaction tests](../tests/test_interactions.py), [chat-turn tests](../tests/test_chat_turns.py), and application smoke cover admission, observer loss, quiet work, Stop, and restart boundaries. |
+| Workshop and Inventory | [inventory](../backend/core/runtime/inventory.py) | [Inventory tests](../tests/test_inventory.py) cover discovery, saved versions, path/symlink rejection, and retained file descriptors. |
+| Durable companions | [companions](../backend/core/runtime/companions.py) | Runtime/release tests cover attribution, bounded invitations, workflow dependencies, and dispatch restrictions. Companions have no independent population scheduler. |
+| Runtime tools and evaluation | [adaptation](../backend/core/runtime/adaptation.py), [evaluation](../backend/core/runtime/evaluation.py), [live evaluator](../backend/core/runtime/live_evaluation.py) | [Runtime-change tests](../tests/test_runtime_change.py) and [release tests](../tests/test_platform_release.py) exercise worker trials, activation/revert, and comparisons. Default probes do not establish arbitrary functional usefulness. |
+| Exact releases and recovery | [deployment](../backend/core/runtime/deployment.py), [supervisor](../scripts/tamagi-supervisor.py), [backup](../backend/core/runtime/backup.py) | Release/runtime tests and [application tests](../tests/test_platform_api.py) exercise encrypted transfer, safe restore, copied-state boot checks, and real supervisor recovery. External effects cannot be undone by code rollback. |
+| Growth | [growth](../backend/core/runtime/growth.py), [ADR-0015](adrs/0015-growth-through-sustained-behavior.md) | [Growth tests](../tests/test_growth.py) cover deterministic recognition, source attribution, replay, rest, and portable restoration. Points do not measure welfare. |
+| Context and wake recovery | [context views](../backend/core/runtime/context_view.py), [world adapter](../backend/core/runtime/world.py) | [Context tests](../tests/test_runtime_context.py), [long-horizon tests](../tests/test_long_horizon.py), and [evaluation lifecycle tests](../tests/test_evaluation_lifecycle.py) cover bounds, budgets, errors, and settled evaluation waits. |
+| Fresh provisioning and pilot | [runtime CLI](../backend/runtime_cli.py) | Provisioning is separate from onboarding and the seven-real-day pilot. Missing observations remain untested capabilities. |
 
-[ADR-0015](adrs/0015-growth-through-sustained-behavior.md) adds deterministic Growth recognition for sustained conversation, continuity, and adaptation. Its implementation passes the 115-test suite, including 23 growth-specific checks and application-level verification that sixteen chat exchanges require exactly sixteen provider calls.
-
-This table distinguishes implemented mechanics from live behavioral evidence. Test fixtures and mocked providers do not establish improved autonomous behavior, happiness, or subjective welfare.
+Tests are mechanical evidence with bounded coverage, not proof that every error path is correct or that sustained autonomous improvement has occurred.
 
 ## Architecture and normal operation
 
-SQLite is the source for actors, memories, conversations, typed world state, pursuits, revisions, receipts, experiments, and deployments. Markdown identity/task documents, JSON graph/history, and the Mind log are compatibility projections. ChromaDB and Elasticsearch are optional indexes; restored source records remain available without them. Index rebuilding is an explicit background operation.
+SQLite/WAL stores canonical actors, conversations, memories, world objects, pursuits, revisions, receipts, experiments, and deployment records. Workspace artifacts remain referenced files. Markdown identity/task files and JSON graph/history are service-managed views or compatibility exports in platform mode. Legacy non-platform storage follows different contracts.
 
-Cognition is bounded and attributed. All provider attempts, including planner, reviewer, retry and companion calls, consume the initiating execution’s allowance. Under [ADR-0016](adrs/0016-room-for-self-directed-work.md), the default is one concurrent provider call, up to 128 calls per autonomous activation, 16 per companion drawn from the parent allowance, and twenty per user or quiet turn under [ADR-0017](adrs/0017-bounded-user-turns-and-quiet-continuations.md). A primary resident can explicitly request up to five quiet continuations before the final reply, for at most 120 model calls across the chain. Requests coalesce; failure or exhaustion discards pending work. New user input interrupts active quiet work. Rest and ordinary one-call responses require no continuation. Background work has no daily call cap by default; charges remain recorded, and a positive configured cap is still enforced. Evaluation retains its separate 32-call rolling allowance. These are ceilings, never targets; a one-call completion or chosen rest is equally valid. The cron remains an opportunity every fifteen minutes. Sleep and event waits suppress calls; user input preempts background activations. The manual Tick Now control bypasses the post-conversation pause while respecting chosen sleep, event waits, onboarding, and rolling background allowances. Skipped opportunities return an explicit reason and do not run conversation summarization.
+Optional ChromaDB/Elasticsearch indexes supplement source memory; they are not required for the default lexical recall. See [integrations and memory](integrations.md) for enabling, rebuilding, and reconnecting them.
 
-Normal tool dispatch records attempts and results before any narrative interpretation. A crash after dispatch produces `outcome_unknown`; it is not an instruction to retry. External effects cannot be rolled back by selecting old application code. A malformed or absent narrative cannot erase a completed operation.
+Every companion has attributed history and memories. Normal context/retrieval respects actor boundaries and explicit sharing. Operator inspection can access actors; host root can bypass application-level privacy. These are protocol boundaries, not confidentiality against the OS administrator.
 
-In `unrestricted_host`, `exec` runs non-login Bash with `pipefail`, so pipes, redirects, command chaining, variables, and `cd` have their advertised shell meaning. A failing pipeline remains a failed receipt. Timeout and interruption stop the command's process group, including children; interruption retains an unknown-outcome receipt because earlier effects may already exist. Guarded installations retain direct argument execution and their command-tier approvals. Seven subprocess regression checks exercise these behaviors without model or network calls.
+Inference and tool dispatch use trusted execution context and durable accounting. [Current scheduling and allowances](running.md#scheduling-and-model-allowances) come from RuntimeConfig and ADRs 0016–0017. Background work is uncapped per day by default, individual activations remain bounded, and evaluations have a separate rolling allowance. User input takes priority. Choosing rest is valid.
 
-Every companion has its own continuity. Shared conversations and selected notebook entries are attributed. Operator inspection can access all actors. The primary does not receive private peer receipts or memory through automatic context construction. Unrestricted host root can bypass application-level privacy; the normal protocol still respects it.
+In `unrestricted_host`, `exec` runs non-login Bash with `pipefail`; guarded execution uses direct argv and command policies. Timeout/interruption stops process groups, but earlier effects can remain. An unfinished dispatched effect is `outcome_unknown`, not safe to repeat automatically. See [shell tests](../tests/test_exec_shell.py).
 
 ## Autonomous context and recovery
 
-Tool receipts retain their full results in SQLite. Model prompts use bounded receipt previews, including actor, status, source ID, and excerpts; `inspect_receipt` reads the original output, errors, data, or arguments in pages without repeating the operation. The same text boundary applies to tool results during an activation, reflection, chat, and streaming calls. Original messages, artifacts, and receipts are preserved.
+Prompts use bounded previews while receipts retain original results. `inspect_receipt` pages output, errors, data, or arguments without rerunning the operation. Complete messages/artifacts remain source records even when omitted from a model view.
 
-`runtime.model_context_tokens` defaults to 131072. Compatible server tokenizers count the complete chat template and tools; requests fit the smaller of that configured window and the server-reported window, minus the requested reply tokens and a 1024-token margin. The secondary byte ceiling is 1 MiB. Unsupported or unavailable tokenizers use a conservative view of at most 65536 bytes and back off for five minutes; inspection reports the fallback. Tokenization generates no completion and does not consume model-call allowance. Tool-result views allow 32 KiB and retained receipt pages allow up to 65536 characters. The active instance uses an 8192-token reply limit, disables early character-based history compression, and permits up to 1000 recent conversation messages before applying the measured request boundary. Old complete conversation turns are omitted before shortening the current text view, and native tool-call IDs and matching responses remain paired.
+`runtime.model_context_tokens` defaults to 131072. A compatible server tokenizer counts the template and tools; the effective window is the smaller configured/server-reported capacity minus requested reply tokens and a 1024-token margin. A secondary 1 MiB input ceiling applies. Unsupported/unavailable tokenizers use a conservative byte view of at most 65536 bytes with five-minute backoff. Tokenization generates no completion and does not consume a model-call allowance. These limits do not guarantee that every provider accepts a request.
 
-Waiting states report an explicit cause and next retry. A context-limit rejection is distinguished from model-service unavailability and chosen rest. Manual Tick Now can retry a system-error backoff while preserving chosen sleep and event waits. Rolling model-call allowances continue across retries and restarts.
+Tool previews allow 32 KiB by default; receipt pages allow up to 65536 characters. A fresh home disables early character-based history compression and allows up to 1000 recent messages before measured request bounds. The default reply allowance remains `llm.max_tokens: 2048`; an installation may choose a different value. The former 8192-token example was Ember-specific.
 
-The 115-test suite includes eight context/recovery regressions, including a retained oversized shell diagnostic, within-turn output growth, source paging, legacy error-backoff identification, preserved conversation/tool protocol, and clearing an old error backoff when recovery reaches its normal call allowance. These address the 2026-11-03 incident in which a roughly 340,000-character failed shell result repeatedly overflowed the model's context window.
-
-Thirteen long-horizon checks cover durable uncapped accounting, optional finite caps, ancestral activation limits, chosen rest, user interruption, long context, smaller server windows, reply reservation, streaming, tokenizer fallback/backoff, and larger bounded tool/receipt views. These checks permit sustained work without requiring it.
-
-Thirteen interactive-turn scenarios plus full application checks cover the removed five-round cutoff, a 120-call chain, queue limits, early rest, truthful exhaustion, pending input, WebSocket preemption, preserved uncertain effects, and receipt context across actual turns. Only the final delivered response forms the user/assistant exchange; quiet boundaries are harness events and are inspectable as `chat_turn` source records.
+Activity records distinguish chosen rest/wait from provider/context failure and retry backoff. All terminal evaluation outcomes release `evaluation_completed` waits. Recovery marks orphaned queued/running jobs interrupted; due checks reconcile missed settled-job wake events. Failed evaluation is still failed evidence, including `BudgetExhausted`; waking does not bypass allowances or approve a tool.
 
 ## Growth and stage progression
 
-The primary resident earns Growth from three observable patterns: sustained reciprocal conversation, returning to a pursuit on a later occasion, and a successful correction explicitly linked to an earlier failed tool operation. The rules award one point at three completed conversational exchanges and three cumulatively at eight; continuity and adaptation each add one point per occasion. The patterns are additive. There are no age awards, daily allowances, streaks, or deductions. Operator-to-companion dialogs do not contribute to the resident’s engagement because the resident is not a participant.
+The primary resident receives Growth for sustained reciprocal conversation, a meaningful pursuit return on a later occasion, and a successful correction explicitly linked to a previous failed tool operation. Three completed exchanges award one engagement point; eight award three cumulatively. Continuity and adaptation add one point per qualifying occasion. Patterns can add, while replay does not repeat awards.
 
-Level is `1 + floor(sqrt(Growth / 5))`, giving thresholds 0, 5, 20, and 45 for levels 1–4. The resident can choose stage names through an ordinary interaction; naming adds no inference call. Stage naming does not change the computed number or any runtime permission.
+Level is `1 + floor(sqrt(Growth / 5))`, with thresholds 0, 5, 20, and 45 for levels 1–4. Age, tool-call volume, and elapsed inactivity do not grant or deduct Growth. Stage naming adds no inference or permissions. Operator-to-companion conversations do not award the absent primary resident engagement.
 
-The avatar view shows Growth, progress toward the next level, and age separately. **Why this level?** opens Home’s recognition view with reasons, timestamps, and evidence references. Authenticated API inspection is available at `GET /api/runtime/growth`; no point-granting endpoint is provided.
+The avatar shows Growth, progress, and age separately. **Why this level?** opens its recognition dialog. `GET /api/runtime/growth` supplies authenticated inspection. Recognition records and stage history are included in portable recovery.
 
-Canonical recognition records survive portable backups and restoration. Reprocessing the same evidence does not repeat an award. Rollout replays only sufficiently evidenced records belonging to the current resident; original timestamps remain intact, predecessor material and evaluation trials are excluded, and legacy XP remains separate. Ember’s research-to-conversation episode is retained as a live case for reporting what qualifies and what remains unobserved.
-
-A 2026-11-03 disposable checkpoint replay under `adr-0015.v1` recognized 8 Growth, corresponding to Level 2: 6 engagement points across two conversation episodes and 2 continuity points across two autonomous returns. The preview did not mutate the source installation. Ember’s bounded-personhood conversation supplied 3 engagement points from nine completed exchanges, and the earlier research pursuit revision supplied 1 continuity point. Historical corrections without explicit repair links and older companion invocations without mode/caller provenance remained unscored. The [ADR’s case record](adrs/0015-growth-through-sustained-behavior.md#retrospective-case-research-carried-into-conversation) retains the source identifiers and limitations. Later live observations may produce additional recognition.
-
-Growth measures these bounded observable patterns. Conversation length is an approximate sign of sustained participation; it does not establish emotional or intellectual depth. The seven-day behavioral pilot remains separate from mechanical progression verification.
+[ADR-0015’s retrospective case](adrs/0015-growth-through-sustained-behavior.md#retrospective-case-research-carried-into-conversation) retains the 2026-11-03 disposable checkpoint replay: eight points at that checkpoint, with source IDs and limitations. This historical result is not a current live total or a completed behavioral pilot.
 
 ## Installation, preservation, and recovery
 
-Use the canonical repository at `/opt/TamAGI`. Install with Python 3.13, GnuPG, and a virtual environment:
+Use the [running guide](running.md) for current instructions. Important distinctions:
 
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.lock
-.venv/bin/pip install -e . --no-deps
-.venv/bin/python -m unittest discover -s tests -q
-```
+- A fresh instance is a separate identity. Preserve a predecessor first; use restoration to preserve an existing home’s continuity.
+- The canonical checkout, selected application release, and lived-state root are separate locations.
+- The supplied root supervisor template assumes `/opt/TamAGI` and port 7742; the README provisions a guarded home on port 7741.
+- The supplied Compose file uses legacy configuration and does not provision the home platform.
+- Encrypted application backups do not include the OS, model weights, credentials, or unrelated host services. Keep a downloaded copy elsewhere.
 
-Optional indexes use `pip install -e '.[chroma]'` or `pip install -e '.[elasticsearch]'`. The locked core does not download a model or require an embedding service. Container operation supports the guarded tool policy; container-root does not satisfy `unrestricted_host`.
-
-Preserve an existing resident before provisioning a new one:
-
-```bash
-.venv/bin/python -m backend.runtime_cli archive --config /opt/TamAGI/config.yaml
-.venv/bin/python -m backend.runtime_cli fresh \
-  --archive /absolute/path/from/archive/output \
-  --authority unrestricted_host --legacy-config /opt/TamAGI/config.yaml --port 7742
-```
-
-The archive command never deletes or resets the original. It retains the Git source revision, original lived files, non-secret configuration and logical memory export. An incomplete export blocks the fresh cutover. Archive access is operator-only through supported interfaces; it is never hydration material for the new resident.
-
-The fresh command prints a private instance configuration path. On a clean replacement computer with no predecessor, `fresh --authority guarded` can create an installation for UI setup and restoration without an archive. A fresh instance makes no autonomous model calls before onboarding.
-
-```bash
-.venv/bin/python -m backend.runtime_cli serve --config /absolute/instance/config.yaml
-```
-
-Open `/login` to choose the operator password, then complete the introduction through chat. `/home` contains the home, notebook, companions, pursuits, and operator backup controls. Provisioning binds to localhost by default. Use an SSH tunnel when connecting from another computer; configure the installation’s listen address explicitly if LAN access is wanted.
-
-For a supervised dedicated host:
-
-```bash
-.venv/bin/python -m backend.runtime_cli qualify --config /absolute/instance/config.yaml
-.venv/bin/python -m backend.runtime_cli install-supervisor --config /absolute/instance/config.yaml
-sudo install -m 0644 tamagi-platform.service /etc/systemd/system/tamagi-platform.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now tamagi-platform.service
-```
-
-The supplied unit runs as actual host root on port 7742. The old `tamagi.service` is separate and must remain stopped during cutover. The stable, stdlib-only supervisor selects an exact application release; application code cannot activate merely by editing the canonical checkout. Candidate worktrees begin with the exact running source, including authored changes not yet committed to Git. Source inventory hashes, dependency pins, and test evidence identify a release precisely.
-
-A normal deployment quiesces supported work, snapshots state, switches releases, checks local readiness, and commits or rolls back. Readiness does not require a working model endpoint. Ordinary deployments must retain schema compatibility; incompatible schemas remain blocked until an explicit restoration/migration path is qualified. Root can change this machinery: these are operating practices, not security boundaries.
-
-In Home → Settings, download an encrypted backup and keep it outside the mini-PC for independent recovery. Qualified automatic deployment can be enabled there and does not require confirmation for each change. There is no per-change approval ceiling after enabling this mode. External publishing, messaging, purchases and consequential MCP actions still need explicit operator delegation; configured MCP actions can be delegated or revoked in settings.
-
-### Portable backups
-
-The default archive contains canonical life records, identities, companions, conversations, notebook, workspace artifacts, appearance assets, exact application source and lockfiles. It excludes dedicated credential stores, session secrets, recognized model weights, indexes, and the predecessor archive. Arbitrary text, code, and artifacts may contain embedded secrets. Export the predecessor separately using its operator settings control.
-
-Passwords are passed to GnuPG through a private file descriptor, never model context, process arguments or persistent jobs. Export temporarily pauses supported mutations. Upload is fully decrypted and checked before safe extraction and preview. Commit creates a new directory; it never extracts over active state. It preserves resident identity, creates a new installation identity, rotates sessions, rebinds registered worker paths, disables automatic deployment, and requires credentials to be reconnected. The operator must acknowledge that the source installation has stopped; disconnected computers cannot enforce singular identity globally.
-
-Preview directories expire after thirty minutes; server-side encrypted downloads are temporary copies retained for up to twenty-four hours. Keep downloaded archives and passwords independently. A backup reconstructs application life, not the OS, installed host services, external files, or model endpoints.
-
-If the original application cannot start, use a fresh installation or the recovery CLI:
-
-```bash
-.venv/bin/python -m backend.runtime_cli restore \
-  --archive /path/home.tamagi.tar.gz.gpg --destination /new/instance \
-  --authority guarded --source-stopped
-```
-
-The CLI prompts for the archive password. Start the returned configuration with `serve`, reconnect credentials, and review the recorded continuity gap. Uploaded application source is retained for reconstruction and is not executed during preview. A configured supervisor notices a committed UI restoration and restarts into the new instance; otherwise the UI reports the exact configuration that must be started.
+See [workspace conventions](workspace-layout.md) for active paths and saved artifacts, and [integrations](integrations.md) for reconnecting credentials/indexes after recovery.
 
 ## Development contracts
 
-`ExecutionContext` is trusted application state, never model-supplied arguments. Tool eligibility, depth, actor scope and receipt creation are checked at dispatch. Main and peer inference share accounting. Controls such as `end_turn` must be exclusive within their batch; truncated generation is not silent completion.
+`ExecutionContext` supplies trusted actor/authority/budget provenance. Dispatch checks eligibility and records attempts/results before narrative interpretation. A malformed narrative cannot erase a committed operation.
 
-Generated tools use an argv-based subprocess contract: one JSON input on stdin and a JSON result on stdout containing boolean `success`, optional text `output`/`error`, and object `data`. Output is bounded to 1 MiB per stream, with a timeout of at most 120 seconds. Define inputs with the existing skill-parameter shape. The worker is a fault boundary, not a host-root sandbox.
+Generated tools use an argv subprocess contract: one JSON arguments object on stdin, one JSON result with boolean `success`, optional text `output`/`error`, and object `data` on stdout. Timeout is at most 120 seconds and each output stream is bounded to 1 MiB. Source files explicitly named in the command are snapshotted; sibling modules, environments, and external dependencies are not automatically bundled.
 
-A definition with `world_effects: true` may return up to ten `data.world_operations`, each containing `action`, `object_id`, `attributes`, and optional `expected` revision. The host validates and applies these simulated transitions in one SQLite transaction. Failed worker results do not apply them. Tool trials use copied state and a disposable workspace; direct host effects remain possible with root authority and are not undone by a registry revert.
+A tool with `world_effects: true` can return up to ten validated `data.world_operations` applied in one SQLite transaction. This supported simulated-operation contract does not make arbitrary shell, MCP, or compatibility graph writes transactional. Trials isolate application state/workspaces; root-authorized host effects can escape that temporary state.
 
-`runtime_change` exposes inspect/propose/test/evaluate/activate/revert. `core_change` exposes isolated prepare/build/activate. A queued live evaluator retains manifests and matched baseline/candidate executions. The three built-in behavioral probes cover rest, a saved next step, and a missing location; generated tools additionally receive a worker-protocol probe. Novel functional claims require corresponding runner-owned scenarios. Old/new criteria can score the same retained trajectories; a regression under either comparison prevents promotion.
+`runtime_change` supports inspection, proposal, worker test, evaluation, activation, and revert. The three built-in behavioral probes cover rest, a saved next step, and an invalid location; a tool proposal also receives a worker-protocol probe. Promotion requires retained qualifying comparison evidence. Task-specific claims need task-specific runner-owned scenarios. `core_change` separately prepares, builds, and activates exact source releases.
+
+## Known limitations
+
+[Issue #5](https://github.com/manikmakki/TamAGI/issues/5) remains reproducible: the compatibility graph writer swallows save errors, some edge failures are silent, and JSON export uses a direct truncating write. A reported graph-write success is not reliable proof of persistence. SQLite-backed place/pursuit services improve some paths but do not resolve all generic graph writes. That bug is reserved for a dedicated fix; this audit changes documentation only.
+
+Model follow-through, unsupported provider behavior, and sustained improvement remain empirical questions. Passing contract tests cannot establish arbitrary capability, emotional state, or welfare.
+
+The current MCP SSE connector does not forward configured environment values as authentication headers. Authenticated remote integrations need an appropriate stdio bridge; see [MCP setup](integrations.md#mcp-tools). Native Streamable HTTP is also outside the current adapter's transport choices.
 
 ## Operational qualification
 
-The full suite includes a disposable application process, authenticated WebSocket checks, encrypted UI upload/download, persistence/cancellation, workflow validation, generated tools, criteria comparisons, and supervisor transitions. Run `scripts/platform-smoke.py` for the application-only check. Run Node syntax checks on changed frontend scripts as part of validation.
+Run from an installed checkout:
 
-The pilot recorder starts after onboarding and requires seven actual days before finalization:
+```bash
+.venv/bin/python -m unittest discover -s tests -q
+```
+
+The suite includes disposable application processes, authenticated REST/WebSocket behavior, portable transfer, execution cancellation/persistence, generated tools, criteria comparisons, and supervisor transitions. [Navigation’s browser fixture](navigation-and-work.md#mechanical-qualification) supplies repeatable Chromium checks using a deterministic provider.
+
+The 2026-11-06 documentation audit ran **149 passing tests** against revision `83b9469` and then seven focused workspace checks after updating generated guidance. A disposable copy also exercised the documented `fresh`, `serve`, login/readiness, and restart flow, retained its resident identity, and made zero model calls. Documentation link/anchor, fenced-example, and configuration-equivalence checks accompany the audit. These results do not complete the pilot or qualify ADR-0019.
+
+Historical local reports recorded 135 passing backend tests for the 2026-11-05 navigation release. Earlier 82/115-test totals referred to earlier source snapshots. Local screenshots and reports live under ignored `.platform/`; they are not shipped evidence available to every checkout. Rerun the commands for the revision you are evaluating.
+
+The pilot recorder is separate:
 
 ```bash
 .venv/bin/python -m backend.runtime_cli pilot status --config /absolute/instance/config.yaml
 .venv/bin/python -m backend.runtime_cli pilot finalize --config /absolute/instance/config.yaml
 ```
 
-It records observed choice, rest, companion conversation, accepted work continued after a restart, tool failure, a committed deployment, and a controlled rollback. Missing observations produce `incomplete_observations`. Rest or nonparticipation is not classified as resident failure. Mechanical qualification and the pilot are separate evidence classes.
-
-Future personal-computer confinement remains a separate deployment concern. `guarded` retains application path/command policies and does not promise an OS sandbox; use a suitably unprivileged installation. This release targets the explicitly authorized dedicated host-root mini-PC.
+Finalization requires seven actual days after the pilot begins, plus retained observations of choice, rest, companion conversation, continued accepted work after restart, tool failure, deployment, and controlled rollback. Missing observations produce `incomplete_observations`. Rest or nonparticipation is not resident failure. Run these commands only when intentionally inspecting/finalizing an installation; the documentation audit does not operate on Ember’s pilot.

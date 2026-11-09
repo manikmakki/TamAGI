@@ -50,7 +50,7 @@ The resident may name each new stage during an ordinary interaction. Numeric lev
 
 ## Acceptance evidence
 
-The full 82-test suite passes, including 23 growth-specific cases. A disposable application test completed 16 chat turns with exactly 16 provider calls, confirming that recognition and naming add no inference. Automated checks establish:
+At the 2026-11-03 introduction, the suite had 82 passing tests, including 23 growth-specific cases. This is historical acceptance evidence, not the current suite total. A disposable application test completed 16 chat turns with exactly 16 provider calls, confirming that recognition and naming added no inference in that scenario. The checks cover:
 
 - A greeting earns zero engagement Growth; three exchanges earn one point; eight earn three cumulatively.
 - Continuity and adaptation earn their defined points, including during autonomous work.

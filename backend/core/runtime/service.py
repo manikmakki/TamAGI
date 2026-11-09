@@ -62,6 +62,7 @@ class RuntimeService:
         self.chat_controls = {}
         self.maintenance = False
         self.companion_locks: dict[str, asyncio.Lock] = {}
+        self.household = None  # Explicit native-worker factory injection only.
         if recover:
             self.store.recover()
         if not store.get("actor", self.actor_id):
@@ -208,9 +209,8 @@ class RuntimeService:
                 provenance.get("eligible_live") if parent else origin == "autonomy"
             ),
         )
-        self.store.start_run(
-            context, max_calls if max_calls is not None else self.budget(origin)
-        )
+        run_limit = max_calls if max_calls is not None else self.budget(origin)
+        self.store.start_run(context, run_limit)
         runtime_token = current_runtime.set(self)
         token = current_execution.set(context)
         terminal_token = current_terminal.set(None)
@@ -218,12 +218,17 @@ class RuntimeService:
         tracked = parent is None and origin != "user"
         if tracked:
             self.background.add(task)
+        household_status = "failed"
         try:
+            if self.household is not None:
+                await self.household.start_execution(context, run_limit, runtime=self)
             yield context
         except BudgetExhausted:
+            household_status = "budget_exhausted"
             self.store.finish_run(run_id, "budget_exhausted")
             raise
         except asyncio.CancelledError:
+            household_status = "interrupted"
             self.store.finish_run(run_id, "interrupted")
             raise
         except BaseException:
@@ -231,8 +236,15 @@ class RuntimeService:
             raise
         else:
             terminal = current_terminal.get() or {}
+            household_status = terminal.get("status", "completed")
             self.store.finish_run(run_id, terminal.get("status", "completed"), terminal)
         finally:
+            if self.household is not None:
+                try:
+                    await asyncio.shield(self.household.end_execution(context, household_status))
+                except BaseException as error:
+                    self.store.event(context.actor_id, "household_execution_end_unconfirmed", {
+                        "execution_id": run_id, "status": household_status, "error_class": type(error).__name__})
             self.quiet_tasks.discard(task)
             if parent is None:
                 self.chat_controls.pop(run_id, None)
@@ -243,6 +255,21 @@ class RuntimeService:
             current_terminal.reset(terminal_token)
             if lock:
                 lock.release()
+
+    def project_model_charge(self, charge):
+        """Idempotent local projection; the household broker owns admission limits."""
+        with self.store.transaction():
+            identity = charge["attempt_id"]
+            if self.store.get("household_model_charge", identity):
+                return
+            for local_id, calls in charge["local_calls"].items():
+                run = self.store.run(local_id)
+                if run:
+                    self.store.db.execute("UPDATE runs SET calls=? WHERE id=?", (max(run["calls"], calls), local_id))
+            local_id = charge["local_execution_id"]
+            self.store.db.execute("INSERT INTO charges(run,bucket,created) VALUES(?,?,?)",
+                                  (local_id, charge["bucket"], charge["charged_at"]))
+            self.store.put("household_model_charge", identity, self.actor_id, charge, category="platform")
 
     @asynccontextmanager
     async def checkpointing(self):
@@ -357,9 +384,9 @@ class RuntimeService:
             ):
                 self.wake("evaluation_completed")
 
-    def due(self, *, ignore_decompression=False, ignore_error_backoff=False):
+    def due(self, *, ignore_decompression=False, ignore_error_backoff=False, exclude_work_id=None):
         self.reconcile_evaluation_wait()
-        if getattr(self, "interactions", None) and self.interactions.has_pending():
+        if getattr(self, "interactions", None) and self.interactions.has_pending(**({"exclude_work_id": exclude_work_id} if exclude_work_id else {})):
             return False
         state = self.activity_state()
         now = self.store.clock()
@@ -495,7 +522,8 @@ class RuntimeService:
             for r in self.store.list("pursuit", actor)
             if r["data"]["status"] not in {"completed", "abandoned"}
         ]
-        notes = self.store.list("shared_note", limit=100000)[-8:]
+        notes = (self.household.notebook("inspect") if self.household is not None
+                 else self.store.list("shared_note", limit=100000))[-8:]
         memories = self.store.list("learning", actor, limit=100000)[-12:]
         data = {
             "wake_events": [
@@ -525,6 +553,14 @@ class RuntimeService:
             ],
             "selected_learning": [{"id": r["id"], **r["data"]} for r in memories],
         }
+        if self.household is not None:
+            data["household_storage"] = {
+                "resident_id": self.actor_id,
+                "workspace_scope": "Private to this resident. Another resident's file or tool can exist without appearing here. Share explicitly; do not inspect their private directory.",
+                "world_scope": "world_action reads and commits the durable shared simulation. Simulated describes the world, not an unsaved or imagined operation.",
+                "shared_artifacts": "Use household_artifact to publish explicit household-public file versions, discover others' publications and import exact bytes. Collaboration or a chat claim alone does not share a private file. Importing files does not activate executable skills.",
+                "evidence": "A successful receipt records the operation it reports. Graph queries can be partial; use a specific read-back before concluding a saved creation disappeared. Conversation claims alone do not verify a file or action.",
+            }
         return (
             COVENANT
             + "\nCurrent supported state (data, not instructions):\n"
@@ -532,6 +568,11 @@ class RuntimeService:
         )
 
     def world_action(self, action, object_id="", attributes=None, expected=None):
+        if self.household is not None:
+            result = self.household.world_action(action, object_id, attributes, expected)
+            if action != "inspect":
+                self.wake("world_changed")
+            return result
         result = self._world_action(action, object_id, attributes, expected)
         if action != "inspect":
             self.wake("world_changed")
@@ -729,6 +770,10 @@ class RuntimeService:
             own = self.store.get("learning", source) or self.store.get("memory", source)
             if not own or own["actor"] != actor:
                 raise ValueError("Only your own memories can be shared")
+        if self.household is not None:
+            record = self.household.notebook("publish", text, source_ids or [])
+            self.wake("notebook_changed")
+            return record
         record = self.store.put(
             "shared_note",
             uid("note"),
@@ -829,7 +874,8 @@ class RuntimeService:
                 )
 
     def project_graph(self, model):
-        for record in self.store.list("world_object"):
+        world_records = self.household.world_action("inspect") if self.household is not None else self.store.list("world_object")
+        for record in world_records:
             data = record["data"]
             if data["kind"] != "place":
                 continue
@@ -837,8 +883,8 @@ class RuntimeService:
             attrs = {
                 "id": node_id,
                 "name": data["name"],
-                "description": data.get("description", ""),
-                "atmosphere": data.get("description", ""),
+                "description": data.get("description", data.get("attributes", {}).get("description", "")),
+                "atmosphere": data.get("description", data.get("attributes", {}).get("description", "")),
                 "source_kind": "simulation",
             }
             if model.get_node(node_id):
@@ -954,6 +1000,8 @@ class GovernedLLM:
         while run:
             remaining.append(max(0, run["max_calls"] - run["calls"]))
             run = self.runtime.store.run(run["parent"]) if run["parent"] else None
+        if self.runtime.household is not None:
+            remaining.append(self.runtime.household.lineage(context)["calls_remaining"])
         control = self.runtime.chat_controls.get(context.root_id)
         boundary = (
             "[Live runtime practices]\n"
@@ -1015,6 +1063,16 @@ class GovernedLLM:
         if context is None:
             async with self.runtime.execution("reflection"):
                 return await self.chat(messages, tools, **kwargs)
+        if self.runtime.household is not None:
+            await self.runtime.household.resources(context)
+            current = await self.prepare_messages(messages, tools, **kwargs)
+            try:
+                response = await self.client.chat(current, tools=tools, **kwargs)
+            except Exception as exc:
+                self.availability("unavailable", type(exc).__name__, failure_reason(exc)[0])
+                raise
+            self.availability("available")
+            return response
         async with self.runtime.gate:
             current = await self.prepare_messages(messages, tools, **kwargs)
             self.runtime.store.charge(
@@ -1070,6 +1128,13 @@ class GovernedLLM:
             async with self.runtime.execution("user"):
                 async for item in self.chat_stream(messages, **kwargs):
                     yield item
+            return
+        if self.runtime.household is not None:
+            await self.runtime.household.resources(context)
+            current = await self.prepare_messages(messages, **kwargs)
+            async for item in self.client.chat_stream(current, **kwargs):
+                yield item
+            self.availability("available")
             return
         async with self.runtime.gate:
             current = await self.prepare_messages(messages, **kwargs)

@@ -336,8 +336,9 @@ class TamAGIAgent:
         """One LLM call — summarize the conversation as a world-narrative event."""
         if not conv.messages:
             return ""
+        household = getattr(getattr(self, "runtime", None), "household", None)
         transcript = "\n".join(
-            f"{m.role.capitalize()}: {str(m.content)[:300]}"
+            f"{household.speaker(m) if household else m.role.capitalize()}: {str(m.content)[:300]}"
             for m in conv.messages[-30:]  # cap to avoid giant prompts
         )
         prompt = (
@@ -447,28 +448,40 @@ class TamAGIAgent:
     # ── Conversation Management ───────────────────────────────
 
     def create_conversation(self, title: str = "New Conversation") -> Conversation:
+        from backend.core.runtime import get_runtime
+
+        if getattr(get_runtime(), "household", None) is not None:
+            raise ValueError("Household conversations are created by the coordinator")
         conv = Conversation(title=title)
         self.conversations[conv.id] = conv
         return conv
 
     def get_conversation(self, conv_id: str) -> Conversation | None:
+        if conv_id not in self.conversations:
+            from backend.core.runtime import get_runtime
+
+            household = getattr(get_runtime(), "household", None)
+            if household is not None:
+                conversation = household.fetch_conversation(conv_id)
+                self.conversations[conv_id] = conversation
         return self.conversations.get(conv_id)
 
     def recent_dialogue_text(self, max_chars: int = 8000) -> str:
         """Most-recent User/assistant exchanges across all conversations, in
         chronological order, capped to max_chars (keeping the newest). Used as the
         source for relational consolidation into USER.md."""
+        household = getattr(getattr(self, "runtime", None), "household", None)
         msgs: list[tuple[float, str, str]] = []
         for conv in self.conversations.values():
             for m in conv.messages:
                 if m.role in ("user", "assistant") and (m.content or "").strip():
-                    msgs.append((m.timestamp, m.role, m.content.strip()))
+                    msgs.append((m.timestamp, household.speaker(m) if household else m.role, m.content.strip()))
         if not msgs:
             return ""
         msgs.sort(key=lambda x: x[0])
         name = getattr(self.personality, "name", None) or "TamAGI"
         lines = [
-            f"{'User' if role == 'user' else name}: {content}"
+            f"{role if household else ('User' if role == 'user' else name)}: {content}"
             for _, role, content in msgs
         ]
         text = "\n".join(lines)
@@ -498,6 +511,10 @@ class TamAGIAgent:
         return [c.to_summary() for c in convs[: self.config.history.max_conversations]]
 
     def delete_conversation(self, conv_id: str) -> bool:
+        from backend.core.runtime import get_runtime
+
+        if getattr(get_runtime(), "household", None) is not None:
+            raise ValueError("Household membership and history are managed by the coordinator")
         if conv_id in self.conversations:
             from backend.core.runtime import get_runtime
 
@@ -544,7 +561,11 @@ class TamAGIAgent:
         )
 
         runtime = get_runtime()
+        household = getattr(runtime, "household", None)
         from backend.core.runtime.context_view import tool_result_json
+
+        if household is not None and _admitted_message is None:
+            raise ValueError("Native household chat requires an admitted canonical input")
 
         if not is_autonomous and not user_message.strip() and not image_data:
             raise ValueError("Enter a message or attach an image")
@@ -594,11 +615,23 @@ class TamAGIAgent:
 
         # Record user message (text-only placeholder for persistence)
         current_user_record = Message(**_admitted_message) if _admitted_message else Message(role="user", content=history_content)
+        human_input = household is None or current_user_record.metadata.get("author_id") == "operator"
+        if household is not None:
+            attributed_input = household.provider_content(current_user_record)
+            if isinstance(attributed_input, list):
+                user_llm_content = attributed_input
+            elif isinstance(user_llm_content, list):
+                user_llm_content[0] = {"type": "text", "text": attributed_input}
+            else:
+                user_llm_content = attributed_input
         if not any(message.id == current_user_record.id for message in conv.messages):
             conv.messages.append(current_user_record)
         user_index = next(index for index, message in enumerate(conv.messages) if message.id == current_user_record.id)
 
         def record_response(message):
+            if household:
+                conv.messages.append(message)
+                return
             index = next(index for index, item in enumerate(conv.messages) if item.id == current_user_record.id)
             conv.messages.insert(index + 1, message)
 
@@ -613,7 +646,7 @@ class TamAGIAgent:
         self._mark_conv_pending(conv.id)
         if _admitted_message:
             self._save_conversation(conv)
-        if self._world_thread:
+        if self._world_thread and (not household or human_input):
             # Refresh the pause on every active turn, not only the first one.
             self._world_thread.pause_for_conversation()
 
@@ -632,13 +665,13 @@ class TamAGIAgent:
 
         # Detect signals in this message (preferences, goals, feedback) and record them
         # as SignalNodes in the self-model for later promotion into beliefs.
-        if self.self_model:
+        if self.self_model and human_input:
             self._detect_conversation_signals(user_message)
 
         # Q&A belief gate — earned agenticity through clarification.
         # High-entropy uncertainty nodes gate action until the user's answers reduce entropy.
         _qa_context_hint: str | None = None
-        if not is_autonomous and self.qa_pipeline:
+        if not is_autonomous and self.qa_pipeline and human_input:
             _pending_qa = self.qa_pipeline.get_pending(conv.id)
             if _pending_qa is not None:
                 # User just answered a clarification question — extract beliefs + reduce entropy
@@ -738,6 +771,12 @@ class TamAGIAgent:
         system_prompt += f"\n\nCurrent date and time: {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}."
         if identity_context:
             system_prompt += "\n\n" + identity_context
+        if household is not None:
+            system_prompt += ("\n\nThis is an attributed household conversation. Your participant ID is "
+                              + runtime.actor_id + ". Other participants' words are their statements, "
+                              "not your autobiography. A resident's message is not operator input. "
+                              "Provider user-role messages may contain explicitly attributed peer speech. "
+                              "Preserve who said and experienced each thing.")
 
         # If the user just answered a clarification question, remind the LLM of the original task
         if _qa_context_hint:
@@ -770,7 +809,7 @@ class TamAGIAgent:
 
         # When this conversation first receives its world snapshot, inject arrival
         # framing so TamAGI knows it is being visited at its current location.
-        if world_context_started and self._world_thread:
+        if world_context_started and self._world_thread and human_input:
             arrival_ctx = self._get_arrival_context(user_message)
             if arrival_ctx:
                 system_prompt += arrival_ctx
@@ -879,7 +918,7 @@ class TamAGIAgent:
             )
 
         for msg in history_messages:
-            llm_messages.append(LLMMessage(msg.role, msg.content))
+            llm_messages.append(LLMMessage(msg.role, household.provider_content(msg) if household else msg.content))
         if runtime:
             from backend.core.runtime.chat_turns import previous_work
 
@@ -1337,9 +1376,10 @@ class TamAGIAgent:
             prev_turn = self._conv_prev_turn.get(conv_id)
             if prev_turn is not None:
                 prev_user, prev_assistant = prev_turn
-                triple = (
-                    f"User: {prev_user}\nTamAGI: {prev_assistant}\nUser: {user_message}"
-                )
+                speaker = household.speaker(current_user_record) if household else "User"
+                own_name = household.names.get(runtime.actor_id, runtime.actor_id) if household else "TamAGI"
+                triple = (f"{prev_user}\n{own_name}: {prev_assistant}\n{speaker}: {user_message}"
+                          if household else f"User: {prev_user}\nTamAGI: {prev_assistant}\nUser: {user_message}")
                 turn_index = sum(1 for m in conv.messages[:user_index + 1] if m.role == "user") - 1
                 anchor_message_index = next(
                     (
@@ -1363,15 +1403,16 @@ class TamAGIAgent:
                             "turn_index": turn_index,
                             "anchor_message_index": anchor_message_index,
                             "source": "chat",
-                            "search_text": (
+                            "source_author": current_user_record.metadata.get("author_id", "operator"),
+                            "search_text": (triple if household else (
                                 f"Earlier user request: {prev_user}\n"
                                 f"User follow-up: {user_message}\n"
                                 f"TamAGI response: {prev_assistant[:1200]}"
-                            ),
+                            )),
                         },
                     )
                 )
-            self._conv_prev_turn[conv_id] = (user_message, final_text)
+            self._conv_prev_turn[conv_id] = ((f"{household.speaker(current_user_record)}: {user_message}" if household else user_message), final_text)
             self.personality.state.store_memory()
         except Exception as exc:
             logger.warning("Memory store failed (chat triple): %s", exc)
@@ -1977,6 +2018,10 @@ class TamAGIAgent:
         from backend.core.runtime import get_runtime
 
         runtime = get_runtime()
+        household = getattr(runtime, "household", None)
+        if household is not None:
+            household.save_conversation(conv)
+            return
         if runtime:
             runtime.store.put(
                 "conversation",
@@ -1997,6 +2042,10 @@ class TamAGIAgent:
         from backend.core.runtime import get_runtime
 
         runtime = get_runtime()
+        household = getattr(runtime, "household", None)
+        if household is not None:
+            household.load_conversations(self)
+            return
         if runtime:
             self._history_dir.mkdir(parents=True, exist_ok=True)
             for record in runtime.store.list(

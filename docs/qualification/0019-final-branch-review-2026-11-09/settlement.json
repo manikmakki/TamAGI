@@ -1,0 +1,8 @@
+{
+  "exit_code": 0,
+  "elapsed_seconds": 17.420504570007324,
+  "guard_activations": 10,
+  "network_denials": 0,
+  "live_instance": false,
+  "real_model": false
+}

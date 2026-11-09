@@ -1,0 +1,54 @@
+{
+  "passed": true,
+  "browser": "Chromium",
+  "fixture_only": true,
+  "checks": [
+    "private login and HttpOnly preview cookie",
+    "fresh fixture-only page with three residents",
+    "human private thread and explicit scripted reply without automatic generation",
+    "human group thread with two fixtures",
+    "draft preservation across New Thread and thread selection",
+    "resident-origin thread and durable unread indicator",
+    "foreground snapshot reading clears unread",
+    "saved notification intent without push enrollment or delivery",
+    "three-resident synthetic provider-time scheduling demonstration",
+    "shared object creation with the selected fixture owner",
+    "390px mobile Chat controls and both submission forms",
+    "original draft survives desktop/mobile navigation"
+  ],
+  "counts": {
+    "residents": 3,
+    "conversations": 4,
+    "attempts": 4,
+    "world_objects": 1,
+    "notification_intents": 2,
+    "unread_threads": 0
+  },
+  "session": {
+    "name": "tamagi_household_preview_04b78de21843",
+    "http_only": true,
+    "same_site": "Strict"
+  },
+  "synthetic_demo": [
+    {
+      "actor_id": "resident-64fd288a4c6a46f9922fc54444b83702",
+      "seconds": 3
+    },
+    {
+      "actor_id": "resident-a18c1b180faf4e7ab95206f04dc05032",
+      "seconds": 6
+    },
+    {
+      "actor_id": "resident-e3347bef8d2942fc8196c0bd1952d989",
+      "seconds": 12
+    }
+  ],
+  "uncaught_errors": [],
+  "blocked_requests": [],
+  "limits": [
+    "Scripted fixture responses and synthetic provider durations only.",
+    "No real-model calls, Ember state, household migration, production adoption, or device push delivery.",
+    "Desktop and 390px Chromium paths; real devices, OS background policies, restart, and offline delivery remain separate checks."
+  ],
+  "artifacts": "/tmp/tamagi-household-browser-report-REUKCH"
+}

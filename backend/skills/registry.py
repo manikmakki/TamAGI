@@ -75,8 +75,12 @@ class SkillRegistry:
             runtime
             and context
             and not context.depth
-            and context.origin == "user"
             and context.root_id in runtime.chat_controls
+            and (context.origin == "user" or (
+                runtime.household is not None
+                and runtime.household.lineage(context)["origin"] == "user"
+                and not runtime.household.lineage(context)["helper"]
+            ))
         ):
             tools = [
                 tool
@@ -114,6 +118,12 @@ class SkillRegistry:
             async with runtime.execution("user"):
                 return await self.execute(name, **kwargs)
         if runtime and context:
+            household = getattr(runtime, "household", None)
+            if household is not None:
+                try:
+                    household.assert_active(context)
+                except Exception as exc:
+                    return SkillResult(False, error=f"Household execution lease is unavailable: {type(exc).__name__}")
             if context.allowed_tools is not None and name not in context.allowed_tools:
                 return SkillResult(
                     False, error="Tool is not available in this activation"

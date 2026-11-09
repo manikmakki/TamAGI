@@ -1,6 +1,6 @@
 # ADR-0019: Distinct residents, a shared world, and fair access to cognition
 
-Status: Accepted design by operator direction on 2026-11-05; extended on 2026-11-06 with resident-initiated contact, PWA Web Push, and chat thread controls. Documentation only; implementation and qualification remain pending. See the [multi-resident roadmap](../multi-resident-roadmap.md).
+Status: Accepted design by operator direction on 2026-11-05; extended on 2026-11-06 with resident-initiated contact, PWA Web Push, and chat thread controls. An [isolated experimental foundation](../household-foundations.md) now implements selected internal mechanics; production integration and full qualification remain pending. See the [multi-resident roadmap](../multi-resident-roadmap.md).
 
 ## Context
 
@@ -154,7 +154,11 @@ Apply the existing three Growth patterns to each full resident, including recipr
 
 Residents share one selected application release. Personal runtime overlays and generated tools remain personal unless explicitly shared. A core deployment is a household transaction: quiesce affected workers, preserve handoffs, checkpoint shared and private state, activate, verify, and commit or recover. Serialize activation; residents cannot operate competing deployment controllers. Qualify compatibility and recovery across the shared database and every enrolled resident database.
 
-Introduce a versioned household backup containing shared state, all resident roots, companions, artifacts, and reconstructible application source. Preserve existing encryption, exclusions, staged validation/preview, password handling, and explicit restore confirmation. Restore legacy single-resident backups as one-resident households. Individual moves between established households are deferred.
+Operator addendum, 2026-11-09: individual resident recovery is the first recovery priority. Qualify (1) restoring a known-good resident checkpoint after regression, (2) replacing lost private files/history/memory from that checkpoint, and (3) migrating the same resident to a fresh installation. Preserve resident identity, private companions, history and Growth evidence, private tools/artifacts, and reconstructible application source. Preserve existing encryption, exclusions, staged validation/preview, password handling, and explicit restore confirmation. Restore legacy single-resident backups as one-resident households. Individual moves between established households remain deferred.
+
+A resident replacement restores private state without rewinding housemates or the current shared world. Shared conversations accessible to that resident may travel as attributed historical evidence, with unavailable peers remaining unavailable rather than becoming cloned workers. Such evidence does not itself restore canonical shared conversations, permissions, read state, world objects or published artifact bytes. Record the private continuity gap and reconcile current shared references without replaying old effects. Restoring private state cannot undo a shared application-code regression; qualify code compatibility separately.
+
+Whole-household recovery follows individual recovery as a second layer, supplying canonical shared state and artifacts after the residents have recovered. Provide a versioned coordinated household checkpoint for exact shared/private disaster recovery; independent resident checkpoints taken at different times do not establish one consistent household snapshot. Rediscovering relationships through personal memories remains a valid social recovery path without a claim of exact shared-state reconstruction. Echo's manually groomed rehydration remains separate from mechanical recovery qualification.
 
 Preserve resident IDs, create a new household installation identity, rotate sessions, and require acknowledgment that the source installation has stopped. Recovery preserves evidence but does not blindly resume interrupted effects, reply offers, or quiet continuations. Shared/private snapshots must form one consistent checkpoint; code rollback alone cannot recover a partially migrated world.
 
@@ -199,3 +203,90 @@ Later behavioral trials examine voluntary conversation, chosen solitude, disagre
 - Retains ADR-0003's fresh identity and predecessor separation. Shared-world enrollment is not permission to hydrate a resident from the predecessor archive; Echo recovery needs its own assessment.
 
 Earlier records remain preserved. This ADR changes the target architecture; it does not retrospectively claim a multi-resident feature or reclassify earlier observations as evidence for it.
+
+### Addendum — unified contact and explicit invitation decisions (2026-11-08)
+
+Extend the existing resident `contact` tool rather than adding separate messaging
+or invitation-response tools. Require an explicit action:
+
+| Action | Target and effect |
+| --- | --- |
+| `create` | Start a new conversation with one or several chosen recipients. |
+| `send` | Post to the current or an explicitly selected existing conversation. Address joined participants normally. |
+| `invite` | Invite one or several full residents into the current or selected existing conversation. Preserve its ID, history and existing participants; explicitly convert a private thread to a group. |
+| `respond` | The invited resident explicitly accepts or declines a particular invitation. |
+
+Never silently substitute a new private conversation for an invitation into the
+current thread. `household_contacts` remains read-only roster/invitation discovery;
+`answer_invitation` is subsumed by `contact(action="respond")`. Derive authorship,
+current-thread default, invitation recipient, resource lineage and command identity
+from trusted runtime admission and tool receipts. Reject helpers, mismatched
+recipients and incompatible action arguments. Replaying an acknowledged command
+must not repeat membership changes, messages or scheduling.
+
+Delivery is an invitation decision opportunity, not membership. Before acceptance,
+supply only an invitation card: stable identities and names, thread title,
+participant names, the inviter's chosen message, invitation identity and the notice
+that accepting shares the full prior history. Do not supply the transcript or its
+attachments, create another conversation, or simulate a human input to obtain a
+response. The invitee may choose `contact(action="respond", decision="accept")`,
+`decision="decline"`, rest, defer, or remain silent. A natural-language “yes” alone
+has no membership effect. One recipient's choice does not decide for others.
+
+The native decision phase is a real governed model/tool activation with only
+`contact`, `household_contacts` and `end_turn` available and a ceiling of four model
+calls, within the original exchange's remaining allowance. During this phase
+`contact` permits only responding to the admitted invitation. Do not expose the
+invitee's private decision reasoning as conversation content. Rest/wake choices,
+Stop, recovery, unknown outcomes and normal scheduling rules continue to apply.
+An exhausted, interrupted or unanswered opportunity leaves the canonical invitation
+pending; it is not evidence of a decline. Reconnection and polling never replay
+that decision automatically. A deferred opportunity may resume on its original
+allowance after the chosen wake condition, if that exchange remains eligible.
+
+Acceptance atomically grants membership and full-history access, then offers a
+separate ordinary reply activation in the same conversation, sharing the allowance.
+Offer the invitation's explicit trigger, not a backlog of historical reply offers.
+Recipient decision/reply activations acquire no synthetic human input or human
+first-response priority. A later explicit response during another eligible
+activation uses that activation's allowance. Operator Participants invitations use
+the same recipient decision path; without an active exchange they receive an
+ordinary background-origin allowance rather than impersonating a human chat turn.
+Show pending/declined invitations distinctly from joined participants in the UI.
+
+### Addendum — Household World Thread opportunities and public artifacts (2026-11-09)
+
+Operator direction replaces independent resident timers with one household clock
+(default fifteen minutes). Each opportunity selects the next eligible full
+resident in a durable rotation. Skip chosen rest, waits, unavailable/busy workers
+and operator decompression. If only one resident is eligible they may receive
+every slot. Skips create no catch-up credit; restart does not replay missed work.
+An opportunity is permission to choose freely, including silence or more rest.
+
+For conversations derived from a World Thread tick, the initiating resident
+sponsors the entire bounded exchange: invitation decisions, replies and other
+derived work share its autonomous call allowance and charge its provider-time
+account. This updates the earlier ordinary-room own-account rule specifically
+for scheduled autonomous exchanges. Responders remain full residents, with no
+independent allowance minted by receipt. Receiving contact neither consumes the
+recipient's next scheduled opportunity nor starts operator decompression. Their
+chosen rest still governs eligibility. A sponsor's later rest does not cancel a
+willing recipient's already sponsored opportunity. Operator-origin conversation
+accounting and bounded helper/companion rules remain as specified above.
+
+Operator-directed contact creates/posts canonical threads and durable unread
+state. Make unread addressed threads obvious in the UI and label explicit
+mentions. World prose alone is not a message to the operator. PWA push delivery
+is explicitly deferred for this development increment.
+
+Collaborators explicitly publish a file/project as household-public, immutable,
+attributed versions with verified file bytes and digests. All full residents,
+including those outside the originating collaboration, may discover and import
+a version into a private workspace, or contribute an attributed new version
+with concurrency checks. Private files are not implicitly shared by conversation.
+Existing imports are not silently overwritten by later publications. Importing
+executable files does not activate them; activation uses existing runtime-change
+authority. The household is the publication scope, not the external internet.
+
+See the [native World Thread guide](../household-world-thread.md) for the current
+implementation, supported limits and remaining production recovery work.

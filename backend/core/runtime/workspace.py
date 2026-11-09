@@ -38,9 +38,9 @@ Conversation history, memories, world state and the database are managed by thei
 services, not files to create manually here. The simulated Workshop place is
 separate from workshop/ on disk: world_action does not create host files.
 
-register_artifact saves a file's current bytes for reuse and the current artifact
-view. Saving in workshop/ alone does not currently register or activate anything.
-Registering an artifact does not make it a callable tool. Tools must complete the
+Inventory discovers current files saved in workshop/ without registration.
+register_artifact retains a separate saved snapshot of a file's current bytes.
+Saving a file or registering an artifact does not make it a callable tool. Tools must complete the
 runtime_change proposal, test, evaluation and activation lifecycle.
 
 The canonical repository is application source, not resident storage. Releases
@@ -87,6 +87,8 @@ not a full JSON Schema with a top-level properties object.
    The returned job_id tracks execution, not approval. No human review or separate
    comparative marker is needed. Do not pass experiment_id to evaluate. Wait with
    end_turn(status="waiting", wake_event="evaluation_completed") or inspect later.
+   That event means the job settled, including failure or interruption; inspect
+   its status. A failed or exhausted evaluation does not approve the proposal.
    Use inspect with proposal_id for concise status, jobs, and an exact next_call;
    include_evidence=true returns full evidence. Do not queue another evaluation
    just to check status. An interrupted job can leave an unfinished experiment.

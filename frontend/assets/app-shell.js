@@ -4,16 +4,19 @@
   const $ = id => document.getElementById(id);
   const works = new Map(), cursors = new Map(), delivered = new Set(), unread = new Set(), drafts = new Map(), progress = new Map();
   const submissions = new Map();
+  const residentProgress = new Map();
   let seen;
   try{seen=new Set(JSON.parse(localStorage.getItem('tamagi-seen-work')||'[]'));}catch{seen=new Set();}
   const legacyEvent = handleWsEvent;
   const legacySend = sendMessage;
   let durable=true;
-  let view = 'chat', selection = 0, hydrating = true, drawerFocus = null, archiveTab = 'chats', polling = false;
+  let view = 'chat', selection = 0, historyRequest = 0, hydrating = true, drawerFocus = null, archiveTab = 'chats', polling = false;
   let chatPosition={scroll:0,bottom:true};
   const titles = {chat:'Chat',map:'Map',journal:'Journal',inventory:'Inventory',companions:'Companions',archive:'Archive',settings:'Settings'};
   const active = work => work && ['queued','running'].includes(work.status);
   const currentWork = () => [...works.values()].filter(w => w.kind === 'chat' && w.conversation_id === convId && active(w)).sort((a,b) => b.created_at-a.created_at)[0];
+  const draftKey = id => window.TamagiHousehold?.draftKey(id) || id || 'new';
+  const conversationKey = () => window.TamagiHousehold?.storageKey('conversation') || 'tamagi-conversation';
 
   async function request(path, options = {}) {
     const headers = options.body instanceof FormData ? {} : {'Content-Type':'application/json'};
@@ -25,6 +28,32 @@
   }
   function notice(message='') { $('shell-notice').textContent=message; $('shell-notice').hidden=!message; }
   function restoreScroll(element,top){const previous=element.style.scrollBehavior;element.style.scrollBehavior='auto';element.scrollTop=top;element.style.scrollBehavior=previous;}
+  const progressKey = event => event.work_id+':'+(event.grant_id||event.resident_work_id||event.resident_id);
+  function retireResidentProgress(event){
+    const matches=item=>event.grant_id?item.grant_id===event.grant_id:item.resident_id===event.resident_id;
+    progress.set(event.work_id,(progress.get(event.work_id)||[]).filter(item=>!matches(item)));
+    for(const[key,entry]of residentProgress)if(entry.event.work_id===event.work_id&&matches(entry.event)){entry.wrapper.remove();residentProgress.delete(key);}
+    for(const tag of $('live-tags').querySelectorAll('[data-progress-key]'))if(event.grant_id?tag.dataset.progressKey===progressKey(event):tag.dataset.residentId===event.resident_id)tag.remove();
+  }
+  function renderProgress(event){
+    if(!window.TamagiHousehold){legacyEvent(event);return;}
+    const key=progressKey(event);
+    if(['thinking_text','interim_text'].includes(event.type)){
+      let entry=residentProgress.get(key);
+      if(!entry?.wrapper.isConnected){
+        const wrapper=makeInterimGroup({metadata:{resident_id:event.resident_id}});
+        wrapper.classList.add('hh-live-progress');wrapper.dataset.progressKey=key;
+        $('chat-messages').append(wrapper);entry={wrapper,event};residentProgress.set(key,entry);
+      }
+      appendInterimEntry(entry.wrapper.querySelector('.interim-group'),event.type==='thinking_text',event.content);
+    }else if(event.type==='tool_start'){
+      const tag=document.createElement('span');tag.className='skill-tag running';tag.dataset.skill=event.name;
+      tag.dataset.progressKey=key;tag.dataset.residentId=event.resident_id;tag.textContent='⚙ '+event.name;$('live-tags').append(tag);
+    }else if(event.type==='tool_result'){
+      const tag=[...$('live-tags').querySelectorAll('.running')].filter(item=>item.dataset.progressKey===key&&item.dataset.skill===event.name).at(-1);
+      if(tag){tag.classList.remove('running');tag.title=event.output||'';}
+    }else legacyEvent(event);
+  }
   const uuid = () => crypto.randomUUID?.() || Date.now().toString(36)+Math.random().toString(36).slice(2);
   function markSeen(id){seen.add(id);unread.delete(id);localStorage.setItem('tamagi-seen-work',JSON.stringify([...seen].slice(-500)));}
   function subscribe(work) {
@@ -37,17 +66,17 @@
     if(pending){
       submissions.delete(work.request_id);
       if(pending.selection===selection && pending.conversation===convId && $('input').value.trim()===pending.message && pendingFile===pending.file){
-        $('input').value='';autoResize($('input'));clearAttachment();drafts.delete(convId||'new');convId=work.conversation_id;localStorage.setItem('tamagi-conversation',convId);activeRequestId=work.request_id;renderHistory(convId,true).catch(e=>notice(e.message));
+        $('input').value='';autoResize($('input'));clearAttachment();drafts.delete(draftKey(convId));convId=work.conversation_id;localStorage.setItem(conversationKey(),convId);activeRequestId=work.request_id;renderHistory(convId,true).catch(e=>notice(e.message));
       }
     }
     if (initial && !active(work)) {delivered.add(work.work_id);if(!seen.has(work.work_id))unread.add(work.work_id);}
     if (!active(work) && !delivered.has(work.work_id)) {
       delivered.add(work.work_id);
       if (!initial) {
-        if (work.kind === 'chat' && work.conversation_id === convId) {renderHistory(convId, true).catch(e=>notice(e.message));if(view==='chat')markSeen(work.work_id);else unread.add(work.work_id);}
+        if (work.kind === 'chat' && work.conversation_id === convId) {renderHistory(convId, false, true).catch(e=>notice(e.message));if(view==='chat')markSeen(work.work_id);else unread.add(work.work_id);}
         else if (work.kind === 'companion' && view === 'companions' && window.TamagiHomeViews?.finished(work)) markSeen(work.work_id);
         else unread.add(work.work_id);
-        if (work.result?.state) updateState(work.result.state);
+        if (work.result?.state && (!window.TamagiHousehold || work.resident_id===TamagiHousehold.selectedResidentId())) updateState(work.result.state);
         loadConversations();
       }
     }
@@ -55,10 +84,10 @@
   }
   function receive(event) {
     if(!durable){legacyEvent(event);return;}
-    if(event.type==='work_resync'){cursors.delete(event.work_id);progress.delete(event.work_id);return;}
+    if(event.type==='work_resync'){cursors.delete(event.work_id);progress.delete(event.work_id);if(window.TamagiHousehold)renderHistory(convId,false,true).catch(e=>notice(e.message));return;}
     if (event.type === 'accepted') {
       remember(event);
-      if (activeRequestId === event.request_id && !convId) {convId=event.conversation_id;localStorage.setItem('tamagi-conversation',convId);}
+      if (activeRequestId === event.request_id && !convId) {convId=event.conversation_id;localStorage.setItem(conversationKey(),convId);}
       return;
     }
     if (event.type === 'work_snapshot') {
@@ -68,20 +97,37 @@
     if (!event.work_id) return;
     if (event.event_id && event.event_id <= (cursors.get(event.work_id)||0)) return;
     if (event.event_id) cursors.set(event.work_id,event.event_id);
+    if (['thread_changed','membership_changed'].includes(event.type) && window.TamagiHousehold) {
+      // A resident reply can finish while other participants are still working.
+      // Refresh canonical content without completing the shared exchange.
+      const area=$('chat-messages'),top=area.scrollTop,following=area.scrollHeight-top-area.clientHeight<30;
+      if(event.type==='thread_changed')retireResidentProgress(event);
+      restoreScroll(area,following?area.scrollHeight:top);
+      if (event.conversation_id === convId) renderHistory(convId,false,true).catch(e=>notice(e.message));
+      loadConversations();
+      TamagiHousehold.refresh().catch(e=>notice(e.message));
+      return;
+    }
     const work = works.get(event.work_id);
     if (!work) return;
     if (event.type === 'quiet_turn') {work.quiet_turns=event.ordinal;updateActivity();}
     if (event.type === 'message' || event.type === 'work_ended') {
+      progress.delete(work.work_id);
       remember({...work,status:event.turn_status||event.status||'completed',result:event.type==='message'?event:work.result});
       return;
     }
+    if(window.TamagiHousehold&&!active(work))return;
     if (event.type === 'tool_approval_required') {
       work.approval={...event,expires_at:Date.now()/1000+(event.timeout_seconds||30)};
       updateActivity(); return;
     }
     const buffer = progress.get(work.work_id)||[];
     buffer.push(event);if(buffer.length>256)buffer.shift();progress.set(work.work_id,buffer);
-    if (work.kind === 'chat' && work.conversation_id === convId) legacyEvent(event);
+    if (work.kind === 'chat' && work.conversation_id === convId) {
+      const area=$('chat-messages'),top=area.scrollTop,following=area.scrollHeight-top-area.clientHeight<30;
+      renderProgress(event);
+      restoreScroll(area,following?area.scrollHeight:top);
+    }
   }
   async function feed(work) {
     const snapshot = await request('/chat/requests/'+encodeURIComponent(work.work_id)+'?after='+(cursors.get(work.work_id)||0));
@@ -113,29 +159,30 @@
     } finally {polling=false;}
   }
   function saveDraft() {
-    drafts.set(convId||'new',{text:$('input').value,file:pendingFile,scroll:$('chat-messages').scrollTop});
+    drafts.set(draftKey(convId),{text:$('input').value,file:pendingFile,scroll:$('chat-messages').scrollTop});
   }
   function restoreDraft() {
-    const saved=drafts.get(convId||'new');
+    const saved=drafts.get(draftKey(convId));
     $('input').value=saved?.text||'';autoResize($('input'));clearAttachment();
     if(saved?.file){pendingFile=saved.file;$('chip-name').textContent=pendingFile.name;$('chip-icon').textContent=pendingFile.type.startsWith('image/')?'🖼':'📄';$('attach-chip').classList.add('on');$('attach-btn').classList.add('has-file');}
   }
-  async function renderHistory(id, bottom=false) {
+  async function renderHistory(id, bottom=false, preserveScroll=false) {
     if(!id)return;
-    const version=selection, data=await request('/conversations/'+encodeURIComponent(id));
-    if(version!==selection||id!==convId)return;
-    const area=$('chat-messages'),scroll=area.scrollTop;area.replaceChildren();currentInterimGroup=null;clearLiveTags();liveToolOutputs={};
+    const version=selection, requestVersion=++historyRequest, data=await request('/conversations/'+encodeURIComponent(id));
+    if(version!==selection||id!==convId||requestVersion!==historyRequest)return;
+    const area=$('chat-messages'),scroll=area.scrollTop,following=area.scrollHeight-scroll-area.clientHeight<30;
+    area.replaceChildren();residentProgress.clear();currentInterimGroup=null;clearLiveTags();liveToolOutputs={};
     const ids=new Set();
+    const completedGrants=new Set((data.messages||[]).map(message=>message.metadata?.household_grant_id).filter(Boolean));
     for(const message of data.messages||[]) {
       ids.add(message.id);
       const meta=message.metadata||{},thinking=meta.thinking_blocks||[],interim=meta.interim_messages||[];
       if(message.role==='assistant'&&(thinking.length||interim.length)) {
-        const details=document.createElement('details');details.className='msg assistant history-progress';
-        const summary=document.createElement('summary');summary.textContent=(thinking.length?'Reasoning':'Activity')+' · '+(thinking.length+interim.length)+' steps';details.append(summary);
-        for(const text of [...thinking,...interim]){const item=document.createElement('div');item.textContent=text;details.append(item);}area.append(details);
+        const wrapper=makeInterimGroup({thinking,interim,collapsed:true,metadata:meta});
+        wrapper.classList.add('history-progress');wrapper.dataset.progressMessageId=message.id;area.append(wrapper);
       }
       if(message.role==='assistant'&&!message.content?.trim())addTurnStatus(meta.turn_status||'completed');
-      else addMsg(message.role,message.content,meta.skills_used||[],message.timestamp,meta.context_compressed||0,meta.sm_mutations||[]);
+      else addMsg(message.role,message.content,meta.skills_used||[],message.timestamp,meta.context_compressed||0,meta.sm_mutations||[],{...meta,message_id:message.id,sequence:message.sequence??meta.sequence});
     }
     const matching=[...works.values()].filter(w=>w.kind==='chat'&&w.conversation_id===id).sort((a,b)=>a.created_at-b.created_at);
     if(view==='chat')for(const work of matching)if(!active(work))markSeen(work.work_id);
@@ -144,40 +191,44 @@
     }
     const running=currentWork();activeRequestId=running?.request_id||null;
     if(running) {
-      for(const event of progress.get(running.work_id)||[])if(!['typing','tool_approval_required'].includes(event.type))legacyEvent(event);
+      const buffered=(progress.get(running.work_id)||[]).filter(event=>!completedGrants.has(event.grant_id));
+      progress.set(running.work_id,buffered);
+      for(const event of buffered)if(!['typing','tool_approval_required'].includes(event.type))renderProgress(event);
     } else {
       const latest=matching.at(-1);
       if(latest && !active(latest) && latest.status!=='completed' && !(data.messages||[]).some(m=>m.role==='assistant'&&m.metadata?.execution_id===latest.execution_id))addTurnStatus(latest.status);
     }
-    restoreScroll(area,bottom?area.scrollHeight:(drafts.get(id)?.scroll??scroll));
+    restoreScroll(area,bottom||(preserveScroll&&following)?area.scrollHeight:preserveScroll?scroll:(drafts.get(draftKey(id))?.scroll??scroll));
     updateActivity();
+    window.TamagiHousehold?.historyRendered(id,data);
   }
-  window.openConversation = async function (id) {
-    saveDraft();selection++;convId=id;localStorage.setItem('tamagi-conversation',id);restoreDraft();
+  window.openConversation = async function (id,{openChat=true}={}) {
+    saveDraft();selection++;convId=id;localStorage.setItem(conversationKey(),id);restoreDraft();
     for(const work of works.values())if(work.conversation_id===id&&!active(work))markSeen(work.work_id);
-    await renderHistory(id);navigate('/');loadConversations();
+    await renderHistory(id);if(openChat)navigate('/');loadConversations();
   };
-  window.newConversation = function () {
-    saveDraft();selection++;convId=null;localStorage.removeItem('tamagi-conversation');restoreDraft();
+  window.newConversation = function ({openChat=true}={}) {
+    saveDraft();selection++;convId=null;localStorage.removeItem(conversationKey());restoreDraft();
     $('chat-messages').innerHTML='<div class="welcome-msg" id="welcome"><strong>A new conversation.</strong><br>What shall we explore?</div>';
-    activeRequestId=null;currentInterimGroup=null;clearLiveTags();navigate('/');updateActivity();$('input').focus();loadConversations();
+    activeRequestId=null;currentInterimGroup=null;clearLiveTags();if(openChat)navigate('/');updateActivity();if(openChat)$('input').focus();loadConversations();
   };
   window.sendMessage = async function () {
     if(!durable)return legacySend();
     const input=$('input'),message=input.value.trim(),file=pendingFile;
     if((!message&&!file)||(loading&&!quietActive))return;
-    const version=selection, originalConversation=convId;
-    const retry=[...submissions.values()].find(s=>s.conversation===convId&&s.message===message&&s.file===file);
+    const version=selection, originalConversation=convId, household=window.TamagiHousehold, residentId=household?.selectedResidentId();
+    const retry=[...submissions.values()].find(s=>s.conversation===convId&&s.message===message&&s.file===file&&(!household||s.residentId===residentId));
     const body=retry?.body||{message:message||`Attached: ${file.name}`,conversation_id:convId,request_id:uuid()};
     loading=true;$('send-btn').disabled=true;notice('');
     try {
+      if(household&&!retry){body.mentions=household.resolveMentions(message);if(!originalConversation)body.participants=household.participants();}
       if(!retry&&file?.type.startsWith('image/')){body.image_data=await toBase64(file);body.image_media_type=file.type;}
-      else if(!retry&&file){const form=new FormData();form.append('file',file);const upload=await request('/upload',{method:'POST',body:form});body.message+=` [file uploaded to workspace: ${upload.path}]`;}
-      submissions.set(body.request_id,{body,conversation:originalConversation,message,file,selection:version});
+      else if(!retry&&file){const form=new FormData();form.append('file',file);const upload=await request('/upload',{method:'POST',body:form,...(household?{headers:{'X-Tamagi-Resident':residentId}}:{})});body.message+=` [file uploaded to workspace: ${upload.path}]`;}
+      submissions.set(body.request_id,{body,conversation:originalConversation,message,file,selection:version,residentId});
       let work;
       // An uncertain acknowledgment is retried with the same identity and payload.
       for(let attempt=0;attempt<2;attempt++) {
-        try{work=await request('/chat/requests',{method:'POST',body:JSON.stringify(body)});break;}
+        try{work=await request('/chat/requests',{method:'POST',body:JSON.stringify(body),...(household?{headers:{'X-Tamagi-Resident':residentId}}:{})});break;}
         catch(error){if(attempt||!(error instanceof TypeError))throw error;}
       }
       remember(work);subscribe(work);
@@ -264,18 +315,19 @@
       for(const id of ['operator','connections','appearance'])$('settings-'+id).hidden=setting!==id;
       document.querySelectorAll('[data-setting]').forEach(link=>link.dataset.setting===setting?link.setAttribute('aria-current','page'):link.removeAttribute('aria-current'));
     }
-    document.querySelectorAll('#view-'+view+' iframe[data-src]').forEach(frame=>{if(!frame.src&&!frame.hidden)frame.src=frame.dataset.src;});
+    window.TamagiHousehold?.paintScopes?.();
+    document.querySelectorAll('#view-'+view+' iframe[data-src]').forEach(frame=>{if(!frame.src&&!frame.hidden)frame.src=window.TamagiHousehold?TamagiHousehold.scopeUrl(frame.dataset.src):frame.dataset.src;});
     if(['journal','map','companions','settings'].includes(view))window.TamagiHomeViews?.load().catch(e=>notice(e.message));
     if(view==='inventory')window.TamagiHomeViews?.inventory().catch(e=>notice(e.message));
     if(view==='chat'&&previous==='settings'){loadSpriteConfig().catch(()=>{});loadState();}
-    if(next.growth)window.TamagiHomeViews?.growth();updateActivity();
+    if(next.growth)window.TamagiHomeViews?.growth();updateActivity();window.TamagiHousehold?.scheduleRead();
   }
   window.triggerDream = async function () {
     const button=$('dream-trigger-btn');button.disabled=true;button.textContent='Ticking…';
     try{const result=await request('/world/tick',{method:'POST'});notice(result.detail||'World Thread: '+result.status);await loadMindPanel();await loadState();}
     catch(error){notice(error.message);}finally{button.disabled=false;button.textContent='▶ Tick Now';}
   };
-  window.TamagiShell={api:request,notice,navigate,works,remember,subscribe,uuid,markSeen,view:()=>view};
+  window.TamagiShell={api:request,notice,navigate,works,remember,subscribe,uuid,markSeen,view:()=>view,saveDraft,restoreDraft,refreshHistory:()=>renderHistory(convId)};
   document.addEventListener('click',event=>{
     const link=event.target.closest('a[href]');if(!link||event.ctrlKey||event.metaKey||event.shiftKey||link.hasAttribute('download')||link.target)return;
     const url=new URL(link.href,location.href);
@@ -292,8 +344,8 @@
     for(const dialog of document.querySelectorAll('.shell-dialog'))dialog.querySelector('.dialog-close')?.addEventListener('click',()=>dialog.close());
     try {
       await poll(true);
-      const saved=localStorage.getItem('tamagi-conversation')||[...works.values()].filter(w=>w.kind==='chat').sort((a,b)=>b.created_at-a.created_at)[0]?.conversation_id;
-      if(saved){convId=saved;try{await renderHistory(saved);}catch{convId=null;localStorage.removeItem('tamagi-conversation');}}
+      const saved=localStorage.getItem(conversationKey())||[...works.values()].filter(w=>w.kind==='chat'&&(!window.TamagiHousehold||w.resident_id===TamagiHousehold.selectedResidentId())).sort((a,b)=>b.created_at-a.created_at)[0]?.conversation_id;
+      if(saved){try{if(window.TamagiHousehold)await window.openConversation(saved,{openChat:false});else{convId=saved;await renderHistory(saved);}}catch{convId=null;localStorage.removeItem(conversationKey());}}
       hydrating=false;
       for(const work of works.values())if(active(work)){subscribe(work);await feed(work);}
     }catch(error){hydrating=false;if(error.status===503&&error.message.includes('home platform'))durable=false;else notice(error.message);}

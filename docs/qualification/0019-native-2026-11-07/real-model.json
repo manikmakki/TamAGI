@@ -1,0 +1,27 @@
+{
+  "status": "completed",
+  "elapsed_seconds": 7.894,
+  "real_model_used": true,
+  "live_resident_state_used": false,
+  "worker_resident": "resident-aca3f63e429f423fb441088a7f540478",
+  "conversation_id": "conversation-4ace792de05c4cf98590b9bffcd12a79",
+  "message_count": 2,
+  "authors": [
+    "operator",
+    "resident-aca3f63e429f423fb441088a7f540478"
+  ],
+  "response": "Hello from Cedar \u2014 connectivity confirmed, and I'm glad you're here! \ud83c\udf31",
+  "status_detail": null,
+  "source_revision": "cb1d309144c8b53255c83f048cbeb157f6aa5124",
+  "model": "qwen36-heretic",
+  "fresh_residents": [
+    "Cedar",
+    "Willow",
+    "River"
+  ],
+  "background_autonomy": false,
+  "exchange_provider_calls": 2,
+  "skills_used": [
+    "express"
+  ]
+}

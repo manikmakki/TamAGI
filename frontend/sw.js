@@ -1,5 +1,5 @@
 // TamAGI Service Worker — PWA offline support
-const CACHE_NAME = 'tamagi-platform-v11';
+const CACHE_NAME = 'tamagi-platform-v14';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -9,8 +9,8 @@ const STATIC_ASSETS = [
   '/assets/avatar-ember.js?v=8',
   '/assets/avatar-runtime.js?v=8',
   '/assets/app-shell.css?v=18',
-  '/assets/app-shell.js?v=18',
-  '/assets/home-views.js?v=19',
+  '/assets/app-shell.js?v=20',
+  '/assets/home-views.js?v=22',
   '/assets/marked.min.js',
   '/assets/d3.v7.min.js',
   '/assets/panel-bridge.js',
@@ -42,7 +42,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // API calls: always network
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws')) {
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/r/') || url.pathname.startsWith('/ws')) {
     event.respondWith(fetch(event.request));
     return;
   }

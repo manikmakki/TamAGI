@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#12151c">
+  <title>TamAGI · Household preview</title>
+  <style>
+    :root{color-scheme:dark;--bg:#10131a;--surface:#191d26;--raised:#212632;--line:#343b49;--text:#f0ede6;--muted:#aab0bb;--green:#a6d8bc;--amber:#e7bd83;--red:#f1a09d;--radius:15px;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 15% 0,#26302e 0,transparent 45%),var(--bg);color:var(--text);line-height:1.5}button,input,textarea,select{font:inherit}button,input,textarea,select{border:1px solid var(--line);border-radius:9px}button{background:var(--raised);color:var(--text);cursor:pointer;min-height:42px;padding:9px 14px}button:hover:not(:disabled){background:#303746;border-color:#657062}button:disabled{opacity:.45;cursor:wait}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--amber);outline-offset:3px}input,textarea,select{width:100%;background:#131720;color:var(--text);padding:10px 12px}textarea{resize:vertical;min-height:98px}input[type=checkbox]{width:18px;height:18px;accent-color:var(--green)}label{display:block;font-size:.88rem;color:var(--muted)}label>input,label>textarea,label>select{margin-top:6px}a{color:var(--green)}h1,h2,h3,p{margin:0}h1{font-size:clamp(1.65rem,4vw,2.2rem);font-weight:650;letter-spacing:-.04em}h2{font-size:1.03rem;font-weight:650}h3{font-size:.98rem}small,.small{font-size:.8rem}.muted{color:var(--muted)}.eyebrow{color:var(--green);font-size:.76rem;font-weight:650;letter-spacing:.14em;text-transform:uppercase}.primary{background:var(--green);border-color:var(--green);color:#14271d;font-weight:650}.primary:hover:not(:disabled){background:#bde8d0;color:#14271d}.quiet{background:transparent}.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid var(--line);border-radius:30px;font-size:.73rem;color:var(--muted)}.pill::before{content:"";height:6px;width:6px;background:var(--green);border-radius:50%}.pill.paused::before{background:var(--amber)}
+    .shell{max-width:1460px;padding:30px 28px 45px;margin:auto}.top{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:24px}.top-actions{display:flex;align-items:center;gap:8px}.intro{display:flex;align-items:flex-start;gap:12px;padding:16px 19px;background:#24251f;border:1px solid #494536;border-radius:var(--radius);margin:18px 0 22px;color:#d9d3c5}.intro-icon{color:var(--amber);font-size:1.2rem;line-height:1.3}.intro p{font-size:.9rem}.residents{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:24px}.resident{background:linear-gradient(130deg,#242b31,var(--surface));border:1px solid var(--line);border-radius:var(--radius);padding:18px}.resident-top{display:flex;gap:11px;align-items:center;margin-bottom:17px}.avatar{display:grid;place-items:center;width:42px;height:42px;flex:none;border-radius:13px;background:#354e43;color:#d6f1df;font-size:1.15rem;font-weight:650}.resident:nth-child(2) .avatar{background:#4b414e;color:#f0dfed}.resident:nth-child(3) .avatar{background:#444b62;color:#dfe5fd}.resident-top .pill{margin-top:4px}.resident-metrics{display:flex;gap:22px;font-size:.79rem;color:var(--muted);margin-bottom:15px}.resident-metrics strong{display:block;font-size:1rem;font-weight:500;color:var(--text)}.resident-actions{display:flex;gap:8px;flex-wrap:wrap}.resident-actions button{font-size:.8rem;min-height:36px;padding:7px 10px}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 325px;align-items:start;gap:18px}.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}.panel-head{padding:17px 19px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}.chat-actions{display:flex;gap:8px;flex-wrap:wrap}.chat-actions button{font-size:.82rem}.chat-body{display:grid;grid-template-columns:205px minmax(0,1fr);min-height:610px}.thread-sidebar{background:#151a22;border-right:1px solid var(--line);padding:12px 8px}.thread-list{display:flex;flex-direction:column;gap:5px}.thread-item{text-align:left;background:transparent;border-color:transparent;width:100%;padding:12px 10px}.thread-item[aria-current=true]{background:#29332e;border-color:#486252}.thread-title{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:.88rem;font-weight:600}.thread-meta{display:block;margin-top:4px;color:var(--muted);font-size:.73rem;overflow-wrap:anywhere}.unread-dot{display:inline-block;min-width:20px;padding:0 5px;background:var(--green);border-radius:15px;color:#193025;font-size:.7rem;text-align:center}.list-empty{padding:15px 10px;color:var(--muted);font-size:.82rem}.conversation{min-width:0;display:flex;flex-direction:column}.thread-heading{padding:19px 21px;border-bottom:1px solid var(--line)}.thread-heading p{margin-top:4px;font-size:.79rem;color:var(--muted)}.messages{height:360px;min-height:160px;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:15px;scrollbar-gutter:stable}.message{max-width:94%;width:fit-content;overflow-wrap:anywhere;flex:none}.message.mine{margin-left:auto}.message-author{font-size:.72rem;color:var(--muted);margin:0 2px 5px}.message-text{padding:11px 14px;background:#262c38;border:1px solid #373f4f;border-radius:3px 12px 12px 12px;font-size:.9rem;white-space:pre-wrap}.message.mine .message-text{background:#2b3c33;border-color:#405b49;border-radius:12px 3px 12px 12px}.composer{padding:16px 20px;border-top:1px solid var(--line);margin-top:auto;display:grid;gap:12px}.form-row{display:flex;gap:12px;align-items:center;justify-content:space-between}.form-stack{display:grid;gap:14px}.new-composer{padding:23px;display:grid;gap:17px}.new-composer p{font-size:.88rem;color:var(--muted)}fieldset{min-width:0;border:0;padding:0;margin:0}legend{color:var(--muted);font-size:.82rem;margin-bottom:7px}.choices{display:flex;flex-wrap:wrap;gap:7px 12px}.choice{display:inline-flex;align-items:center;gap:7px;font-size:.8rem;color:var(--text)}.choice input{margin:0}.aside{display:grid;gap:16px}.aside .panel-body{padding:17px;display:grid;gap:13px}.aside p{font-size:.81rem}.aside button{font-size:.84rem}.aside textarea{min-height:90px}.offers{display:grid;gap:8px}.offer{display:flex;justify-content:space-between;align-items:center;gap:9px;padding:10px;border:1px solid var(--line);border-radius:10px}.offer span{font-size:.8rem}.offer button{font-size:.75rem;padding:7px 9px;min-height:35px}.world-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding:17px}.world-object{padding:13px;border:1px solid var(--line);border-radius:10px;background:#171c23;overflow-wrap:anywhere}.world-object p{font-size:.79rem;color:var(--muted);margin-top:3px}.lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px}details summary{padding:16px 19px;cursor:pointer;font-size:.9rem;font-weight:600}details .panel-body{padding:0 18px 18px}.table-wrap{max-height:300px;overflow:auto}table{width:100%;border-collapse:collapse;font-size:.76rem;text-align:left}th,td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{font-weight:500;color:var(--muted)}.technical{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.72rem;overflow-wrap:anywhere}.status{min-height:25px;margin:15px 2px;color:var(--green);font-size:.86rem}.status.error{color:var(--red)}.footer{margin-top:22px;display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:.75rem}.hidden,[hidden]{display:none!important}.empty-chat{padding:45px 25px;text-align:center;color:var(--muted)}.loading{color:var(--muted);padding:20px}.count-label{color:var(--muted);font-size:.76rem}button[aria-pressed=true]{border-color:var(--green);color:var(--green)}
+    @media(max-width:1080px){.workspace{grid-template-columns:minmax(0,1fr)}.aside{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.chat-body{min-height:540px}.messages{height:340px}.lower{grid-template-columns:minmax(0,1fr)}}
+    @media(max-width:670px){.shell{padding:20px 14px 30px}.top{align-items:flex-start;gap:12px}.top-actions{flex-wrap:wrap;justify-content:flex-end}.top-actions .pill{display:none}.top-actions button{font-size:.75rem;min-height:36px;padding:6px 9px}.residents{grid-template-columns:minmax(0,1fr);gap:9px}.resident{padding:13px 14px}.resident-top{margin-bottom:11px}.resident-metrics{display:none}.resident-actions{float:right;margin-top:-43px}.resident-actions button{font-size:.72rem;max-width:105px}.resident-top h3{font-size:.87rem;max-width:165px}.avatar{width:36px;height:36px}.intro{padding:13px}.intro p{font-size:.8rem}.chat-body{grid-template-columns:minmax(0,1fr);min-height:0}.thread-sidebar{border-right:0;border-bottom:1px solid var(--line);padding:8px}.thread-list{flex-direction:row;overflow:auto}.thread-item{width:180px;min-width:150px}.list-empty{padding:9px}.panel-head{padding:14px;align-items:flex-start;flex-direction:column}.chat-actions{width:100%}.chat-actions button{flex:1}.thread-heading{padding:15px}.messages{height:340px;padding:15px}.composer{padding:13px}.aside{grid-template-columns:minmax(0,1fr)}.new-composer{padding:17px}.footer{flex-direction:column}.form-row{align-items:flex-start;flex-direction:column}.form-row button{width:100%}.resident-actions button:first-child{display:none}}
+    .thread-title>span:first-child{min-width:0;overflow-wrap:anywhere}.thread-heading h2{overflow-wrap:anywhere}.home-inspection{margin-bottom:18px}.home-content{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;padding:18px}.home-content pre{font:inherit;font-size:.82rem;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);margin:10px 0 0}.home-content p{font-size:.8rem;color:var(--muted);margin-top:8px}.home-content h3{color:var(--green)}
+    @media(max-width:670px){.home-content{grid-template-columns:minmax(0,1fr)}.resident-actions{float:none;margin-top:0}.resident-actions button:first-child{display:initial}}
+    @media(prefers-reduced-motion:no-preference){button{transition:background .15s,border-color .15s}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="top">
+      <div><div class="eyebrow">TamAGI / Development</div><h1>A household, taking shape.</h1></div>
+      <div class="top-actions"><span class="pill">Isolated preview</span><button id="refresh" class="quiet" type="button">Refresh</button><button id="logout" class="quiet" type="button">Log out</button></div>
+    </header>
+    <div class="intro"><span class="intro-icon" aria-hidden="true">◇</span><p><strong>A separate household for trying things.</strong> These are fresh test residents with scripted responses. No LLM or push delivery runs here. Ember’s live home is separate.</p></div>
+    <section aria-label="Test residents" class="residents" id="residents"><p class="muted">Opening the test household…</p></section>
+    <section id="home-inspection" class="panel home-inspection" hidden aria-labelledby="home-heading"><div class="panel-head"><h2 id="home-heading">A resident’s home</h2><button id="close-home" type="button" class="quiet">Close</button></div><div class="home-content"><div><h3>Identity</h3><pre id="home-identity"></pre></div><div><h3>Private memory</h3><div id="home-memory"></div></div><div><h3>Visible from this home</h3><div id="home-world"></div></div></div></section>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+    <div class="workspace">
+      <section class="panel" aria-labelledby="chat-title">
+        <div class="panel-head"><h2 id="chat-title">Conversations</h2><div class="chat-actions"><button id="unread-filter" type="button" aria-pressed="false">Unread threads (0)</button><button id="new-thread" type="button" class="primary">＋ New Thread</button></div></div>
+        <div class="chat-body">
+          <nav class="thread-sidebar" aria-label="Conversation threads"><div id="threads" class="thread-list"><p class="list-empty">No conversations yet.</p></div></nav>
+          <div class="conversation">
+            <form id="new-thread-form" class="new-composer">
+              <div><h2>Start a conversation</h2><p>Choose who to include. A thread is created when you send.</p></div>
+              <label>Thread title <input id="thread-title" maxlength="200" autocomplete="off" placeholder="An idea to share"></label>
+              <fieldset><legend>Participants</legend><div id="thread-participants" class="choices"></div></fieldset>
+              <label>Your opening message <textarea id="thread-opening" required maxlength="32000" placeholder="What would you like to talk about?"></textarea></label>
+              <fieldset><legend>Offer a reply to <span class="muted">(leave empty for everyone)</span></legend><div id="new-mentions" class="choices"></div></fieldset>
+              <div class="form-row"><small class="muted">The preview always includes you.</small><button type="submit" class="primary" data-mutation>Start thread</button></div>
+            </form>
+            <div id="thread-view" class="hidden">
+              <div class="thread-heading"><h2 id="selected-title"></h2><p id="selected-members"></p></div>
+              <div id="messages" class="messages" aria-label="Conversation messages" tabindex="0"></div>
+              <form id="message-form" class="composer">
+                <label>Your message <textarea id="message" required maxlength="32000" placeholder="Write a message…"></textarea></label>
+                <fieldset><legend>Offer a reply to <span class="muted">(leave empty for everyone)</span></legend><div id="message-mentions" class="choices"></div></fieldset>
+                <div class="form-row"><small class="muted">Replies appear only when you run a scripted reply.</small><button type="submit" class="primary" data-mutation>Send message</button></div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+      <aside class="aside">
+        <section class="panel" aria-labelledby="resident-contact-title">
+          <div class="panel-head"><h2 id="resident-contact-title">Let a resident reach out</h2></div>
+          <form id="resident-form" class="panel-body">
+            <p class="muted">Choose an opening for a test resident. It uses their autonomous exchange, with you included.</p>
+            <label>Resident <select id="contact-resident" required></select></label>
+            <label>Title <input id="contact-title" maxlength="200" placeholder="Something on my mind"></label>
+            <fieldset><legend>Also include</legend><div id="contact-participants" class="choices"></div></fieldset>
+            <label>Opening message <textarea id="contact-message" required maxlength="32000" placeholder="I have something I’d like to share…"></textarea></label>
+            <fieldset><legend>Offer a reply to <span class="muted">(empty means everyone)</span></legend><div id="contact-mentions" class="choices"></div></fieldset>
+            <button type="submit" class="primary" data-mutation>Create resident thread</button>
+          </form>
+        </section>
+        <section class="panel" aria-labelledby="offers-title">
+          <div class="panel-head"><h2 id="offers-title">Reply opportunities</h2><span class="count-label" id="offer-count">0 pending</span></div>
+          <div class="panel-body"><p class="muted">These are optional offers. Run one to add a clearly scripted response.</p><div id="offers" class="offers"><p class="muted">No pending offers.</p></div></div>
+        </section>
+      </aside>
+    </div>
+    <div class="lower">
+      <section class="panel" aria-labelledby="world-title">
+        <div class="panel-head"><h2 id="world-title">The shared world</h2><span class="count-label" id="world-count"></span></div>
+        <div id="world" class="world-grid"><p class="muted small">No objects yet.</p></div>
+        <form id="world-form" class="composer">
+          <label>Object name <input id="world-name" required maxlength="200" placeholder="A smooth river stone"></label>
+          <div class="choices"><label style="flex:1">Owner <select id="world-owner" required></select></label><label style="flex:1">Visibility <select id="world-visibility"><option value="shared">Shared</option><option value="private">Private</option></select></label></div>
+          <p class="muted small">Private objects stay in their owner’s home. Use “Inspect home” to see that resident’s view.</p>
+          <button type="submit" data-mutation>Add world object</button>
+        </form>
+      </section>
+      <div class="form-stack">
+        <details class="panel"><summary>Provider time &amp; attempts <span id="attempt-count" class="count-label"></span></summary><div class="panel-body"><p class="muted small" style="margin-bottom:10px">Time is synthetic and advances instantly. No request reaches a model.</p><button id="scheduling-demo" type="button" data-mutation style="margin-bottom:12px">Run scheduling demo</button><div class="table-wrap"><table><thead><tr><th scope="col">Resident</th><th scope="col">State</th><th scope="col">Measured time</th></tr></thead><tbody id="attempts"></tbody></table></div><div id="timeline" class="muted small" style="margin-top:12px"></div></div></details>
+        <details class="panel"><summary>Notification intents <span id="notification-count" class="count-label"></span></summary><div class="panel-body"><p class="muted small" style="margin-bottom:10px">Saved alerts only. Push enrollment and delivery are still to come.</p><div class="table-wrap"><table><thead><tr><th scope="col">Thread</th><th scope="col">State</th></tr></thead><tbody id="notifications"></tbody></table></div></div></details>
+      </div>
+    </div>
+    <footer class="footer"><span>Experimental ADR-0019 foundations · Scripted fixtures</span><span id="connection">Connecting…</span></footer>
+  </main>
+  <script>
+  (() => {
+    'use strict';
+    const $ = id => document.getElementById(id);
+    let state = null, selected = null, snapshot = null, onlyUnread = false, requestEpoch = 0, selectionEpoch = 0;
+    let refreshPromise = null, mutationBusy = false, rosterSignature = '', readFrame = null;
+    const drafts = new Map(), acknowledged = new Map(), reading = new Set(), requestKeys = new Map();
+    const node = (tag, text, className) => { const item = document.createElement(tag); if (text !== undefined) item.textContent = text; if (className) item.className = className; return item; };
+    const data = record => record && record.data ? record.data : record || {};
+    const residents = () => state ? state.residents || [] : [];
+    const name = id => id === 'operator' ? 'You' : (residents().find(person => person.id === id)?.name || id || 'Unknown');
+    const threadName = id => state?.conversations?.find(thread => thread.id === id)?.title || 'Untitled conversation';
+    const seconds = value => `${Number(value || 0).toFixed(1)}s`;
+    const selectedValues = id => [...$(id).querySelectorAll('input:checked')].map(input => input.value);
+    const unread = thread => typeof thread.unread === 'number' ? thread.unread : Number(thread.unread?.count || Boolean(thread.unread));
+    function status(text, error = false) { const element = $('status'); element.textContent = text; element.classList.toggle('error', error); element.setAttribute('role', error ? 'alert' : 'status'); }
+    function freshKey() { return window.crypto.randomUUID ? window.crypto.randomUUID() : [...window.crypto.getRandomValues(new Uint8Array(20))].map(value => value.toString(16).padStart(2, '0')).join(''); }
+    function errorText(value) {
+      if (Array.isArray(value)) return value.map(item => `${item.loc?.slice(-1)[0] || 'Request'}: ${item.msg || String(item)}`).join('; ');
+      if (typeof value === 'string') return value;
+      return value?.message || 'The request could not be completed.';
+    }
+    async function api(path, body) {
+      const options = {credentials:'same-origin', headers:{Accept:'application/json'}};
+      let fingerprint;
+      if (body !== undefined) {
+        options.method = 'POST'; options.body = JSON.stringify(body);
+        fingerprint = path + '\n' + options.body;
+        if (!requestKeys.has(fingerprint)) requestKeys.set(fingerprint, freshKey());
+        options.headers['Content-Type'] = 'application/json';
+        options.headers['X-Household-Preview'] = '1';
+        options.headers['Idempotency-Key'] = requestKeys.get(fingerprint);
+      }
+      let response;
+      try { response = await fetch(path, options); } catch (_) { throw new Error('Connection lost. Your draft is saved; try again.'); }
+      let result;
+      try { result = await response.json(); } catch (_) { throw new Error(`The preview returned an unreadable response (${response.status}).`); }
+      if (!response.ok) {
+        if (response.status === 401) throw new Error('Your preview session ended. Log in again at /login.');
+        throw new Error(errorText(result.detail || result.error || result));
+      }
+      if (fingerprint) requestKeys.delete(fingerprint);
+      return result;
+    }
+    function choices(id, people, {defaults = [], preserve = true} = {}) {
+      const previous = preserve ? selectedValues(id) : defaults;
+      const container = $(id); container.replaceChildren();
+      people.forEach(person => {
+        const label = node('label', undefined, 'choice'), input = node('input');
+        input.type = 'checkbox'; input.value = person.id; input.checked = previous.includes(person.id);
+        label.append(input, document.createTextNode(person.name)); container.append(label);
+      });
+      if (!people.length) container.append(node('span', 'No additional participants.', 'muted small'));
+    }
+    function options(id, people) {
+      const previous = $(id).value; $(id).replaceChildren();
+      people.forEach(person => { const option = node('option', person.name); option.value = person.id; $(id).append(option); });
+      if (people.some(person => person.id === previous)) $(id).value = previous;
+    }
+    function updateMentionChoices() {
+      choices('new-mentions', residents().filter(person => selectedValues('thread-participants').includes(person.id)));
+      const actor = $('contact-resident').value;
+      const peers = selectedValues('contact-participants');
+      choices('contact-mentions', [{id:'operator', name:'You'}, ...residents().filter(person => person.id !== actor && peers.includes(person.id))]);
+    }
+    function contactParticipants() {
+      choices('contact-participants', residents().filter(person => person.id !== $('contact-resident').value));
+      updateMentionChoices();
+    }
+    function renderResidents() {
+      const container = $('residents'); container.replaceChildren();
+      residents().forEach(person => {
+        const card = node('article', undefined, 'resident'), top = node('div', undefined, 'resident-top');
+        const heading = node('div'), badge = node('span', person.available ? 'Available' : 'Paused', 'pill' + (person.available ? '' : ' paused'));
+        heading.append(node('h3', person.name), badge); top.append(node('div', person.name.charAt(0).toUpperCase(), 'avatar'), heading);
+        const metrics = node('div', undefined, 'resident-metrics');
+        [['Measured provider time', person.measured_service_seconds], ['Virtual service', person.service]].forEach(([label, value]) => { const metric = node('div', label); metric.append(node('strong', seconds(value))); metrics.append(metric); });
+        const actions = node('div', undefined, 'resident-actions');
+        const contact = node('button', 'Start a topic'); contact.type = 'button'; contact.addEventListener('click', () => { $('contact-resident').value = person.id; contactParticipants(); $('resident-form').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'center'}); $('contact-message').focus({preventScroll:true}); });
+        const inspect = node('button', 'Inspect home'); inspect.type = 'button'; inspect.addEventListener('click', () => inspectHome(person.id).catch(error => status(error.message, true)));
+        const availability = node('button', person.available ? 'Pause opportunities' : 'Make available'); availability.type = 'button'; availability.dataset.mutation = ''; availability.disabled = mutationBusy;
+        availability.addEventListener('click', () => perform(async () => { await api(`/api/preview/residents/${encodeURIComponent(person.id)}/availability`, {available:!person.available}); await refreshState(); status(`${person.name} is ${person.available ? 'paused' : 'available'} for preview opportunities.`); }));
+        actions.append(contact, inspect, availability); card.append(top, metrics, actions); container.append(card);
+      });
+      const signature = residents().map(person => person.id + ':' + person.name).join('|');
+      if (signature !== rosterSignature) {
+        const first = !rosterSignature; rosterSignature = signature;
+        choices('thread-participants', residents(), {preserve:!first, defaults:residents()[0] ? [residents()[0].id] : []});
+        options('contact-resident', residents()); options('world-owner', residents()); contactParticipants();
+      }
+    }
+    function renderThreads() {
+      $('unread-filter').textContent = `Unread threads (${state?.unread_count || 0})`;
+      $('unread-filter').setAttribute('aria-pressed', String(onlyUnread));
+      const container = $('threads'); container.replaceChildren();
+      const threads = (state?.conversations || []).filter(thread => !onlyUnread || unread(thread));
+      threads.forEach(thread => {
+        const button = node('button', undefined, 'thread-item'); button.type = 'button'; button.setAttribute('aria-current', String(thread.id === selected));
+        const title = node('span', undefined, 'thread-title'); title.append(node('span', thread.title || 'Untitled conversation'));
+        if (unread(thread)) title.append(node('span', String(unread(thread)), 'unread-dot'));
+        button.append(title, node('span', (thread.participants || []).map(name).join(', '), 'thread-meta'));
+        button.addEventListener('click', () => openThread(thread.id).catch(error => status(error.message, true))); container.append(button);
+      });
+      if (!threads.length) container.append(node('p', onlyUnread ? 'All caught up.' : 'No conversations yet.', 'list-empty'));
+    }
+    async function inspectHome(id) {
+      const result = await api(`/api/preview/residents/${encodeURIComponent(id)}`);
+      $('home-heading').textContent = `${name(id)}’s separate home`;
+      $('home-identity').textContent = (result.identities || []).map(identity => `${identity.name}\n${identity.text}`).join('\n\n') || 'No identity records.';
+      $('home-memory').replaceChildren(...(result.memories || []).map(memory => node('p', memory.text || 'An attributed memory record.')));
+      if (!result.memories?.length) $('home-memory').append(node('p', 'No memory records.'));
+      $('home-world').replaceChildren(...(result.world || []).map(record => { const object = data(record); return node('p', `${object.name || record.id} · ${object.visibility || 'private'}`); }));
+      if (!result.world?.length) $('home-world').append(node('p', 'No visible world objects yet.'));
+      $('home-inspection').hidden = false;
+      $('home-inspection').scrollIntoView({block:'nearest', behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+    }
+    function renderOffers() {
+      const offers = (state?.offers || []).filter(record => {
+        const offer = data(record);
+        return offer.status === 'pending' && (state.conversations || []).some(thread => thread.id === offer.conversation_id);
+      });
+      $('offer-count').textContent = `${offers.length} pending`; const container = $('offers'); container.replaceChildren();
+      offers.forEach(record => {
+        const offer = data(record), person = residents().find(item => item.id === offer.recipient);
+        const row = node('div', undefined, 'offer'), label = node('span');
+        label.append(node('strong', name(offer.recipient)), node('span', threadName(offer.conversation_id), 'thread-meta'));
+        const button = node('button', 'Run reply'); button.type = 'button'; button.dataset.mutation = ''; button.disabled = mutationBusy || !person?.available;
+        button.setAttribute('aria-label', `Run a scripted reply from ${name(offer.recipient)} in ${threadName(offer.conversation_id)}`);
+        button.addEventListener('click', () => perform(async () => {
+          const navigation = selectionEpoch;
+          await api(`/api/preview/residents/${encodeURIComponent(offer.recipient)}/reply`, {offer_id:record.id});
+          await refreshState(); if (navigation === selectionEpoch) await openThread(offer.conversation_id); status(`A scripted reply from ${name(offer.recipient)} was added.`);
+        }));
+        row.append(label, button); container.append(row);
+      });
+      if (!offers.length) container.append(node('p', 'No pending offers.', 'muted'));
+    }
+    function renderWorld() {
+      const world = state?.world || []; $('world-count').textContent = `${world.length} objects`; const container = $('world'); container.replaceChildren();
+      world.forEach(record => {
+        const object = data(record), item = node('article', undefined, 'world-object');
+        item.append(node('h3', object.name || record.id), node('p', `${object.visibility || 'private'} · ${name(object.owner || object.owner_id)}`));
+        if (object.location) item.append(node('p', `At ${object.location}`, 'technical'));
+        container.append(item);
+      });
+      if (!world.length) container.append(node('p', 'A place for something shared. Add the first object below.', 'muted small'));
+    }
+    function renderInspection() {
+      const attempts = state?.attempts || []; $('attempt-count').textContent = `(${attempts.length})`; $('attempts').replaceChildren();
+      attempts.slice().reverse().forEach(record => {
+        const attempt = data(record), row = node('tr');
+        [name(attempt.actor_id), attempt.status || 'unknown', seconds(attempt.service_seconds)].forEach(value => row.append(node('td', value))); $('attempts').append(row);
+      });
+      if (!attempts.length) { const row = node('tr'), cell = node('td', 'No scripted generations yet.', 'muted'); cell.colSpan = 3; row.append(cell); $('attempts').append(row); }
+      const timeline = state?.provider_timeline || []; $('timeline').textContent = timeline.length ? `Timeline: ${timeline.map(item => `${name(item.actor_id)} · ${seconds(Number(item.end) - Number(item.start))}`).join(' → ')}` : '';
+      const notifications = state?.notifications || []; $('notification-count').textContent = `(${notifications.length})`; $('notifications').replaceChildren();
+      notifications.slice().reverse().forEach(record => { const intent = data(record), row = node('tr'); row.append(node('td', threadName(intent.conversation_id)), node('td', intent.status || 'pending')); $('notifications').append(row); });
+      if (!notifications.length) { const row = node('tr'), cell = node('td', 'No alert intents yet.', 'muted'); cell.colSpan = 2; row.append(cell); $('notifications').append(row); }
+    }
+    async function refreshState() {
+      if (refreshPromise) await refreshPromise;
+      const promise = (async () => {
+        const result = await api('/api/preview/state'); state = result;
+        renderResidents(); renderThreads(); renderOffers(); renderWorld(); renderInspection();
+        $('connection').textContent = `Updated ${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} · Visible tabs refresh every 5s`;
+        if (selected) {
+          const current = state.conversations.find(thread => thread.id === selected);
+          if (!current) { newThread(false); status('That conversation is no longer available.', true); }
+          else if (snapshot && current.last_sequence > snapshot.watermark) await loadThread(selected, false);
+        }
+      })();
+      refreshPromise = promise;
+      try { await promise; } finally { if (refreshPromise === promise) refreshPromise = null; }
+    }
+    function saveDraft() { if (selected) drafts.set(selected, $('message').value); }
+    function newThread(focus = true) {
+      saveDraft(); selected = null; snapshot = null; requestEpoch++; selectionEpoch++;
+      $('new-thread-form').classList.remove('hidden'); $('thread-view').classList.add('hidden'); renderThreads();
+      if (focus) $('thread-opening').focus();
+    }
+    async function openThread(id) {
+      if (selected !== id) { saveDraft(); selected = id; snapshot = null; selectionEpoch++; $('message').value = drafts.get(id) || ''; $('messages').replaceChildren(node('p', 'Opening conversation…', 'loading')); }
+      $('new-thread-form').classList.add('hidden'); $('thread-view').classList.remove('hidden'); renderThreads();
+      await loadThread(id, true);
+    }
+    async function loadThread(id, scrollToEnd) {
+      const epoch = ++requestEpoch;
+      const result = await api(`/api/preview/threads/${encodeURIComponent(id)}`);
+      if (selected !== id || epoch !== requestEpoch) return;
+      const messages = $('messages'), nearEnd = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 60;
+      const previousScroll = messages.scrollTop; snapshot = result;
+      const conversation = data(result.conversation);
+      $('selected-title').textContent = conversation.title || threadName(id);
+      $('selected-members').textContent = (conversation.participants || []).map(name).join(' · ');
+      choices('message-mentions', residents().filter(person => (conversation.participants || []).includes(person.id)));
+      messages.replaceChildren();
+      (result.messages || []).forEach(message => {
+        const item = node('article', undefined, 'message' + (message.author === 'operator' ? ' mine' : ''));
+        item.dataset.sequence = String(message.sequence);
+        item.append(node('div', name(message.author), 'message-author'), node('div', message.content, 'message-text')); messages.append(item);
+      });
+      if (!result.messages?.length) messages.append(node('p', 'No messages in this thread yet.', 'muted small'));
+      messages.scrollTop = scrollToEnd || nearEnd ? messages.scrollHeight : previousScroll;
+      scheduleRead();
+    }
+    function scheduleRead() {
+      if (readFrame !== null) return;
+      readFrame = requestAnimationFrame(() => { readFrame = requestAnimationFrame(() => { readFrame = null; acknowledgeVisible().catch(error => status(error.message, true)); }); });
+    }
+    async function acknowledgeVisible() {
+      if (!selected || !snapshot || document.hidden || !document.hasFocus() || $('thread-view').classList.contains('hidden') || reading.has(selected)) return;
+      const id = selected, rendered = snapshot, box = $('messages').getBoundingClientRect();
+      const visible = [...$('messages').querySelectorAll('[data-sequence]')].filter(item => { const bounds = item.getBoundingClientRect(); return bounds.bottom > Math.max(box.top, 0) && bounds.top < Math.min(box.bottom, innerHeight); });
+      const watermark = Math.min(rendered.watermark, Math.max(0, ...visible.map(item => Number(item.dataset.sequence))));
+      if (!watermark || watermark <= (acknowledged.get(id) || 0)) return;
+      reading.add(id);
+      let completed = false;
+      try {
+        await api(`/api/preview/threads/${encodeURIComponent(id)}/read`, {snapshot_id:rendered.snapshot_id, watermark});
+        acknowledged.set(id, Math.max(acknowledged.get(id) || 0, watermark));
+        completed = true;
+        await refreshState();
+      } finally { reading.delete(id); if (completed) scheduleRead(); }
+    }
+    async function perform(operation) {
+      if (mutationBusy) return;
+      mutationBusy = true; document.querySelectorAll('[data-mutation]').forEach(button => button.disabled = true); status('Saving…');
+      try { await operation(); } catch (error) { status(error.message, true); }
+      finally { mutationBusy = false; document.querySelectorAll('[data-mutation]').forEach(button => button.disabled = false); if (state) renderOffers(); }
+    }
+    $('new-thread').addEventListener('click', () => newThread());
+    $('unread-filter').addEventListener('click', () => { onlyUnread = !onlyUnread; renderThreads(); });
+    $('refresh').addEventListener('click', () => refreshState().catch(error => status(error.message, true)));
+    $('logout').addEventListener('click', () => perform(async () => { await api('/api/preview/logout', {}); location.assign('/login'); }));
+    $('close-home').addEventListener('click', () => { $('home-inspection').hidden = true; });
+    $('scheduling-demo').addEventListener('click', () => perform(async () => { await api('/api/preview/scheduling-demo', {}); await refreshState(); status('Scheduling demo completed with synthetic provider time for each available resident.'); }));
+    $('thread-participants').addEventListener('change', updateMentionChoices);
+    $('contact-participants').addEventListener('change', updateMentionChoices);
+    $('contact-resident').addEventListener('change', contactParticipants);
+    $('messages').addEventListener('scroll', scheduleRead, {passive:true});
+    $('message').addEventListener('input', saveDraft);
+    $('new-thread-form').addEventListener('submit', event => { event.preventDefault(); perform(async () => {
+      const participants = selectedValues('thread-participants'); if (!participants.length) throw new Error('Choose at least one resident.');
+      const content = $('thread-opening').value, title = $('thread-title').value, navigation = selectionEpoch;
+      const result = await api('/api/preview/threads', {participants, title, content, group:participants.length > 1, mentions:selectedValues('new-mentions')});
+      if ($('thread-opening').value === content) $('thread-opening').value = ''; if ($('thread-title').value === title) $('thread-title').value = '';
+      await refreshState(); if (navigation === selectionEpoch) await openThread(result.conversation.id); status('Your conversation is ready. Choose a pending offer to try a scripted reply.');
+    }); });
+    $('message-form').addEventListener('submit', event => { event.preventDefault(); perform(async () => {
+      const id = selected, content = $('message').value; if (!id) return;
+      await api(`/api/preview/threads/${encodeURIComponent(id)}/messages`, {content, mentions:selectedValues('message-mentions')});
+      drafts.delete(id); if (selected === id && $('message').value === content) $('message').value = '';
+      await refreshState(); if (selected === id) await loadThread(id, true); status('Message saved.');
+    }); });
+    $('resident-form').addEventListener('submit', event => { event.preventDefault(); perform(async () => {
+      const actor = $('contact-resident').value, participants = ['operator', ...selectedValues('contact-participants')];
+      const content = $('contact-message').value, title = $('contact-title').value;
+      await api(`/api/preview/residents/${encodeURIComponent(actor)}/initiate`, {participants, title, content, group:participants.length > 1, mentions:selectedValues('contact-mentions')});
+      if ($('contact-message').value === content) $('contact-message').value = ''; if ($('contact-title').value === title) $('contact-title').value = '';
+      await refreshState(); status(`${name(actor)} started a new thread waiting in Unread threads. No notification was sent.`);
+    }); });
+    $('world-form').addEventListener('submit', event => { event.preventDefault(); perform(async () => {
+      const name = $('world-name').value;
+      await api('/api/preview/world', {name, owner:$('world-owner').value, visibility:$('world-visibility').value});
+      if ($('world-name').value === name) $('world-name').value = ''; await refreshState(); status('World object saved.');
+    }); });
+    window.addEventListener('focus', scheduleRead);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { refreshState().then(scheduleRead).catch(error => status(error.message, true)); } });
+    setInterval(() => { if (!document.hidden && !refreshPromise && !mutationBusy) refreshState().catch(error => status(error.message, true)); }, 5000);
+    refreshState().then(() => status('Ready. Start a conversation or let a test resident reach out.')).catch(error => status(error.message, true));
+  })();
+  </script>
+</body>
+</html>

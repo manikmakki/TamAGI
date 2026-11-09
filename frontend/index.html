@@ -579,6 +579,7 @@
     .mind-source-badge[data-source="autonomous"] { background: rgba(255,107,157,0.12); color: var(--accent-secondary); }
     .mind-time { margin-left: auto; font-size: 8px; color: var(--text-muted); white-space: nowrap; }
     .mind-title { font-size: 10px; color: var(--text-primary); line-height: 1.4; margin-bottom: 3px; font-weight: 500; }
+    .mind-resident { font-size: 11px; color: var(--text-primary); font-weight: 600; margin-bottom: 5px; overflow-wrap: anywhere; }
     .mind-content { font-size: 9px; color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
     .mind-type-label { font-size: 8px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
     /* flyout */
@@ -960,6 +961,7 @@
 <script src="/assets/avatar-echo.js"></script>
 <script src="/assets/avatar-ember.js?v=8"></script>
 <script src="/assets/avatar-runtime.js?v=8"></script>
+<script src="/assets/household-ui.js?v=5"></script>
 <script>
 const API=window.location.origin;
 const WS_URL=API.replace(/^http/,'ws')+'/api/ws';
@@ -1020,22 +1022,11 @@ function handleWsEvent(ev){
   }else if(ev.type==='thinking_text'||ev.type==='interim_text'){
     const isThinking=ev.type==='thinking_text';
     if(!currentInterimGroup){
-      const wrapper=document.createElement('div');
-      wrapper.className='msg assistant';
-      const label=isThinking?'Thinking':'Reasoning';
-      wrapper.innerHTML='<div class="interim-group" data-has-thinking="'+(isThinking?'1':'0')+'" data-count="0"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">'+label+'</span> · <span class="interim-count">0 steps</span></span></button><div class="interim-body"></div></div>';
+      const wrapper=makeInterimGroup();
       document.getElementById('chat-messages').appendChild(wrapper);
       currentInterimGroup=wrapper.querySelector('.interim-group');
-    } else if(isThinking&&currentInterimGroup.dataset.hasThinking==='0'){
-      currentInterimGroup.dataset.hasThinking='1';
-      currentInterimGroup.querySelector('.interim-kind').textContent='Thinking';
     }
-    const entry=document.createElement('div');
-    entry.className=isThinking?'thinking-entry':'interim-entry';
-    entry.innerHTML=renderMd(ev.content);
-    currentInterimGroup.querySelector('.interim-body').appendChild(entry);
-    const count=currentInterimGroup.querySelectorAll('.thinking-entry,.interim-entry').length;
-    currentInterimGroup.querySelector('.interim-count').textContent=count+(count===1?' step':' steps');
+    appendInterimEntry(currentInterimGroup,isThinking,ev.content);
     document.getElementById('chat-messages').scrollTop=99999;
   }else if(ev.type==='pose_change'){
     setPose(ev.pose_parts);
@@ -1050,6 +1041,23 @@ function handleWsEvent(ev){
 }
 function clearLiveTags(){document.getElementById('live-tags').innerHTML=''}
 function toggleInterim(btn){btn.closest('.interim-group').classList.toggle('collapsed');}
+function makeInterimGroup({thinking=[],interim=[],collapsed=false,metadata={}}={}){
+  const wrapper=document.createElement('div');wrapper.className='msg assistant';
+  wrapper.innerHTML='<div class="interim-group'+(collapsed?' collapsed':'')+'" data-has-thinking="0" data-count="0"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">Reasoning</span> · <span class="interim-count">0 steps</span></span></button><div class="interim-body"></div></div>';
+  const group=wrapper.querySelector('.interim-group');
+  for(const text of thinking)appendInterimEntry(group,true,text);
+  for(const text of interim)appendInterimEntry(group,false,text);
+  window.TamagiHousehold?.decorateProgress(wrapper,metadata);
+  return wrapper;
+}
+function appendInterimEntry(group,isThinking,text){
+  if(isThinking){group.dataset.hasThinking='1';group.querySelector('.interim-kind').textContent='Thinking';}
+  const entry=document.createElement('div');entry.className=isThinking?'thinking-entry':'interim-entry';
+  entry.innerHTML=window.TamagiHousehold?TamagiHousehold.safeMarkdown(text):renderMd(text);
+  group.querySelector('.interim-body').appendChild(entry);
+  const count=group.querySelectorAll('.thinking-entry,.interim-entry').length;
+  group.dataset.count=String(count);group.querySelector('.interim-count').textContent=count+(count===1?' step':' steps');
+}
 function showApprovalBanner(ev){
   const msgs=document.getElementById('chat-messages');
   const banner=document.createElement('div');
@@ -1343,16 +1351,16 @@ function solveWorldTransforms(bones){
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
-function renderFrame(canvas,bones,manifest,activeVariants,time=0){
+function renderFrame(canvas,bones,manifest,activeVariants,time=0,avatarId=_avatarId,images=_spriteImages){
   const ctx=canvas.getContext('2d');
-  TamagiAvatarRuntime.style(canvas,_avatarId);
+  TamagiAvatarRuntime.style(canvas,avatarId);
   const W=canvas.width,H=canvas.height;
   ctx.clearRect(0,0,W,H);
   ctx.save();
-  ctx.translate(W/2,TamagiAvatarRuntime.originY(canvas,_avatarId));
+  ctx.translate(W/2,TamagiAvatarRuntime.originY(canvas,avatarId));
   const scale=2.5;
   ctx.scale(scale,scale);
-  ctx.imageSmoothingEnabled=!(window.TamagiAvatars[_avatarId]?.pixelated??true);
+  ctx.imageSmoothingEnabled=!(window.TamagiAvatars[avatarId]?.pixelated??true);
   const wt=solveWorldTransforms(bones);
   const drawOrder=Object.entries(manifest)
     .map(([pn,e])=>({pn,e,bone:bones.find(b=>b.name===e.bone),z:(bones.find(b=>b.name===e.bone)||{}).zOrder||0}))
@@ -1369,10 +1377,10 @@ function renderFrame(canvas,bones,manifest,activeVariants,time=0){
     const pox=bone.pivotOffsetX||0,poy=bone.pivotOffsetY||0;
     const imgKey=`${pn}:${variant}`;
     ctx.save();ctx.translate(-sw/2+pox*sw,-sh/2+poy*sh);
-    if(_spriteImages[imgKey]){
-      ctx.drawImage(_spriteImages[imgKey],0,0,sw,sh);
+    if(images[imgKey]){
+      ctx.drawImage(images[imgKey],0,0,sw,sh);
     }else{
-      TamagiAvatarRuntime.draw(ctx,_avatarId,pn,variant,sw,sh,drawPlaceholder,time);
+      TamagiAvatarRuntime.draw(ctx,avatarId,pn,variant,sw,sh,drawPlaceholder,time);
     }
     ctx.restore();
     ctx.restore();
@@ -1388,12 +1396,15 @@ let _spriteConfig=null;
 let _avatarId='vex';
 
 async function loadSpriteConfig(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),selectionToken=household?.selectionEpoch();
   try{
-    const cfg=await api('/sprites/config');
+    const cfg=await api('/sprites/config',household?{headers:{'X-Tamagi-Resident':actor}}:{});
+    if(household&&!household.acceptResponse(actor,selectionToken))return;
     _avatarId=TamagiAvatarRuntime.resolve(cfg);
     _rigBones=TamagiAvatarRuntime.createBones(_avatarId,createBone,()=>applyPivotDefaults(PRESETS.default.bones()));
     _spriteConfig=cfg||null;
     _spriteImages={};
+    const selectedImages={};
 
     // If the config carries a skeleton, replace the rig bones with it.
     // This lets the rig editor's exported proportions drive the avatar directly.
@@ -1416,14 +1427,15 @@ async function loadSpriteConfig(){
           const key=`${part}:${variant}`;
           const img=new Image();
           loads.push(new Promise(resolve=>{
-            img.onload=()=>{_spriteImages[key]=img;resolve();};
+            img.onload=()=>{selectedImages[key]=img;resolve();};
             img.onerror=resolve; // Missing PNG falls back to the selected character.
-            img.src=path;
+            img.src=household?household.scopeUrl(path,actor):path;
           }));
         }
       }
       await Promise.all(loads);
     }
+    if(!household||household.acceptResponse(actor,selectionToken))_spriteImages=selectedImages;
   }catch(_){}
 }
 
@@ -1467,6 +1479,7 @@ function firstSentence(s){if(!s)return'';const m=s.match(/^(.+?)(?:\.\s|\.$|\n)/
 function residentAge(seconds){const hours=Math.floor(Math.max(0,Number(seconds)||0)/3600),days=Math.floor(hours/24);return days?`${days}d ${hours%24}h old`:`${hours}h old`;}
 function updateState(s){
   if(!s)return;
+  if(window.TamagiHousehold&&s.resident_id&&s.resident_id!==TamagiHousehold.selectedResidentId())return;
   const growth=s.growth,level=growth?.level??s.level??1,stage=growth?.stage??s.stage??'egg';
   setText('p-lv',level);setText('p-xp',growth?.total??s.experience??0);
   if(s.pose_parts)setPose(s.pose_parts);
@@ -1564,7 +1577,7 @@ async function sendMessage(){
   }catch(e){setTyping(false);addMsg('assistant',`\u26A0 Error: ${e.message}. Is the backend running?`);loading=false;document.getElementById('send-btn').disabled=false;}
 }
 
-function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[]){
+function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[],metadata={}){
   const area=document.getElementById('chat-messages');
   const d=document.createElement('div');d.className=`msg ${role}`;
   // Use the stored unix timestamp when replaying history, current time for live messages
@@ -1588,8 +1601,9 @@ function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[]){
     if(m.op==='milestone'){return`<span class="sm-tag update" title="${esc(m.description||m.id)}">\u2605 mastery</span>`;}
     return'';
   }).join('');
-  const rendered=role==='assistant'?renderMd(content):esc(content);
+  const rendered=role==='assistant'?(window.TamagiHousehold?TamagiHousehold.safeMarkdown(content):renderMd(content)):esc(content);
   d.innerHTML=`<div class="bubble">${rendered}</div><div class="time">${t}${sk}${cmpTag}${smTags}</div>`;
+  window.TamagiHousehold?.decorateMessage(d,role,metadata);
   area.appendChild(d);area.scrollTop=area.scrollHeight
 }
 function setTyping(v){document.getElementById('typing').classList.toggle('on',v)}
@@ -1660,24 +1674,38 @@ function historicalWakeDescription(meta){
 
 // Cache of full event objects keyed by id — populated in loadMindPanel
 const _mindEvents={};
+let _mindResidentId;
 
 async function loadMindPanel(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
+  const scoped=household?{headers:{'X-Tamagi-Resident':actor}}:{};
   const statusRow=document.getElementById('mind-status-row');
   const entries=document.getElementById('mind-entries');
   try{
-    const [data]=await Promise.all([api('/monologue/log?limit=80'),api('/world/state').then(updateMindActivity).catch(()=>{})]);
+    const [data]=await Promise.all([api('/monologue/log?limit=80',scoped),api('/world/state',scoped).then(state=>{if(!household||household.acceptResponse(actor,token))updateMindActivity(state);}).catch(()=>{})]);
+    if(household&&!household.acceptResponse(actor,token))return;
+    const residentName=household?.residentName(actor);
+    if(household){
+      document.querySelector('#view-journal .page-heading h1').textContent=residentName+'’s Journal';
+      if(_mindResidentId!==actor){
+        closeMindFlyout();
+        for(const id of Object.keys(_mindEvents))delete _mindEvents[id];
+        _mindResidentId=actor;
+      }
+    }
     const total=data.total||0;
     statusRow.textContent=total?total+' event'+(total===1?'':'s')+' recorded':'';
-    const events=(data.events||[]).slice().reverse();
+    const events=(data.events||[]).map(ev=>({...ev,journalResidentId:actor,journalResidentName:residentName})).reverse();
     if(!events.length){entries.innerHTML='<div class="drawer-empty">No inner monologue yet.</div>';return;}
     // Store full event data for flyout
     events.forEach(ev=>{ _mindEvents[ev.id]=ev; });
     entries.innerHTML=events.map(ev=>{
       const icon=MIND_ICONS[ev.type]||'&#x25CB;';
       const src=ev.source||'autonomous';
-      const snippet=(ev.content||'').substring(0,140).trimEnd();
+      const snippet=(ev.content||ev.metadata?.activity_summary||'').substring(0,140).trimEnd();
       const wake=historicalWakeDescription(ev.metadata||{});
-      return`<div class="mind-card" onclick="openMindFlyout('${esc(ev.id)}')">
+      return`<div class="mind-card" ${ev.journalResidentId?`data-resident-id="${esc(ev.journalResidentId)}"`:''} onclick="openMindFlyout('${esc(ev.id)}')">
+        ${ev.journalResidentName?`<div class="mind-resident">${esc(ev.journalResidentName)}</div>`:''}
         <div class="mind-card-header">
           <span class="mind-type-icon">${icon}</span>
           <span class="mind-source-badge" data-source="${esc(src)}">${esc(src)}</span>
@@ -1686,6 +1714,7 @@ async function loadMindPanel(){
         </div>
         <div class="mind-title">${esc(ev.title||'')}</div>
         ${wake?`<div class="mind-wake">${esc(wake)}</div>`:''}
+        ${!ev.content&&ev.metadata?.activity_summary?'<div class="mind-type-label">Recorded activity</div>':''}
         ${snippet?`<div class="mind-content">${esc(snippet)}&hellip;</div>`:''}
       </div>`;
     }).join('');
@@ -1731,6 +1760,7 @@ function openMindFlyout(evId){
   // Meta block
   const metaEl=document.getElementById('flyout-meta');
   const metaRows=[];
+  if(ev.journalResidentName)metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">◉</span><span class="flyout-meta-val">Resident: ${esc(ev.journalResidentName)}</span></div>`);
   const wake=historicalWakeDescription(meta);
   if(wake)metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">◷</span><span class="flyout-meta-val">${esc(wake)}</span></div>`);
   if(meta.location) metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">📍</span><span class="flyout-meta-val">${esc(meta.location)}</span></div>`);
@@ -1756,7 +1786,7 @@ function openMindFlyout(evId){
     <div class="flyout-section">
       ${s.label?`<div class="flyout-section-label ${_flyoutSectionClass(s.label)}">${esc(s.label)}</div>`:''}
       <div class="flyout-section-text">${esc(s.text)}</div>
-    </div>`).join('');
+    </div>`).join('')+(meta.activity_summary?`<div class="flyout-section"><div class="flyout-section-label">Recorded activity</div><div class="flyout-section-text">${esc(meta.activity_summary)}</div></div>`:'');
 
   // Show flyout, hide list
   document.getElementById('mind-flyout').classList.remove('hidden');
@@ -1798,8 +1828,10 @@ function switchTab(name){
 
 
 async function loadMemTotalCount(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
   try{
-    const d=await api('/state');
+    const d=await api('/state',household?{headers:{'X-Tamagi-Resident':actor}}:{});
+    if(household&&!household.acceptResponse(actor,token))return;
     if(d?.memory?.total_memories!=null){
       const n=d.memory.total_memories;
       document.getElementById('mem-count').textContent=n+' memor'+(n===1?'y':'ies');
@@ -1814,24 +1846,33 @@ function setMemFilter(btn,type){
   searchMemories(document.getElementById('mem-search').value.trim());
 }
 
+let _memSearchRequest=0;
 async function searchMemories(query){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch(),request=++_memSearchRequest,filter=activeMemFilter;
+  const current=()=>request===_memSearchRequest&&(!household||household.acceptResponse(actor,token));
   const entries=document.getElementById('mem-entries');
-  if(!query&&activeMemFilter==='all'){entries.innerHTML='<div class="drawer-empty">Search your memories...</div>';return}
-  const effectiveQuery=query||activeMemFilter;
+  if(!query&&filter==='all'){entries.innerHTML='<div class="drawer-empty">Search your memories...</div>';return}
+  const effectiveQuery=query||filter;
   try{
-    const d=await api('/memory/recall',{method:'POST',body:JSON.stringify({query:effectiveQuery,limit:20})});
+    const d=await api('/memory/recall',{method:'POST',body:JSON.stringify({query:effectiveQuery,limit:20}),...(household?{headers:{'X-Tamagi-Resident':actor}}:{})});
+    if(!current())return;
     let memories=d.memories||[];
-    if(activeMemFilter!=='all')memories=memories.filter(m=>m.memory_type===activeMemFilter);
+    if(filter!=='all')memories=memories.filter(m=>m.memory_type===filter);
     if(!memories.length){entries.innerHTML='<div class="drawer-empty">No memories found.</div>';return}
     entries.innerHTML=memories.map(m=>{
       const preview=(m.content||'').substring(0,150)+((m.content||'').length>150?'\u2026':'');
       const type=m.memory_type||'fact';
       return`<div class="mem-card"><div class="mem-card-header"><span class="mem-type-badge" data-type="${esc(type)}">${esc(type)}</span><span class="mem-time">${relativeTime(m.timestamp)}</span></div><div class="mem-content">${esc(preview)}</div></div>`;
     }).join('');
-  }catch(err){console.error('searchMemories',err);entries.innerHTML='<div class="drawer-empty">Search failed.</div>'}
+  }catch(err){if(!current())return;console.error('searchMemories',err);entries.innerHTML='<div class="drawer-empty">Search failed.</div>'}
 }
 
-const debouncedSearch=debounce(searchMemories,400);
+const _debouncedMemSearch=debounce((query,actor,token)=>{
+  if(!window.TamagiHousehold||TamagiHousehold.acceptResponse(actor,token))searchMemories(query);
+},400);
+function debouncedSearch(query){
+  _debouncedMemSearch(query,window.TamagiHousehold?.selectedResidentId(),window.TamagiHousehold?.selectionEpoch());
+}
 
 // ═══ ONBOARDING ═══
 let obSteps=[],obStep=0,obR={};
@@ -1998,9 +2039,12 @@ await loadSpriteConfig();
 requestAnimationFrame(_rigTick);
 connectWS();await loadState();loadConversations();const needsOb=await checkOnboarding();if(!needsOb)await checkWorldSeed();setInterval(loadState,30000)});
 async function loadState(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),selectionToken=household?.selectionEpoch();
+  const scoped=household?{headers:{'X-Tamagi-Resident':actor}}:{};
   try{
-    const d=await api('/state');
+    const d=await api('/state',scoped);
     if(!d)return; // redirected to /login
+    if(household&&!household.acceptResponse(actor,selectionToken))return;
     updateState(d.state);setConnected(true);
     // Show logout button when auth is enabled
     try{
@@ -2008,12 +2052,12 @@ async function loadState(){
       document.getElementById('logout-btn').style.display=a.enabled?'inline':'none';
     }catch{}
     // Pull world context separately and update mood pill + location/focus display
-    try{const ws=await api('/world/state');updateWorldContext(ws)}catch{}
+    try{const ws=await api('/world/state',scoped);if(!household||household.acceptResponse(actor,selectionToken))updateWorldContext(ws)}catch{}
   }catch{setConnected(false)}
 }
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
-<script src="/assets/app-shell.js?v=18"></script>
-<script src="/assets/home-views.js?v=19"></script>
+<script src="/assets/app-shell.js?v=20"></script>
+<script src="/assets/home-views.js?v=22"></script>
 </body>
 </html>

@@ -84,12 +84,12 @@ class Interactions:
             ).fetchall()
             return [self.store._record(r) for r in rows]
 
-    def has_pending(self):
+    def has_pending(self, exclude_work_id=None):
         with self.store.lock:
             return bool(
                 self.store.db.execute(
-                    "SELECT 1 FROM records WHERE kind='interaction' AND actor=? AND json_extract(payload,'$.status') IN ('queued','running') LIMIT 1",
-                    (self.runtime.actor_id,),
+                    "SELECT 1 FROM records WHERE kind='interaction' AND actor=? AND id!=? AND json_extract(payload,'$.status') IN ('queued','running') LIMIT 1",
+                    (self.runtime.actor_id, exclude_work_id or ""),
                 ).fetchone()
             )
 
@@ -149,6 +149,8 @@ class Interactions:
         )
 
     async def submit(self, payload, client_id=None, *, kind="chat"):
+        if getattr(self.runtime, "household", None) is not None and kind == "chat":
+            raise AdmissionError("Shared chat requires coordinator admission", 403)
         client_id = client_id or uid("client")
         if not isinstance(client_id, str) or not 1 <= len(client_id) <= 128:
             raise AdmissionError("A submission identifier must have 1–128 characters")
@@ -305,6 +307,73 @@ class Interactions:
             self.emit(work_id, {"type": "typing", "status": True})
             return self.public(self.get(work_id))
 
+    async def submit_household(self, payload, grant, snapshot, client_id=None):
+        """Admit immutable canonical input from the authenticated coordinator only."""
+        bridge = getattr(self.runtime, "household", None)
+        if bridge is None:
+            raise AdmissionError("This is not a household worker", 403)
+        grant, snapshot = bridge.validate_admission(grant, snapshot)
+        invitation = grant.get("kind") == "invitation"
+        world = grant.get("kind") == "world"
+        client_id = client_id or grant["id"]
+        if not isinstance(client_id, str) or not 1 <= len(client_id) <= 128:
+            raise AdmissionError("A submission identifier must have 1–128 characters")
+        payload = dict(payload)
+        if set(payload) - {"image_data", "image_media_type"}:
+            raise AdmissionError("Household input content is selected by its admission")
+        payload["message"] = bridge.input_record(grant)["content"] if invitation or world else grant["message"]["content"]
+        payload["conversation_id"] = grant["conversation_id"]
+        if not payload["message"].strip() or len(payload["message"]) > 32000:
+            raise AdmissionError("Enter a message of 1–32000 characters")
+        fingerprint = hashlib.sha256(encoded({"kind": "household", "payload": payload,
+                                             "grant": grant, "snapshot": snapshot}).encode()).hexdigest()
+        work_id = "request-" + hashlib.sha256(encoded([
+            self.store.meta("installation_id"), self.runtime.actor_id, client_id,
+        ]).encode()).hexdigest()
+        async with self.admission:
+            prior = self.store.get("interaction", work_id)
+            if prior:
+                if prior["data"]["fingerprint"] != fingerprint:
+                    raise AdmissionError("Submission identifier already belongs to different input", 409)
+                return self.public(prior)
+            if self.closing or self.runtime.maintenance:
+                raise AdmissionError("Application is preparing a checkpoint or release", 503)
+            if self.queue.full():
+                raise AdmissionError("The pending work queue is full; this input was not accepted", 429)
+            stored_payload = dict(payload)
+            if image := stored_payload.pop("image_data", None):
+                try:
+                    if not isinstance(image, str) or len(image) > 12 * 1024 * 1024:
+                        raise ValueError()
+                    content = base64.b64decode(image, validate=True)
+                    if len(content) > 8 * 1024 * 1024:
+                        raise ValueError()
+                except (ValueError, TypeError):
+                    raise AdmissionError("Image data must be valid base64 and at most 8 MiB") from None
+                stored_payload["image_ref"] = self._image_reference(content)
+            incoming = bridge.input_record(grant)
+            human = not invitation and not world and not grant.get("invitation_reply") and grant["origin"] == "user" and grant["input_author"] == "operator"
+            epoch = self.runtime.notice_user_input() if human else self.runtime.input_epoch
+            with self.store.transaction():
+                self.store.put("interaction_input", work_id, self.runtime.actor_id,
+                    {"payload": stored_payload, "message": incoming, "household_grant": grant,
+                     "household_snapshot": snapshot}, category="platform")
+                self.store.put("interaction", work_id, self.runtime.actor_id,
+                    {"request_id": client_id, "kind": "world" if world else "invitation" if invitation else "chat", "household": True,
+                     "grant_id": grant["id"], "fingerprint": fingerprint,
+                     "conversation_id": grant["conversation_id"], "actor_id": self.runtime.actor_id,
+                     "input_author": grant["input_author"], "origin": grant["origin"],
+                     "input_epoch": epoch, "status": "queued", "execution_id": None,
+                     "result": None, "detail": None, "cursor": 0, "approval": None}, category="platform")
+            if human:
+                self._touch_visit(grant["conversation_id"])
+                for identity, task in list(self.tasks.items()):
+                    if self.get(identity)["data"]["kind"] == "world":
+                        task.cancel()
+            self.queue.put_nowait(work_id)
+            self.emit(work_id, {"type": "typing", "status": True})
+            return self.public(self.get(work_id))
+
     def emit(self, work_id, event):
         event = dict(event)
         for field in ("content", "output"):
@@ -318,6 +387,9 @@ class Interactions:
                 request_id=data["request_id"],
                 conversation_id=data["conversation_id"],
             )
+            if data.get("household"):
+                event["resident_id"] = self.runtime.actor_id
+                event["grant_id"] = data["grant_id"]
             event_id = self.store.event(
                 self.runtime.actor_id, "interaction_progress", event
             )
@@ -460,6 +532,7 @@ class Interactions:
 
     async def _run(self, work_id):
         data = self.get(work_id)["data"]
+        household_variable = household_token = None
         try:
             source = self.store.get("interaction_input", work_id)
             payload = dict(source["data"]["payload"] if source else data["payload"])
@@ -475,18 +548,40 @@ class Interactions:
                 if hashlib.sha256(content).hexdigest() != reference["sha256"]:
                     raise ValueError("Attached image content changed")
                 payload["image_data"] = base64.b64encode(content).decode()
-            async with self.runtime.execution("user") as execution:
+            grant = source["data"].get("household_grant") if source else None
+            origin = "user"
+            if grant:
+                from backend.core.household.worker_bridge import admission_context
+
+                household_variable = admission_context()
+                household_token = household_variable.set(grant)
+                origin = "user" if grant["origin"] == "user" and grant["input_author"] == "operator" and grant.get("kind") != "invitation" and not grant.get("invitation_reply") else "peer"
+            invitation = bool(grant and grant.get("kind") == "invitation")
+            world = bool(grant and grant.get("kind") == "world")
+            if world:
+                origin = "autonomy"
+            async with self.runtime.execution(origin, **({"allowed_tools": ["contact", "household_contacts", "end_turn"], "max_calls": 4} if invitation else {})) as execution:
+                if grant and not invitation and not world:
+                    self.runtime.household.project(self.agent, source["data"]["household_snapshot"], grant)
                 self._update(
                     work_id, status="running", execution_id=execution.execution_id
                 )
                 self.store.set_run_provenance(
-                    execution.execution_id, request_id=data["request_id"]
+                    execution.execution_id, request_id=data["request_id"],
+                    **({"household_grant_id": grant["id"], "conversation_id": grant["conversation_id"],
+                        "input_author": grant["input_author"], "eligible_live": True} if grant else {}),
                 )
 
                 async def progress(event):
                     self.emit(work_id, event)
 
-                if data["kind"] == "chat":
+                if world:
+                    from .world import tick
+                    result = await tick(self.agent._world_thread, execution=execution, work_id=work_id, event_callback=progress)
+                    result = {**result, "response": "", "conversation_id": None, "state": {}}
+                elif invitation:
+                    result = await self.runtime.household.decide_invitation(self.agent, grant, progress)
+                elif data["kind"] == "chat":
                     result = await self.agent.chat(
                         user_message=payload["message"],
                         conversation_id=data["conversation_id"],
@@ -528,12 +623,15 @@ class Interactions:
                 detail=f"Work stopped after {type(exc).__name__}; inspect retained evidence",
             )
             result = self._interrupted_result(self.get(work_id)["data"])
+        finally:
+            if household_token is not None:
+                household_variable.reset(household_token)
         status = result.get("turn_status", result.get("status", "completed"))
         self._update(
             work_id, status=status, result=result, finished_at=self.store.clock()
         )
         self.emit(work_id, {"type": "message", **result})
-        if data["kind"] == "chat":
+        if data["kind"] == "chat" and (not data.get("household") or (data.get("input_author") == "operator" and data.get("origin") == "user")):
             self._touch_visit(data["conversation_id"])
 
     def _touch_visit(self, conversation_id):

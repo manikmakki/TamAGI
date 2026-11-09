@@ -1,0 +1,85 @@
+{
+  "revision": "fbf90121b5d48bc439300e6d9b40624dd4246e92",
+  "time": 1794237630.5454187,
+  "test_pid": 359591,
+  "production_pid": 152015,
+  "listen": "0.0.0.0:7744",
+  "clock": {
+    "enabled": true,
+    "schedule": "*/15 * * * *",
+    "timezone": "America/New_York",
+    "next_at": 1794238200.0,
+    "last_resident_id": "resident-9c375094845347ec8f7f48ccc0e4a766"
+  },
+  "residents": [
+    {
+      "id": "resident-aca3f63e429f423fb441088a7f540478",
+      "name": "Cedar",
+      "world_entries": [
+        {
+          "id": "ml-70beba1b",
+          "tool_count": 28,
+          "tool_outcomes": {
+            "succeeded": 27,
+            "failed": 1
+          },
+          "evaluation_jobs": [
+            {
+              "id": "evaluation-job-cb6eb16f65fe46b5b917bdc797e773ca",
+              "status": "failed"
+            }
+          ],
+          "content_length": 0
+        }
+      ]
+    },
+    {
+      "id": "resident-7c2cdaafeb82499c8532f0305f044e9d",
+      "name": "Willow",
+      "world_entries": [
+        {
+          "id": "ml-world-524c745d4f47d5ef9b100b5c",
+          "tool_count": 38,
+          "tool_outcomes": {
+            "succeeded": 36,
+            "failed": 2
+          },
+          "evaluation_jobs": [
+            {
+              "id": "evaluation-job-6933629728cb48ad8a2fe1b976edc968",
+              "status": "failed"
+            },
+            {
+              "id": "evaluation-job-f01046ceb08047d0a554fc1d378587de",
+              "status": "interrupted"
+            }
+          ],
+          "content_length": 0
+        }
+      ]
+    },
+    {
+      "id": "resident-9c375094845347ec8f7f48ccc0e4a766",
+      "name": "River",
+      "world_entries": [
+        {
+          "id": "ml-world-03411dc00275c66c84bf8abe",
+          "tool_count": 32,
+          "tool_outcomes": {
+            "succeeded": 24,
+            "failed": 8
+          },
+          "evaluation_jobs": [
+            {
+              "id": "evaluation-job-aa42e23b331b400ebb36e6257e630b51",
+              "status": "failed"
+            }
+          ],
+          "content_length": 0
+        }
+      ]
+    }
+  ],
+  "manual_model_calls": 0,
+  "recovery": "Previous queued evaluations settled as failed or interrupted during shutdown/recovery; none was replayed or marked successful."
+}

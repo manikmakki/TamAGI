@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from .contracts import BudgetExhausted, current_terminal
 from .store import uid
@@ -10,7 +11,7 @@ from backend.core.world_state import WorldState, parse_new_state
 from backend.core.tool_loop import run_tool_loop
 
 
-async def tick(world, *, manual=False):
+async def tick(world, *, manual=False, execution=None, work_id=None, event_callback=None):
     runtime = world.agent.runtime
     if hasattr(runtime, "deployments"):
         runtime.deployments.synchronize()
@@ -21,7 +22,8 @@ async def tick(world, *, manual=False):
             "reason": "onboarding",
             "activation_started": False,
         }
-    if not runtime.due(ignore_decompression=manual, ignore_error_backoff=manual):
+    if not runtime.due(ignore_decompression=manual, ignore_error_backoff=manual,
+                       **({"exclude_work_id": work_id} if work_id else {})):
         state = runtime.activity_state()
         now = runtime.store.clock()
         if getattr(runtime, "interactions", None) and runtime.interactions.has_pending():
@@ -71,7 +73,7 @@ async def tick(world, *, manual=False):
     world._tick_running = True
     pending = []
     try:
-        async with runtime.execution("autonomy") as execution:
+        async with (nullcontext(execution) if execution else runtime.execution("autonomy")) as execution:
             await world.agent.flush_unsummarized_conversations()
             pending = world._pending_world_events[:]
             runtime.reconcile_identity()
@@ -118,6 +120,7 @@ async def tick(world, *, manual=False):
                 messages,
                 max_rounds=runtime.config.background_calls_per_activation,
                 is_autonomous=True,
+                event_callback=event_callback,
             )
             terminal = current_terminal.get()
             run = runtime.store.run(execution.execution_id)
@@ -174,10 +177,13 @@ async def tick(world, *, manual=False):
                     r["id"] for r in runtime.store.receipts(execution.execution_id)
                 ],
                 "next_wake_at": data.get("wake_at"),
+                "wake_event": data.get("wake_event"),
+                "wait_reason": data.get("wait_reason"),
+                "skills_used": used,
             }
             remaining_events = world._pending_world_events[len(pending) :]
             with runtime.store.transaction():
-                runtime.store.put(
+                turn_record = runtime.store.put(
                     "world_turn",
                     uid("turn"),
                     runtime.actor_id,
@@ -232,21 +238,15 @@ async def tick(world, *, manual=False):
                         "projection_unavailable",
                         {"projection": "pending_events", "error": type(exc).__name__},
                     )
-            if world.monologue_log:
+            if world.monologue_log is not None:
+                from .journal import world_activity_event
+                event = world_activity_event(runtime, turn_record)
                 world.monologue_log.append(
                     type="world_activity",
                     source="autonomous",
                     title=f"{location_name} — {status}",
                     content=text,
-                    metadata={
-                        "status": status,
-                        "execution_id": execution.execution_id,
-                        "receipts": result["receipts"],
-                        "next_wake_at": data.get("wake_at"),
-                        "wake_event": data.get("wake_event"),
-                        "wait_reason": data.get("wait_reason"),
-                        "timezone": runtime.config.timezone,
-                    },
+                    metadata=event['metadata'],
                 )
             if world.agent.consolidation:
                 # Reflection shares the same budget and may legitimately produce no learning.

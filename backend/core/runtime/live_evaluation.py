@@ -98,6 +98,11 @@ def install_evaluator(runtime, llm):
 
                 async def chat(self, messages, tools=None, **kwargs):
                     # Account through the coordinator without injecting its private identity into a disposable trial.
+                    if runtime.household is not None:
+                        from .context_view import measured_context
+                        current, _ = await measured_context(messages, tools, runtime.household,
+                            runtime.config, kwargs.get("max_tokens", llm.config.max_tokens))
+                        return await runtime.household.chat_for(coordinator, current, tools=tools, **kwargs)
                     async with runtime.gate:
                         runtime.store.charge(
                             coordinator,
