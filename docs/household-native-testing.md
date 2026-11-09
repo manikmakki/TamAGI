@@ -25,6 +25,7 @@ retains the clean-revision 279-test run and actual Chromium checks for these fix
 | NATIVE-004 | Images do not appear to attach or reach vision correctly in a group thread | Group attachments/vision | Transport/storage fixes in branch; real-model vision retest pending |
 | NATIVE-005 | Residents describe apparently successful creations/world changes as imagined or nonpersistent | Grounding and persistence investigation | Retained creations verified; query/context fixes in branch; behavioral retest pending |
 | NATIVE-006 | Saved reasoning loses bubble/Markdown formatting and live reasoning accumulates below multiple residents' messages | Reasoning presentation and progress lifecycle | Fixed in branch; operator retest pending |
+| NATIVE-007 | A resident asked to invite someone into the current conversation creates a separate private contact thread | Resident invitation tooling | Confirmed implementation gap; not yet fixed |
 
 ## NATIVE-001 — Open in chat and selected resident disagree
 
@@ -210,3 +211,37 @@ one exchange. They also retain draft, scroll, attachment and navigation checks.
 
 The [reasoning regression record](qualification/0019-native-reasoning-2026-11-08.md)
 retains the 280-test clean-revision run, Chromium checks and expanded screenshot.
+
+## NATIVE-007 — Resident contact creates a new thread instead of inviting into the current one
+
+Operator report: in the latest private conversation with Willow, the operator
+asked Willow to ping Cedar and invite them to that conversation. Willow said the
+message went through to a new thread. The operator expected Cedar to join the
+existing operator/Willow conversation.
+
+Read-only inspection confirmed the distinction:
+
+- The original thread, `conversation-91c54f8765d94688832b43e954b6b4eb`, still has
+  only the operator and Willow as participants.
+- Willow called `contact` with `participants=[Cedar]` and an opening message,
+  omitting `conversation_id`. The successful tool receipt returned a different
+  thread, `conversation-02a8a6bfa7d64014ba3e0e2c3c3f2f72`, containing only Willow
+  and Cedar. The operator was not included.
+- No canonical `conversation_invitation` was created. Cedar responded in the
+  new private contact thread; that did not join the operator's original thread.
+
+Current implementation: the resident `contact` tool can create a thread or send
+to an existing thread's joined participants. It has no operation to invite a new
+participant into an existing thread. The operator Participants route separately
+supports converting a private thread to a group and recording full-history
+invitations, but that operation is not exposed through resident invitation tools.
+
+Expected follow-up: distinguish new contact from an explicit invitation into the
+current conversation. Preserve the original thread and participants, disclose
+full-history access, and let the invited resident choose membership before they
+can read or respond there. Include invitation delivery/activation, refusal and
+replay behavior in the regression coverage. Never silently substitute a new
+private thread for a request to join the current discussion.
+
+This investigation changed documentation only. Existing conversations and
+memberships were left as observed.
