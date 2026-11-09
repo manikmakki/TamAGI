@@ -5,6 +5,12 @@ household recovery for canonical shared records and publications. The first
 implementation provides operator commands and **Settings → Home & recovery**
 controls in the native household. Production adoption remains a separate gate.
 
+Native compatibility checks compare recorded enrollment release labels. The
+development launcher can run changed checkout code against a retained label;
+these rehearsals do not prove compatibility across actual application releases.
+See the [launcher limitation](household-native.md#run-an-isolated-candidate)
+before planning production adoption.
+
 The three acceptance scenarios are:
 
 1. Checkpoint a resident, introduce a private regression in a disposable copy,
@@ -118,10 +124,11 @@ workspace travel with it; the shared public library is a later recovery layer.
 
 Replacing a resident keeps the household's installation identity and operator
 session, rotates the target's private installation identity, and selects a new
-private root. The old root remains available for inspection. Only that resident's
-registry binding and an operator recovery event change in the shared store.
-Shared messages, permissions, clock, read markers and public versions are retained.
-An fsynced transition journal lets startup finish the explicit selection after
+private root. The old root remains available for inspection. The shared store
+updates that resident's registry binding, records recovery and settles their old
+offers, pending invitations and execution authority. Shared messages, membership,
+clock, read markers and public versions are retained. An fsynced transition
+journal lets startup or resume finish both the selection and settlement after
 interruption between the registry database and manifest updates. This recovery
 does not execute uploaded code or repeat resident effects.
 

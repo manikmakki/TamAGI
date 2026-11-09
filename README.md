@@ -4,7 +4,7 @@
 
 TamAGI is a self-hosted experiment in ongoing conversation and self-directed activity. Chat with a resident, explore their world, invite companions, and see what they make between visits. Your model can run locally or use a compatible hosted endpoint.
 
-The v0.3 home platform is undergoing burn-in on the `codex/dependable-home` branch. The default `main` branch still contains the older runtime; the setup below selects the home-platform branch. Multi-resident households and push notifications are [planned](docs/multi-resident-roadmap.md), and sustained behavioral improvement is still being evaluated.
+The v0.3 home platform is undergoing burn-in on the `codex/dependable-home` branch. The default `main` branch still contains the older runtime; the setup below selects the home-platform branch. An opt-in [native multi-resident candidate](docs/household-native.md) is available on `codex/adr-0019-household`, with shared conversations, scheduled world turns and individual recovery. Production adoption and PWA push remain [separate work](docs/multi-resident-roadmap.md), and sustained behavioral improvement is still being evaluated.
 
 ## What you can try
 

@@ -16,7 +16,7 @@ Start with the [project README](../README.md) for a new home-platform installati
 
 [Implementation and evidence](platform-roadmap.md) maps the current code to its verification and limitations. Accepted [architecture decisions](adrs/README.md) describe design intent; their acceptance alone does not prove implementation or behavioral success.
 
-The running platform has **one primary resident per instance** and invitation-only companions. ADR-0019’s [multi-resident roadmap](multi-resident-roadmap.md) is pending implementation. Shared resident households, fair cross-process inference scheduling, resident-initiated messaging, durable unread-thread counts, Chat’s proposed New Thread control, and PWA Web Push are future work.
+The burn-in platform has **one primary resident per instance** and invitation-only companions. The isolated `codex/adr-0019-household` branch adds an opt-in [native household](household-native.md), shared inference scheduling, resident contact/invitations, durable unread threads, Chat’s New Thread control and coordinated world turns. [Individual resident recovery](resident-recovery.md) supports browser backup/restore and offline migration. Production resident adoption, coordinated shared-state recovery and PWA Web Push remain gates in the [multi-resident roadmap](multi-resident-roadmap.md).
 
 Burn-in observations remain separate from fixture tests. Documentation changes do not enroll residents, migrate live data, complete the pilot, or select a new application release.
 

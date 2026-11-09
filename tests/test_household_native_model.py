@@ -304,6 +304,106 @@ class NativeModelTests(unittest.IsolatedAsyncioTestCase):
                 await self.llm.chat([LLMMessage("user", "No replacement while occupancy is unknown")])
         self.assertEqual(len(self.requests), 1)
 
+    async def test_shutdown_settles_queued_independent_http_generation_and_refuses_new_admission(self):
+        start = {"execution_id": "queued-evaluation", "actor_id": self.actor,
+                 "origin": "evaluation", "parent_id": None, "max_calls": 2, "grant_id": None}
+        admitted = await self.http.post("/_native/broker/executions/start", json=start)
+        self.assertEqual(admitted.status_code, 200, admitted.text)
+        self.server.broker.set_available(self.actor, False)
+        body = {"execution_id": start["execution_id"], "attempt_id": "queued-at-shutdown",
+                "messages": [{"role": "user", "content": "Wait without occupying the provider"}],
+                "tools": None, "options": {}, "stream": False}
+        request = asyncio.create_task(self.http.post("/_native/broker/generate", json=body))
+        async with asyncio.timeout(2):
+            while not self.shared.get("native_model_input", body["attempt_id"]):
+                await asyncio.sleep(0)
+        self.assertFalse(request.done())
+        await asyncio.wait_for(self.server.close(), 2)
+        response = await asyncio.wait_for(request, 2)
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertEqual(response.json()["error"], "interrupted")
+        attempt = self.server.broker.attempt(body["attempt_id"])
+        self.assertEqual(attempt["status"], "cancelled")
+        self.assertFalse(attempt["charged"])
+        self.assertEqual(self.requests, [])
+        self.assertEqual(self.shared.list("broker_charge"), [])
+        binding = self.server._binding(self.actor, start["execution_id"])
+        self.assertEqual(self.server.broker.execution(binding["broker_execution_id"])["status"], "stopped")
+        for path, payload in (("executions/start", {**start, "execution_id": "too-late"}),
+                              ("generate", {**body, "attempt_id": "too-late"})):
+            rejected = await self.http.post("/_native/broker/" + path, json=payload)
+            self.assertEqual(rejected.status_code, 409, rejected.text)
+            self.assertIn("shutting down", rejected.json()["detail"])
+        self.assertIsNone(self.shared.get("native_model_input", "too-late"))
+
+    async def test_shutdown_cancels_undispatched_work_but_drains_healthy_inflight_generation(self):
+        self.gate.clear()
+        start = {"execution_id": "running-at-shutdown", "actor_id": self.actor,
+                 "origin": "evaluation", "parent_id": None, "max_calls": 2, "grant_id": None}
+        admitted = await self.http.post("/_native/broker/executions/start", json=start)
+        self.assertEqual(admitted.status_code, 200, admitted.text)
+        body = {"execution_id": start["execution_id"], "attempt_id": "healthy-at-shutdown",
+                "messages": [{"role": "user", "content": "A healthy slow call"}],
+                "tools": None, "options": {}, "stream": False}
+        running = asyncio.create_task(self.http.post("/_native/broker/generate", json=body))
+        await asyncio.wait_for(self.started.wait(), 2)
+        self.server.broker.register_resident("second-resident")
+        await self.server.start_execution("second-resident", {**start,
+            "execution_id": "queued-second", "actor_id": "second-resident"})
+        queued_body = {**body, "execution_id": "queued-second", "attempt_id": "undispatched-at-shutdown"}
+        queued = asyncio.create_task(self.http.post("/_native/broker/generate", json=queued_body,
+            headers={"X-Tamagi-Worker": "second-token"}))
+        async with asyncio.timeout(2):
+            while not self.shared.get("native_model_input", queued_body["attempt_id"]):
+                await asyncio.sleep(0)
+        closing = asyncio.create_task(self.server.close())
+        try:
+            response = await asyncio.wait_for(queued, 2)
+            self.assertEqual(response.status_code, 503, response.text)
+            self.assertEqual(response.json()["error"], "interrupted")
+            self.assertFalse(closing.done(), "Shutdown must wait for healthy upstream completion")
+            self.assertFalse(running.done())
+            self.assertEqual(self.active, 1)
+            self.assertFalse(self.provider._client.is_closed)
+            self.assertEqual(self.server.broker.attempt(body["attempt_id"])["status"], "running")
+            self.assertTrue(self.server.broker.attempt(body["attempt_id"])["cancel_requested"])
+            self.assertEqual(len(self.shared.list("broker_charge")), 1)
+        finally:
+            self.gate.set()
+            await asyncio.wait_for(closing, 2)
+        result = await asyncio.wait_for(running, 2)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertFalse(result.json()["delivery_permitted"])
+        self.assertEqual(self.server.broker.attempt(body["attempt_id"])["status"], "completed")
+        self.assertEqual(self.server.broker.attempt(queued_body["attempt_id"])["status"], "cancelled")
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(self.maximum_active, 1)
+        self.assertEqual(len(self.shared.list("broker_charge")), 1)
+        self.assertTrue(self.provider._client.is_closed)
+
+    async def test_shutdown_preserves_unknown_provider_occupancy_for_reconciliation(self):
+        self.upstream_error = httpx.ReadError("Unknown upstream occupancy")
+        start = {"execution_id": "unknown-at-shutdown", "actor_id": self.actor,
+                 "origin": "evaluation", "parent_id": None, "max_calls": 2, "grant_id": None}
+        admitted = await self.http.post("/_native/broker/executions/start", json=start)
+        self.assertEqual(admitted.status_code, 200, admitted.text)
+        body = {"execution_id": start["execution_id"], "attempt_id": "unknown-at-shutdown",
+                "messages": [{"role": "user", "content": "An uncertain provider transport"}],
+                "tools": None, "options": {}, "stream": False}
+        response = await self.http.post("/_native/broker/generate", json=body)
+        self.assertEqual(response.status_code, 503, response.text)
+        before = self.server.broker.state()
+        self.assertEqual(before["hold"], [body["attempt_id"]])
+        await asyncio.wait_for(self.server.close(), 2)
+        after = self.server.broker.state()
+        self.assertEqual(after["hold"], before["hold"])
+        self.assertEqual(after["active_attempt"], before["active_attempt"])
+        attempt = self.server.broker.attempt(body["attempt_id"])
+        self.assertEqual(attempt["status"], "unknown")
+        self.assertTrue(attempt["cancel_requested"])
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(len(self.shared.list("broker_charge")), 1)
+
     async def test_unfinished_local_activation_revokes_lease_while_healthy_provider_drains(self):
         self.gate.clear()
         async with self.runtime.execution("autonomy") as execution:

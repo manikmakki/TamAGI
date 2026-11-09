@@ -7,6 +7,9 @@
   let loadedResident=null;
   let previewRequest=0;
   let recoveryVersion=0;
+  const residentScope=()=>({actor:window.TamagiHousehold?.selectedResidentId(),epoch:window.TamagiHousehold?.selectionEpoch()});
+  const residentCurrent=scope=>!window.TamagiHousehold||TamagiHousehold.acceptResponse(scope.actor,scope.epoch);
+  const residentApi=(scope,path,options={})=>api(path,{...options,headers:{...options.headers,...(scope.actor?{'X-Tamagi-Resident':scope.actor}:{})}});
   const recoveryScope=()=>({actor:window.TamagiHousehold?.selectedResidentId(),epoch:window.TamagiHousehold?.selectionEpoch(),version:recoveryVersion});
   const recoveryCurrent=scope=>scope.version===recoveryVersion&&(!window.TamagiHousehold||TamagiHousehold.acceptResponse(scope.actor,scope.epoch));
   const recoveryApi=async(scope,path,options={})=>{try{return await api(path,{...options,headers:{...options.headers,...(scope.actor?{'X-Tamagi-Resident':scope.actor}:{})}});}catch(error){if(scope.actor)recoveryNotice(scope,error.message);throw error;}};
@@ -185,14 +188,17 @@
       $('resident-recovery-resume').onclick=()=>perform(async()=>{const scope=recoveryScope(),result=await recoveryApi(scope,'/recovery/resume',{method:'POST'});if(recoveryCurrent(scope)){await TamagiHousehold.refresh();await TamagiHousehold.selectResident(scope.actor,{openThread:false,force:true}).catch(()=>{});await recoveryStatus();if(TamagiHousehold.selectedResidentId()===scope.actor&&result.workers_available)recoveryNotice(recoveryScope(),'Residents resumed.');}});
       setInterval(()=>{if(TamagiShell.view()==='settings')recoveryStatus().catch(()=>{});},2000);
     }
-    $('refresh-evidence').onclick=()=>perform(async()=>{$('evidence').textContent=JSON.stringify(await api('/runtime/events'),null,2);});
+    $('refresh-evidence').onclick=()=>perform(async()=>{
+      const scope=residentScope(),result=await residentApi(scope,'/runtime/events');
+      if(residentCurrent(scope))$('evidence').textContent=JSON.stringify(result,null,2);
+    });
     $('load-archives').onclick=()=>perform(async()=>{
-      const result=await api('/operator-archives');empty($('archives'),result.archives.length?'':'No predecessor archive is registered.');
-      for(const entry of result.archives){const node=item('Preserved predecessor',entry.id+' · '+(entry.complete?'checkpoint complete':'preservation incomplete')),form=document.createElement('form'),label=document.createElement('label'),input=document.createElement('input'),submit=document.createElement('button');label.textContent='Export password · at least 12 characters';input.type='password';input.minLength=12;input.required=true;input.autocomplete='new-password';submit.textContent='Create encrypted archive';form.append(label,input,submit);form.onsubmit=event=>{event.preventDefault();perform(async()=>{submit.disabled=true;let password=input.value;input.value='';try{const result=await api('/operator-archives/'+encodeURIComponent(entry.id)+'/export',{method:'POST',body:JSON.stringify({password})});password='';node.append(link('Download predecessor archive',result.download));}finally{submit.disabled=false;}});};node.append(form);$('archives').append(node);}
+      const scope=residentScope(),result=await residentApi(scope,'/operator-archives');if(!residentCurrent(scope))return;empty($('archives'),result.archives.length?'':'No predecessor archive is registered.');
+      for(const entry of result.archives){const node=item('Preserved predecessor',entry.id+' · '+(entry.complete?'checkpoint complete':'preservation incomplete')),form=document.createElement('form'),label=document.createElement('label'),input=document.createElement('input'),submit=document.createElement('button');label.textContent='Export password · at least 12 characters';input.type='password';input.minLength=12;input.required=true;input.autocomplete='new-password';submit.textContent='Create encrypted archive';form.append(label,input,submit);form.onsubmit=event=>{event.preventDefault();if(!residentCurrent(scope))return;perform(async()=>{submit.disabled=true;let password=input.value;input.value='';try{const result=await residentApi(scope,'/operator-archives/'+encodeURIComponent(entry.id)+'/export',{method:'POST',body:JSON.stringify({password})});password='';if(residentCurrent(scope))node.append(link('Download predecessor archive',result.download));}finally{submit.disabled=false;}});};node.append(form);$('archives').append(node);}
     });
     $('load-grants').onclick=()=>perform(async()=>{
-      const result=await api('/runtime/grants');empty($('grants'),result.tools.length?'':'No external service actions are configured.');
-      for(const tool of result.tools){const node=item(tool.name,tool.scope);for(const [label,seconds]of[['Allow for one hour',3600],['Revoke',0]])node.append(button(label,async()=>{await api('/runtime/grants',{method:'POST',body:JSON.stringify({scope:tool.scope,seconds})});notice(seconds?'Delegated for one hour.':'Delegation revoked.');}));$('grants').append(node);}
+      const scope=residentScope(),result=await residentApi(scope,'/runtime/grants');if(!residentCurrent(scope))return;empty($('grants'),result.tools.length?'':'No external service actions are configured.');
+      for(const tool of result.tools){const node=item(tool.name,tool.scope);for(const [label,seconds]of[['Allow for one hour',3600],['Revoke',0]])node.append(button(label,async()=>{if(!residentCurrent(scope))return;await residentApi(scope,'/runtime/grants',{method:'POST',body:JSON.stringify({scope:tool.scope,seconds})});if(residentCurrent(scope))notice(seconds?'Delegated for one hour.':'Delegation revoked.');}));$('grants').append(node);}
     });
     $('enable-deployment').onclick=()=>perform(async()=>{await api('/deployments/settings',{method:'POST',body:JSON.stringify({enabled:true})});await load();});
     $('disable-deployment').onclick=()=>perform(async()=>{await api('/deployments/settings',{method:'POST',body:JSON.stringify({enabled:false})});await load();});

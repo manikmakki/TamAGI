@@ -65,6 +65,40 @@ def sync_tree(path):
     sync_directory(path.parent)
 
 
+def settle_restored_actor(store, actor):
+    """Retire this resident's old authority as part of its durable root selection."""
+    from .broker import InferenceBroker
+    from .native_service import TERMINAL
+
+    with store.transaction():
+        for kind in ("reply_offer", "native_invitation_offer"):
+            for record in store.list(kind):
+                data = record["data"]
+                if data.get("recipient") == actor and data.get("status") in {"pending", "deferred", "running"}:
+                    store.put(kind, record["id"], {**data, "status": "closed",
+                        "recovery_note": "Resident checkpoint restored; invite or address them again explicitly"})
+        for record in store.list("conversation_invitation"):
+            data = record["data"]
+            if data.get("participant_id") == actor and data.get("status") == "pending":
+                store.put("conversation_invitation", record["id"], {**data, "status": "expired",
+                    "recovery_note": "Resident checkpoint restored; invite again explicitly"})
+        for record in store.list("native_grant"):
+            if record["data"].get("resident_id") == actor and record["data"].get("status") not in TERMINAL:
+                store.put("native_grant", record["id"], {**record["data"], "status": "interrupted"})
+        broker = None
+        for record in store.list("native_execution"):
+            if record["data"].get("resident_id") == actor:
+                identity = record["data"]["broker_execution_id"]
+                execution = store.get("broker_execution", identity)
+                if execution is None:
+                    raise Conflict("Recovery execution has no canonical broker binding")
+                if execution["data"]["status"] == "running":
+                    # Reuse canonical stop/accounting behavior without performing
+                    # a broker restart or changing other residents' opportunities.
+                    broker = broker or InferenceBroker(store, recover=False)
+                    broker.stop_execution(identity)
+
+
 def reconcile_transition(registry):
     """Finish only an explicit, durable operator-selected replacement under lock."""
     from .native_registry import NativeRegistry
@@ -87,7 +121,7 @@ def reconcile_transition(registry):
     saved = registry.store.get("resident", actor)
     if not saved or saved["data"] not in (before, after):
         raise Conflict("Recovery transition conflicts with the coordinator registry")
-    # These are the only shared records a resident replacement changes. No
+    # Select the binding and retire its old opportunities together. No shared
     # conversation, read marker, publication, world object or clock is imported.
     with registry.store.transaction():
         if saved["data"] != after:
@@ -97,6 +131,10 @@ def reconcile_transition(registry):
                 "installation_id": after["installation_id"],
                 "retained_root": before["root"],
             })
+        # This shares the binding transaction and runs on every journal replay.
+        # No worker can resume between selecting private time and retiring its
+        # newer opportunities, even after a failed manifest write or a crash.
+        settle_restored_actor(registry.store, actor)
     registry.manifest = {**registry.manifest, "residents": [
         after if r["resident_id"] == actor else r for r in registry.manifest["residents"]]}
     atomic_json(registry.root / "household.json", registry.manifest)

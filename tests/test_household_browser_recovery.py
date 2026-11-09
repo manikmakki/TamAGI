@@ -14,6 +14,7 @@ from backend.core.household import browser_recovery
 from backend.core.household.resident_recovery import ResidentArchive
 from backend.core.runtime.store import RuntimeStore
 import test_household_native_app as fixture
+from test_resident_recovery import check_recovery_opportunities, seed_recovery_opportunities
 
 PASSWORD = "disposable browser backup password"
 
@@ -218,6 +219,8 @@ class BrowserRecoveryTests(unittest.IsolatedAsyncioTestCase):
         preview = await self.preview(data)
         original = resident_recovery.atomic_json
         old_root = self.registry.descriptors[self.first]["root"]
+        seeded = seed_recovery_opportunities(self.registry.store, list(self.registry.descriptors))
+        peers = {actor: records for actor, records in seeded.items() if actor != self.first}
         def failed_manifest(path, value):
             if Path(path).name == "household.json":
                 raise OSError("Disposable disk failure")
@@ -226,6 +229,7 @@ class BrowserRecoveryTests(unittest.IsolatedAsyncioTestCase):
             await self.commit(preview["id"], expected=507)
         self.assertTrue((self.root / JOURNAL).exists())
         self.assertTrue(self.app.state.recovery.blocked)
+        settled = check_recovery_opportunities(self, self.registry.store, self.first, peers)
         self.assertTrue(all(h.process.returncode is not None for h in self.app.state.hosts.values()))
         await self.request("GET", "/api/state", expected=503)
         await self.request("POST", "/api/backups", expected=409, json={"password": PASSWORD})
@@ -235,7 +239,10 @@ class BrowserRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((self.root / JOURNAL).exists())
         self.assertNotEqual(self.registry.descriptors[self.first]["root"], old_root)
         self.assertEqual(self.registry.store.get("resident", self.first)["data"], self.registry.descriptors[self.first])
+        self.assertEqual(check_recovery_opportunities(self, self.registry.store, self.first, peers), settled,
+                         "Retry must not repeat already-durable settlement")
         await self.request("GET", "/api/state")
+        self.assertEqual(self.provider.calls, [])
 
 
 class RecoveryStagingTests(unittest.IsolatedAsyncioTestCase):

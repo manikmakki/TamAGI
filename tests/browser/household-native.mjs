@@ -144,7 +144,7 @@ try{
  await page.shot('native-operator-ping');
  await page.evaluate(`[...document.querySelectorAll('#household-unread-list button')].find(b=>b.textContent.includes('World Thread browser ping')).click()`);
  await page.until(`document.querySelector('.msg .bubble')?.textContent.includes('something to share')`,'operator opens the autonomous thread');
- const worldThread=await page.evaluate(`fetch('/api/conversations/'+convId).then(r=>r.json())`);
+ const worldThreadId=await page.evaluate(`convId`),worldThread=await page.evaluate(`fetch('/api/conversations/'+convId).then(r=>r.json())`);
  assert.equal(worldThread.messages.length,1);assert.equal(worldThread.messages[0].metadata.author_id,first);
  assert.equal(worldThread.messages[0].role,'assistant');
  await page.evaluate(`document.getElementById('household-library').click()`);
@@ -213,6 +213,37 @@ try{
  assert.equal(await page.evaluate(`document.getElementById('preview-content').textContent.includes('CEDAR_OLD_PREVIEW_MUST_NOT_APPEAR')`),false);
  await page.evaluate(`document.getElementById('preview-dialog').close()`);
  checks.push('late private file previews cannot overwrite the next resident’s detail view; old permission and evidence panels clear on selection');
+ // Settings requests may finish after the operator has selected another resident.
+ await page.evaluate(`TamagiHousehold.selectResident(${js(first)},{openThread:false});TamagiShell.navigate('/settings')`);
+ await page.evaluate(`(()=>{const original=window.fetch;window.restoreSettingsFetch=()=>window.fetch=original;window.settingsHeld={};window.settingsOwners=[];const payloads={'/api/runtime/events':{events:[{text:'CEDAR_OLD_PRIVATE_EVIDENCE'}]},'/api/operator-archives':{archives:[{id:'CEDAR_OLD_PRIVATE_ARCHIVE',complete:true}]},'/api/runtime/grants':{tools:[{name:'CEDAR_OLD_PRIVATE_GRANT',scope:'fixture.old.scope'}]}};window.fetch=async(input,options={})=>{const path=new URL(String(input),location.origin).pathname;if(payloads[path]&&(!options.method||options.method==='GET')){window.settingsOwners.push(new Headers(options.headers).get('X-Tamagi-Resident'));return await new Promise(resolve=>window.settingsHeld[path]=()=>resolve(new Response(JSON.stringify(payloads[path]),{status:200})));}return original(input,options);};window.oldSettingsLoads=Promise.all(['refresh-evidence','load-archives','load-grants'].map(id=>document.getElementById(id).onclick()));})()`);
+ await page.until(`Object.keys(window.settingsHeld).length===3`,'old resident Settings requests are held');
+ await page.evaluate(`TamagiHousehold.selectResident(${js(second)},{openThread:false})`);
+ await page.evaluate(`(async()=>{for(const release of Object.values(settingsHeld))release();await oldSettingsLoads;restoreSettingsFetch();})()`);
+ assert.deepEqual(await page.evaluate(`window.settingsOwners`),[first,first,first]);
+ assert.equal(await page.evaluate(`['evidence','archives','grants'].map(id=>document.getElementById(id).textContent).join('')`),'','late private Settings results are discarded');
+ // Detached actions from a previous resident must not acquire the new scope.
+ await page.evaluate(`TamagiHousehold.selectResident(${js(first)},{openThread:false})`);
+ await page.evaluate(`(async()=>{const original=window.fetch;window.restoreSettingsActionFetch=()=>window.fetch=original;window.staleSettingsPosts=[];window.fetch=async(input,options={})=>{const path=new URL(String(input),location.origin).pathname;if((options.method||'GET')==='POST'&&(path==='/api/runtime/grants'||path.startsWith('/api/operator-archives/'))){staleSettingsPosts.push({path,actor:new Headers(options.headers).get('X-Tamagi-Resident')});return new Response(JSON.stringify({download:'/api/backups/unused'}),{status:200});}if(path==='/api/runtime/grants')return new Response(JSON.stringify({tools:[{name:'Fixture grant',scope:'fixture.old.scope'}]}),{status:200});if(path==='/api/operator-archives')return new Response(JSON.stringify({archives:[{id:'fixture-archive',complete:true}]}),{status:200});return original(input,options);};await Promise.all(['load-archives','load-grants'].map(id=>document.getElementById(id).onclick()));window.oldGrantAction=document.querySelector('#grants button');window.oldArchiveForm=document.querySelector('#archives form');oldArchiveForm.querySelector('input').value='fixture archive password';})()`);
+ await page.evaluate(`TamagiHousehold.selectResident(${js(second)},{openThread:false})`);
+ await page.evaluate(`(async()=>{oldGrantAction.click();oldArchiveForm.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await new Promise(resolve=>setTimeout(resolve,100));restoreSettingsActionFetch();})()`);
+ assert.deepEqual(await page.evaluate(`window.staleSettingsPosts`),[],'stale permission and export actions cannot target another resident');
+ checks.push('delayed evidence, predecessor archives and grant lists cannot populate another resident’s Settings; stale actions cannot submit under the next resident');
+ // Changing resident in a menu switches the hidden chat without navigating away.
+ await page.evaluate(`(async()=>{await TamagiHousehold.selectResident(${js(first)},{openThread:false});await openConversation(${js(worldThreadId)});document.getElementById('input').value='Cedar private thread draft';document.getElementById('input').dispatchEvent(new Event('input',{bubbles:true}));TamagiShell.navigate('/inventory');document.querySelector('#view-inventory .hh-scope-chooser').click();document.querySelector('.hh-wheel-person[data-resident-id=${js(second)}]').click();})()`);
+ await page.until(`TamagiHousehold.selectedResidentId()===${js(second)}&&convId!==${js(worldThreadId)}&&!!document.querySelector('#inventory-items .creation-card')`,'menu selection changes the hidden chat context');
+ assert.equal(await page.evaluate(`TamagiShell.view()`),'inventory');
+ await page.evaluate(`TamagiShell.navigate('/')`);
+ assert.equal(await page.evaluate(`!convId||TamagiHousehold.participants().includes(${js(second)})`),true,'returning to Chat uses the selected resident’s thread');
+ assert.notEqual(await page.evaluate(`document.getElementById('input').value`),'Cedar private thread draft');
+ await page.evaluate(`document.getElementById('input').value='Willow retained thread draft';document.getElementById('input').dispatchEvent(new Event('input',{bubbles:true}));TamagiShell.navigate('/inventory');document.querySelector('#view-inventory .hh-scope-chooser').click();document.querySelector('.hh-wheel-person[data-resident-id=${js(first)}]').click()`);
+ await page.until(`TamagiHousehold.selectedResidentId()===${js(first)}&&convId===${js(worldThreadId)}&&document.getElementById('input').value==='Cedar private thread draft'`,'switching back restores the other resident’s thread and draft');
+ assert.equal(await page.evaluate(`TamagiShell.view()`),'inventory');
+ // Repair a previously saved resident/thread mismatch during reload as well.
+ await page.evaluate(`localStorage.setItem(TamagiHousehold.storageKey('resident'),${js(second)});localStorage.setItem(TamagiHousehold.storageKey('conversation'),${js(worldThreadId)})`);
+ await page.send('Page.reload',{ignoreCache:true});
+ await page.until(`!!window.TamagiHousehold&&TamagiShell.view()==='inventory'&&TamagiHousehold.selectedResidentId()===${js(first)}&&convId===${js(worldThreadId)}&&document.querySelector('.msg .bubble')?.textContent.includes('something to share')`,'reload reconciles an old saved private thread with its participating resident');
+ assert.equal(await page.evaluate(`TamagiHousehold.participants().includes(TamagiHousehold.selectedResidentId())`),true);
+ checks.push('menu resident changes retain the menu page while switching hidden threads and preserving distinct drafts; reload reconciles an older saved resident/thread mismatch');
  await page.evaluate(`TamagiShell.navigate('/');document.getElementById('household-character-wheel').click()`);
  assert.equal(await page.evaluate(`document.getElementById('household-wheel-dialog').open`),true);await page.evaluate(`document.getElementById('household-wheel-dialog').close()`);
  // Actual browser recovery: encrypted download, file upload, review and commit.

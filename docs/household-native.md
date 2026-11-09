@@ -48,6 +48,14 @@ opportunities do not automatically resume. Unknown upstream occupancy holds new
 model dispatch for reconciliation. Existing residents are never discovered or
 enrolled automatically. Keep this candidate separate from the burn-in checkout.
 
+The development launcher runs workers from its current checkout. Reopening a
+retained root preserves its enrollment release label; it does not pin executable
+bytes or automatically activate/rebind a new release. The archive compatibility
+check compares those stored labels, so repeated development restarts do not
+qualify cross-release recovery. Production adoption requires a controlled,
+qualified release and explicit resident migration; do not treat this launcher as
+a production upgrade controller.
+
 ## Interactive behavior
 
 - The character wheel selects the resident for personal views and new input.

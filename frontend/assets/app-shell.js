@@ -202,15 +202,15 @@
     updateActivity();
     window.TamagiHousehold?.historyRendered(id,data);
   }
-  window.openConversation = async function (id) {
+  window.openConversation = async function (id,{openChat=true}={}) {
     saveDraft();selection++;convId=id;localStorage.setItem(conversationKey(),id);restoreDraft();
     for(const work of works.values())if(work.conversation_id===id&&!active(work))markSeen(work.work_id);
-    await renderHistory(id);navigate('/');loadConversations();
+    await renderHistory(id);if(openChat)navigate('/');loadConversations();
   };
-  window.newConversation = function () {
+  window.newConversation = function ({openChat=true}={}) {
     saveDraft();selection++;convId=null;localStorage.removeItem(conversationKey());restoreDraft();
     $('chat-messages').innerHTML='<div class="welcome-msg" id="welcome"><strong>A new conversation.</strong><br>What shall we explore?</div>';
-    activeRequestId=null;currentInterimGroup=null;clearLiveTags();navigate('/');updateActivity();$('input').focus();loadConversations();
+    activeRequestId=null;currentInterimGroup=null;clearLiveTags();if(openChat)navigate('/');updateActivity();if(openChat)$('input').focus();loadConversations();
   };
   window.sendMessage = async function () {
     if(!durable)return legacySend();
@@ -345,7 +345,7 @@
     try {
       await poll(true);
       const saved=localStorage.getItem(conversationKey())||[...works.values()].filter(w=>w.kind==='chat'&&(!window.TamagiHousehold||w.resident_id===TamagiHousehold.selectedResidentId())).sort((a,b)=>b.created_at-a.created_at)[0]?.conversation_id;
-      if(saved){convId=saved;try{await renderHistory(saved);}catch{convId=null;localStorage.removeItem(conversationKey());}}
+      if(saved){try{if(window.TamagiHousehold)await window.openConversation(saved,{openChat:false});else{convId=saved;await renderHistory(saved);}}catch{convId=null;localStorage.removeItem(conversationKey());}}
       hydrating=false;
       for(const work of works.values())if(active(work)){subscribe(work);await feed(work);}
     }catch(error){hydrating=false;if(error.status===503&&error.message.includes('home platform'))durable=false;else notice(error.message);}

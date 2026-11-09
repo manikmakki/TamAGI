@@ -29,6 +29,48 @@ def rows(path, query):
         return db.execute(query).fetchall()
 
 
+RECOVERY_TERMINAL = {"reply_offer": "closed", "native_invitation_offer": "closed",
+                     "conversation_invitation": "expired", "native_grant": "interrupted",
+                     "broker_execution": "stopped"}
+
+
+def seed_recovery_opportunities(store, actors, *, deferred=False):
+    """Idle but unfinished canonical authority, with no provider operation."""
+    from backend.core.household.broker import InferenceBroker
+    broker = InferenceBroker(store, recover=False)
+    records = {}
+    for actor in actors:
+        broker.register_resident(actor)
+        exchange, execution = "restore-exchange-" + actor, "restore-execution-" + actor
+        broker.open_exchange(exchange, "user")
+        broker.open_execution(execution, exchange, actor)
+        store.put("native_execution", "restore-binding-" + actor,
+                  {"resident_id": actor, "broker_execution_id": execution})
+        for kind in ("reply_offer", "native_invitation_offer"):
+            store.put(kind, "restore-" + kind + "-" + actor,
+                      {"recipient": actor, "status": "deferred" if deferred else "pending", "exchange_id": exchange})
+        store.put("conversation_invitation", "restore-conversation_invitation-" + actor,
+                  {"participant_id": actor, "status": "pending"})
+        store.put("native_grant", "restore-native_grant-" + actor,
+                  {"resident_id": actor, "status": "running"})
+        records[actor] = {kind: store.get(kind, execution if kind == "broker_execution" else "restore-" + kind + "-" + actor)
+                          for kind in RECOVERY_TERMINAL}
+    return records
+
+
+def check_recovery_opportunities(test, store, actor, peers):
+    records = {}
+    for kind, status in RECOVERY_TERMINAL.items():
+        identity = "restore-execution-" + actor if kind == "broker_execution" else "restore-" + kind + "-" + actor
+        record = store.get(kind, identity)
+        test.assertEqual(record["data"]["status"], status, kind)
+        records[kind] = record
+    for expected in peers.values():
+        for kind, record in expected.items():
+            test.assertEqual(store.get(kind, record["id"]), record, "Peer opportunity changed: " + kind)
+    return records
+
+
 class ResidentRecoveryTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="hh-recover-", dir="/tmp")
@@ -250,6 +292,34 @@ class ResidentRecoveryTests(unittest.TestCase):
             self.assertNotEqual(registry.descriptors[self.actor]["root"], str(self.roots[self.actor]))
             self.assertEqual(registry.store.get("resident", self.actor)["data"], registry.descriptors[self.actor])
             self.assertEqual(len(registry.store.list("message")), 2)
+        finally:
+            registry.close()
+        self.assertFalse((self.root / JOURNAL).exists())
+
+    def test_interrupted_selection_durably_retires_only_target_opportunities(self):
+        self.backup()
+        archive, preview = self.stage()
+        with stopped_household(self.root) as registry:
+            seeded = seed_recovery_opportunities(registry.store, self.actors, deferred=True)
+        peers = {actor: seeded[actor] for actor in (self.willow, self.river)}
+        from backend.core.household import resident_recovery as recovery
+        original_write = recovery.atomic_json
+        def fail_manifest(path, value):
+            if Path(path).name == "household.json":
+                raise OSError("interrupted after database commit")
+            return original_write(path, value)
+        with patch.object(recovery, "atomic_json", side_effect=fail_manifest):
+            with self.assertRaisesRegex(OSError, "interrupted"):
+                self.restore(archive, preview)
+        self.assertTrue((self.root / JOURNAL).exists())
+        # Registry startup replays the exact durable selection without needing
+        # browser state or an available model server, and settlement is idempotent.
+        registry = NativeRegistry(self.root)
+        try:
+            current = check_recovery_opportunities(self, registry.store, self.actor, peers)
+            self.assertTrue(all(record["revision"] == 2 for record in current.values()))
+            self.assertEqual(len([event for event in registry.store.events()
+                                  if event["kind"] == "broker_execution_stopped"]), 1)
         finally:
             registry.close()
         self.assertFalse((self.root / JOURNAL).exists())

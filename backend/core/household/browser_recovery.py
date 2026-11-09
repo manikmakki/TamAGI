@@ -256,10 +256,8 @@ class BrowserRecovery:
                     if item["installation_id"] != self.registry.descriptors[actor]["installation_id"]:
                         raise HTTPException(409, "The resident changed since preview; upload and review the archive again")
                     def commit():
-                        result = restore_resident(self.registry, item["archive"], item["preview"], actor,
+                        return restore_resident(self.registry, item["archive"], item["preview"], actor,
                             confirmed=True, source_stopped=True, authority=body.get("authority"))
-                        self.settle_restored_actor(actor)
-                        return result
                     result = await self.run(actor, "restoring", commit)
                     self.discard(match[1])
                     return {"status": "restored", "resident_id": actor, "shared_state": "retained",
@@ -333,30 +331,6 @@ class BrowserRecovery:
         if item:
             item["archive"].cleanup()
             shutil.rmtree(item["root"], ignore_errors=True)
-
-    def settle_restored_actor(self, actor):
-        """Restoring private time does not replay newer shared opportunities."""
-        store = self.registry.store
-        with store.transaction():
-            for kind in ("reply_offer", "native_invitation_offer"):
-                for record in store.list(kind):
-                    data = record["data"]
-                    if data.get("recipient") == actor and data.get("status") in {"pending", "deferred", "running"}:
-                        store.put(kind, record["id"], {**data, "status": "closed",
-                            "recovery_note": "Resident checkpoint restored; invite or address them again explicitly"})
-            for record in store.list("conversation_invitation"):
-                data = record["data"]
-                if data.get("participant_id") == actor and data.get("status") == "pending":
-                    store.put("conversation_invitation", record["id"], {**data, "status": "expired",
-                        "recovery_note": "Resident checkpoint restored; invite again explicitly"})
-            for record in store.list("native_grant"):
-                if record["data"].get("resident_id") == actor and record["data"].get("status") not in TERMINAL:
-                    store.put("native_grant", record["id"], {**record["data"], "status": "interrupted"})
-            for record in store.list("native_execution"):
-                if record["data"].get("resident_id") == actor:
-                    identity = record["data"]["broker_execution_id"]
-                    if self.model.broker.execution(identity)["status"] == "running":
-                        self.model.broker.stop_execution(identity)
 
     async def close(self):
         self.closing = True

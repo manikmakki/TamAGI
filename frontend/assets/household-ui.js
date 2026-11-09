@@ -151,7 +151,7 @@
       const avatar = entry.avatar || 'vex', bones = TamagiAvatarRuntime.createBones(avatar,createBone,() => applyPivotDefaults(PRESETS.default.bones()));
       renderFrame(face,bones,TamagiAvatarRuntime.manifest(avatar,bones,buildManifest),ANIMATIONS.idle(bones,0)||{},0,avatar,{});
       button.append(face,node('span',entry.name,'hh-wheel-name'));
-      button.onclick = () => { $('household-wheel-dialog').close(); selectResident(entry.id,{openThread:!window.TamagiShell||TamagiShell.view()==='chat'}).catch(error => notice(error.message)); };
+      button.onclick = () => { $('household-wheel-dialog').close(); selectResident(entry.id,{openChat:!window.TamagiShell||TamagiShell.view()==='chat'}).catch(error => notice(error.message)); };
       button.onkeydown = event => { if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? residents.length-1 : (index+(['ArrowLeft','ArrowUp'].includes(event.key)?-1:1)+residents.length)%residents.length; wheel.querySelectorAll('button')[next].focus(); };
       wheel.append(button);
     });
@@ -196,7 +196,7 @@
     $('consultation').hidden=true;$('restore-preview').hidden=true;
     for(const id of ['grants','archives','evidence','runtime-details','backup-download','restore-details'])$(id).replaceChildren();
   }
-  async function selectResident(id,{openThread = true,force = false} = {}) {
+  async function selectResident(id,{openThread = true,openChat = true,force = false} = {}) {
     if (!residents.some(entry => entry.id === id)) throw new Error('That resident is unavailable');
     if (id === selected&&!force) return;
     window.TamagiShell?.saveDraft(); selected = id; epoch++; current = null; snapshot = null;
@@ -207,7 +207,7 @@
     _rigBones = TamagiAvatarRuntime.createBones(_avatarId,createBone,() => applyPivotDefaults(PRESETS.default.bones())); _rigStartTime = null;
     updateState({name:label(id),resident_id:id});
     for (const frame of document.querySelectorAll('iframe.view-frame[data-src]')) if (frame.hasAttribute('src')) frame.src = scopeUrl(frame.dataset.src,id);
-    if (openThread) { const previous = lastThreads.get(id); if (previous) await window.openConversation(previous); else window.newConversation(); }
+    if (openThread) { const previous = lastThreads.get(id); if (previous) await window.openConversation(previous,{openChat}); else window.newConversation({openChat}); }
     if (token !== epoch) return;
     await Promise.all([loadSpriteConfig(),loadState()]);
     if (token !== epoch) return;
@@ -326,8 +326,8 @@
     }
     mount();
     const oldNew=window.newConversation, oldOpen=window.openConversation;
-    window.newConversation=function(){opening++;snapshot=null;current=null;oldNew();paintParticipants();hideMentions();};
-    window.openConversation=async function(id){
+    window.newConversation=function(options){opening++;snapshot=null;current=null;oldNew(options);paintParticipants();hideMentions();};
+    window.openConversation=async function(id,options){
       const attempt=++opening,token=epoch,thread=await request('/api/conversations/'+encodeURIComponent(id));
       if(attempt!==opening||token!==epoch)return;
       if(!thread.participants?.includes(selected)){
@@ -336,7 +336,7 @@
         const switching=selectResident(entry.id,{openThread:false}),switchedEpoch=epoch;
         await switching;if(attempt!==opening||epoch!==switchedEpoch)return;
       }
-      await oldOpen(id);paintParticipants();scheduleRead();
+      await oldOpen(id,options);paintParticipants();scheduleRead();
     };
     window.loadConversations=async function(){try{const residentId=selected,result=await request('/api/conversations',{headers:{'X-Tamagi-Resident':residentId}});if(residentId!==selected)return;const list=$('conv-list');list.replaceChildren();for(const thread of result.conversations||[]){const button=node('button',undefined,'conv-item hh-thread-choice'+(thread.id===convId?' active':''));button.type='button';button.append(node('div',thread.title||'Conversation','ci-title'),node('small',(thread.participants||[]).map(label).join(' · '),'ci-meta'));button.onclick=()=>window.openConversation(thread.id).catch(error=>notice(error.message));list.append(button);}}catch(error){notice(error.message);}};
     await refresh();for(const input of $('household-color-form').querySelectorAll('input[type=color]'))input.value=color(input.dataset.actorId);

@@ -167,12 +167,16 @@ class NativeModelServer:
         return value
 
     async def start_execution(self, resident, body):
+        if self._closed:
+            raise Conflict("Native coordinator is shutting down")
         if self.maintenance:
             raise Conflict("Household paused briefly for resident recovery")
         local, actor, origin = body["execution_id"], body["actor_id"], body["origin"]
         if not all(isinstance(v, str) and v for v in (local, actor, origin)) or type(body["max_calls"]) is not int or body["max_calls"] < 1:
             raise ProtocolError("Invalid native execution binding")
         grant = await self._grant(body["grant_id"], resident) if body.get("grant_id") and not body.get("parent_id") else None
+        if self._closed:
+            raise Conflict("Native coordinator is shutting down")
         key = resident + ":" + local
         definition = {k: body.get(k) for k in ("execution_id", "parent_id", "actor_id", "origin", "max_calls", "grant_id")}
         with self.store.transaction():
@@ -240,6 +244,8 @@ class NativeModelServer:
         return messages
 
     async def submit(self, resident, body):
+        if self._closed:
+            raise Conflict("Native coordinator is shutting down")
         if self.maintenance:
             raise Conflict("Household paused briefly for resident recovery")
         messages = self._messages(body["messages"])
@@ -412,6 +418,16 @@ class NativeModelServer:
 
     async def close(self):
         self._closed = True
+        # Independent evaluations need not have a native_work controller to
+        # stop them. Revoke their authority too, so undispatched generations
+        # settle instead of leaving private HTTP handlers waiting forever.
+        # stop_execution only requests cancellation of running/unknown attempts;
+        # their healthy provider calls still drain and uncertainty stays held.
+        for record in self.store.list("broker_execution"):
+            if record["data"]["status"] == "running":
+                self.broker.stop_execution(record["id"])
+        async with self._condition:
+            self._condition.notify_all()
         if self._tasks:
             await asyncio.gather(*self._tasks.values(), return_exceptions=True)
         if self._driver:
