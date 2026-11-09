@@ -5,6 +5,7 @@
   const api=(...args)=>TamagiShell.api(...args),notice=(...args)=>TamagiShell.notice(...args);
   let state=null,friend=null,thread=null,restore=null;
   let loadedResident=null;
+  let previewRequest=0;
   const item=(title,text='')=>{const node=document.createElement('div');node.className='item';const strong=document.createElement('strong');strong.textContent=title;const p=document.createElement('p');p.className='muted';p.textContent=text;node.append(strong,p);return node;};
   const empty=(target,text='')=>{target.replaceChildren();if(text){const p=document.createElement('p');p.className='empty';p.textContent=text;target.append(p);}};
   const button=(label,handler)=>{const b=document.createElement('button');b.textContent=label;b.onclick=()=>perform(handler);return b;};
@@ -34,15 +35,17 @@
     for(const note of state.notebook.slice(-12).reverse()) {
       const actor=state.companions.find(p=>p.id===note.actor);
       const details=document.createElement('details'),summary=document.createElement('summary'),body=document.createElement('p');
-      summary.textContent=(actor?.data.name||(note.actor==='operator'?'You':'TamAGI'))+' · '+note.data.text.slice(0,80)+(note.data.text.length>80?'…':'');body.textContent=note.data.text;details.className='item';details.append(summary,body);$('notes').append(details);
+      summary.textContent=(actor?.data.name||(note.actor==='operator'?'You':window.TamagiHousehold?.residentName(note.actor)||'TamAGI'))+' · '+note.data.text.slice(0,80)+(note.data.text.length>80?'…':'');body.textContent=note.data.text;details.className='item';details.append(summary,body);$('notes').append(details);
     }
     empty($('companions'),state.companions.length?'':'A lasting companion can begin with a name and a few qualities.');
     for(const peer of state.companions) {
       if(peer.data.status!=='active')continue;
       const card=document.createElement('article');card.className='card';card.append(item(peer.data.name,peer.data.self_description||peer.data.seed));
       card.append(button('Invite a conversation',async()=>{
+        const household=window.TamagiHousehold,owner=household?.selectedResidentId(),token=household?.selectionEpoch();
         friend=peer.id;thread=null;$('consultation').hidden=false;$('consult-title').textContent='With '+peer.data.name;empty($('friend-reply'));
-        const history=await api('/companions/'+encodeURIComponent(peer.id));
+        const history=await api('/companions/'+encodeURIComponent(peer.id),household?{headers:{'X-Tamagi-Resident':owner}}:{});
+        if(household&&!household.acceptResponse(owner,token))return;
         const previous=(history.invocations||[]).filter(r=>r.data.caller_actor_id==='operator').at(-1);
         if(previous){thread=previous.data.thread_id;$('friend-reply').append(item('Earlier conversation',previous.data.text||previous.data.status));for(const work of TamagiShell.works.values())if(work.kind==='companion'&&work.conversation_id===thread&&!['queued','running'].includes(work.status))TamagiShell.markSeen(work.work_id);}
         $('friend-message').focus();
@@ -56,7 +59,7 @@
       node.append(actions);$('pursuits').append(node);
     }
     $('runtime-details').textContent=JSON.stringify({resident:state.resident_id,installation:state.installation_id,authority:state.authority,automaticDeployment:state.automatic_deployment},null,2);
-    $('enable-deployment').disabled=!!state.automatic_deployment;$('disable-deployment').disabled=!state.automatic_deployment;
+    $('enable-deployment').disabled=!!window.TamagiHousehold||!!state.automatic_deployment;$('disable-deployment').disabled=!!window.TamagiHousehold||!state.automatic_deployment;
   }
   async function load(){
     const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
@@ -67,17 +70,20 @@
   }
   async function growth(){await load();$('growth').open=true;if(!$('growth-dialog').open)$('growth-dialog').showModal();}
   async function preview(entry){
+    const household=window.TamagiHousehold,token=household?.selectionEpoch(),request=++previewRequest;
+    const current=()=>request===previewRequest&&(!household||household.acceptResponse(entry._residentId,token))&&$('preview-dialog').open;
     const rawPath='/api/inventory/file?path='+encodeURIComponent(entry.path)+'&preview=true';
     const path=window.TamagiHousehold?TamagiHousehold.scopeUrl(rawPath,entry._residentId):rawPath;
-    $('preview-title').textContent=entry.name;empty($('preview-content'));$('preview-note').textContent='Current workshop file';
+    $('preview-title').textContent=(window.TamagiHousehold?TamagiHousehold.residentName(entry._residentId)+' · ':'')+entry.name;empty($('preview-content'));$('preview-note').textContent='Current workshop file';
     const dialog=$('preview-dialog');if(!dialog.open)dialog.showModal();
     if(['text/html','image/svg+xml'].includes(entry.media_type)){
       const iframe=document.createElement('iframe');iframe.title=entry.name+' · static preview';iframe.setAttribute('sandbox','');iframe.src=path;$('preview-content').append(iframe);$('preview-note').textContent='Static preview · scripts and network access are disabled.';
     }else if(['image/png','image/jpeg','image/gif','image/webp'].includes(entry.media_type)){
-      const img=document.createElement('img');img.alt=entry.name;img.src=path;img.onerror=()=>$('preview-note').textContent='Preview unavailable; use download.';$('preview-content').append(img);
+      const img=document.createElement('img');img.alt=entry.name;img.src=path;img.onerror=()=>{if(current())$('preview-note').textContent='Preview unavailable; use download.';};$('preview-content').append(img);
     }else{
-      const response=await fetch(path);if(!response.ok){$('preview-note').textContent='Preview unavailable; use download.';return;}
-      const pre=document.createElement('pre');pre.textContent=await response.text();$('preview-content').append(pre);
+      const response=await fetch(path);if(!current())return;if(!response.ok){$('preview-note').textContent='Preview unavailable; use download.';return;}
+      const text=await response.text();if(!current())return;
+      const pre=document.createElement('pre');pre.textContent=text;$('preview-content').append(pre);
     }
   }
   async function inventory(){
@@ -109,9 +115,12 @@
     form('note-form',async()=>{await api('/runtime/notebook',{method:'POST',body:JSON.stringify({text:$('note-text').value})});$('note-text').value='';await load();});
     form('companion-form',async()=>{await api('/companions',{method:'POST',body:JSON.stringify({name:$('friend-name').value,seed:$('friend-seed').value})});$('companion-form').reset();await load();});
     form('consult-form',async()=>{
+      const household=window.TamagiHousehold,owner=household?.selectedResidentId(),token=household?.selectionEpoch();
       if(!friend)throw new Error('Choose a companion first');
       const work=await api('/companions/'+encodeURIComponent(friend)+'/consult',{method:'POST',body:JSON.stringify({content:$('friend-message').value,mode:$('friend-mode').value,thread_id:thread,request_id:TamagiShell.uuid(),background:true})});
-      TamagiShell.remember(work);TamagiShell.subscribe(work);thread=work.conversation_id;$('friend-message').value='';$('friend-reply').append(item('Invitation accepted','You can explore while the conversation continues.'));
+      TamagiShell.remember(work);TamagiShell.subscribe(work);
+      if(household&&!household.acceptResponse(owner,token))return;
+      thread=work.conversation_id;$('friend-message').value='';$('friend-reply').append(item('Invitation accepted','You can explore while the conversation continues.'));
     });
     form('pursuit-form',async()=>{await api('/pursuits',{method:'POST',body:JSON.stringify({action:'create',attributes:{title:$('pursuit-title').value,next_step:$('pursuit-step').value,origin:'operator invitation',commitment:false}})});$('pursuit-form').reset();await load();});
     form('backup-form',async()=>{

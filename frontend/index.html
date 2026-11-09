@@ -961,7 +961,7 @@
 <script src="/assets/avatar-echo.js"></script>
 <script src="/assets/avatar-ember.js?v=8"></script>
 <script src="/assets/avatar-runtime.js?v=8"></script>
-<script src="/assets/household-ui.js?v=2"></script>
+<script src="/assets/household-ui.js?v=3"></script>
 <script>
 const API=window.location.origin;
 const WS_URL=API.replace(/^http/,'ws')+'/api/ws';
@@ -1828,8 +1828,10 @@ function switchTab(name){
 
 
 async function loadMemTotalCount(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
   try{
-    const d=await api('/state');
+    const d=await api('/state',household?{headers:{'X-Tamagi-Resident':actor}}:{});
+    if(household&&!household.acceptResponse(actor,token))return;
     if(d?.memory?.total_memories!=null){
       const n=d.memory.total_memories;
       document.getElementById('mem-count').textContent=n+' memor'+(n===1?'y':'ies');
@@ -1844,24 +1846,33 @@ function setMemFilter(btn,type){
   searchMemories(document.getElementById('mem-search').value.trim());
 }
 
+let _memSearchRequest=0;
 async function searchMemories(query){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch(),request=++_memSearchRequest,filter=activeMemFilter;
+  const current=()=>request===_memSearchRequest&&(!household||household.acceptResponse(actor,token));
   const entries=document.getElementById('mem-entries');
-  if(!query&&activeMemFilter==='all'){entries.innerHTML='<div class="drawer-empty">Search your memories...</div>';return}
-  const effectiveQuery=query||activeMemFilter;
+  if(!query&&filter==='all'){entries.innerHTML='<div class="drawer-empty">Search your memories...</div>';return}
+  const effectiveQuery=query||filter;
   try{
-    const d=await api('/memory/recall',{method:'POST',body:JSON.stringify({query:effectiveQuery,limit:20})});
+    const d=await api('/memory/recall',{method:'POST',body:JSON.stringify({query:effectiveQuery,limit:20}),...(household?{headers:{'X-Tamagi-Resident':actor}}:{})});
+    if(!current())return;
     let memories=d.memories||[];
-    if(activeMemFilter!=='all')memories=memories.filter(m=>m.memory_type===activeMemFilter);
+    if(filter!=='all')memories=memories.filter(m=>m.memory_type===filter);
     if(!memories.length){entries.innerHTML='<div class="drawer-empty">No memories found.</div>';return}
     entries.innerHTML=memories.map(m=>{
       const preview=(m.content||'').substring(0,150)+((m.content||'').length>150?'\u2026':'');
       const type=m.memory_type||'fact';
       return`<div class="mem-card"><div class="mem-card-header"><span class="mem-type-badge" data-type="${esc(type)}">${esc(type)}</span><span class="mem-time">${relativeTime(m.timestamp)}</span></div><div class="mem-content">${esc(preview)}</div></div>`;
     }).join('');
-  }catch(err){console.error('searchMemories',err);entries.innerHTML='<div class="drawer-empty">Search failed.</div>'}
+  }catch(err){if(!current())return;console.error('searchMemories',err);entries.innerHTML='<div class="drawer-empty">Search failed.</div>'}
 }
 
-const debouncedSearch=debounce(searchMemories,400);
+const _debouncedMemSearch=debounce((query,actor,token)=>{
+  if(!window.TamagiHousehold||TamagiHousehold.acceptResponse(actor,token))searchMemories(query);
+},400);
+function debouncedSearch(query){
+  _debouncedMemSearch(query,window.TamagiHousehold?.selectedResidentId(),window.TamagiHousehold?.selectionEpoch());
+}
 
 // ═══ ONBOARDING ═══
 let obSteps=[],obStep=0,obR={};
@@ -2046,7 +2057,7 @@ async function loadState(){
 }
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
-<script src="/assets/app-shell.js?v=18"></script>
-<script src="/assets/home-views.js?v=19"></script>
+<script src="/assets/app-shell.js?v=19"></script>
+<script src="/assets/home-views.js?v=20"></script>
 </body>
 </html>

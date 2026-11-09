@@ -146,3 +146,28 @@ private imports now retain real bytes; they do not replace coordinated recovery.
 
 Do not replace production or enroll Ember on the strength of these development
 checks alone. See ADR-0019 for the full acceptance requirements.
+
+## Menu scope in a native household
+
+Every menu page identifies its resident context and offers the existing resident
+chooser. Choosing another resident while browsing keeps the current menu page.
+The drawer also names the selected resident. Chat retains its existing avatar
+selector, participant strip and attributed messages.
+
+| Menu item | Scope |
+| --- | --- |
+| Map | The selected resident's world graph. The separate places list shows household places visible to that resident; pursuits belong to that resident. |
+| Journal | The selected resident's entries and activity. The household clock and notebook are shared. |
+| Inventory | The selected resident's private workshop files and saved artifacts. Shared library opens explicitly published household artifacts. |
+| Companions | Companions introduced to the selected resident, including their memories and conversations. Other household residents are selected through the resident chooser. |
+| Archive | Operator conversations that include the selected resident, plus that resident's private memories. Group threads retain all participants and attribution. |
+| Settings — Home & recovery | Conversation colors are a household preference. Permissions and runtime evidence belong to the selected resident. Household backup, restore and release changes are unavailable in this test build; those controls are disabled. |
+| Settings — Connections | The selected resident's secrets and connected tool services. The central model endpoint is coordinator configuration. |
+| Settings — Appearance | The selected resident's avatar configuration and uploaded art. |
+
+Embedded map, connection and appearance panels repeat the resident name. Inventory
+previews name their resident, and preview/download links retain their captured
+resident scope. Changing residents closes the old Journal and file details,
+clears private lists, and ignores late memory results/counts from the old context.
+Unread threads, operator mentions, the notebook and the published artifact
+library retain their household scope.

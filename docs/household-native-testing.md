@@ -360,3 +360,39 @@ evaluation requests, inspect the coordinator/private-server drain, and add a
 bounded shutdown regression without abandoning uncertain upstream occupancy.
 The Journal/availability fix does not claim to resolve this separate shutdown
 case.
+
+## NATIVE-011 — Resident context was implicit across menu pages
+
+Reported after the Journal attribution follow-up on 2026-11-09. Inventory,
+Companions and Archive were resident-scoped without saying so. Map's main graph
+is also resident-specific, while its separate place list comes from the shared
+household world. Journal mixes a private activity stream with the household
+clock and notebook. Settings mixes household speaker colors with resident
+credentials, appearance, permissions and runtime evidence. The shared recovery
+limitation was only exposed after submitting an individual backup/restore form.
+
+Each menu page now names its context, describes its private/shared sections and
+provides the existing resident chooser without navigating back to Chat. Embedded
+map, connection and appearance panels repeat their bound resident. Inventory
+previews name their resident and the page links to the household-public library.
+The drawer, growth details, notebook authors and household unread dialog also
+make their scope explicit. Recovery/deployment controls already rejected by the
+household gateway are visibly unavailable before forms are filled.
+
+The audit found that delayed Archive memory requests could render after a
+resident switch. Memory results and counts now use captured resident/selection
+guards; overlapping search responses also use a request sequence. Queued search
+input from a previous resident is discarded. Private lists and open details are
+cleared when switching, and menu selection preserves the current page.
+
+See the [menu scope guide](household-native.md#menu-scope-in-a-native-household)
+for the complete audit. The change is served as static UI on refresh; resident
+workers and scheduled World Thread opportunities are not restarted.
+
+The [menu scope qualification](qualification/0019-native-menu-scope-2026-11-09.md)
+retains the full browser pass and final focused checks for delayed private
+previews, permission/evidence cleanup, scope labels and resident switching.
+Both used fresh offline homes and injected providers, with no denied network
+operations or uncaught JavaScript errors. Companion detail responses also retain
+their captured resident context. The service-worker cache/version list was
+updated so installed clients can pick up the changed UI assets.

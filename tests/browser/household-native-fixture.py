@@ -74,6 +74,9 @@ for descriptor in registry.descriptors.values():
     project = Path(descriptor['root']) / 'workspace/workshop'
     project.mkdir(exist_ok=True)
     (project / 'browser-shared.txt').write_text('Published by a real native worker.\n')
+    (project / 'owner.txt').write_text(descriptor['name']+' owns this private workshop file.\n')
+registry.store.put('shared_note', 'browser-shared-note', {'author': list(registry.descriptors)[1],
+    'text': 'A notebook note visible across the household.', 'source_ids': []})
 password = secrets.token_urlsafe(24)
 config.auth.password_hash = hash_password(password)
 credential = Path(os.environ.get("TAMAGI_BROWSER_CREDENTIAL", "/tmp/tamagi-native-browser-credential"))

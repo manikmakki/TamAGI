@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "returncode": 0,
+  "guarded_python_processes": 3,
+  "denied_network_operations": 0,
+  "external_provider": false,
+  "scope": "Menu assertions extracted from the full browser regression; no chat/world activation requested."
+}

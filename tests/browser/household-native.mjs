@@ -153,5 +153,68 @@ try{
  assert.equal(await page.evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);
  await page.shot('native-shared-library');
  assert.deepEqual(errors,[]);checks.push('Journal clock and Tick Now use the coordinator and actual autonomous worker','autonomous operator mention appears in For you and opens one attributed thread without synthetic human input','public library displays an explicitly published immutable file and serves exact bytes at mobile width');
+ await page.evaluate(`document.getElementById('household-library-dialog').close()`);
+ for(const [actor,name]of[[first,'Cedar'],[second,'Willow']]){
+  await page.evaluate(`TamagiHousehold.selectResident(${js(actor)},{openThread:false})`);
+  for(const route of ['/inventory','/companions','/archive','/map','/journal','/settings','/settings/connections','/settings/appearance']){
+   const view=route.split('/')[1];
+   await page.evaluate(`TamagiShell.navigate(${js(route)})`);
+   assert.equal(await page.evaluate(`document.querySelector('#view-'+${js(view)}+' .hh-scope-chooser').textContent`),'Viewing as '+name+' ▾');
+   assert.equal(await page.evaluate(`document.querySelector('#view-'+${js(view)}+' .hh-scope-description').textContent.includes(${js(name)})`),true);
+   if(view!=='settings')assert.equal(await page.evaluate(`document.querySelector('#view-'+${js(view)}+' h1').textContent`),name+'’s '+view[0].toUpperCase()+view.slice(1));
+   if(view==='inventory'){
+    await page.until(`!![...document.querySelectorAll('#inventory-items .creation-card')].find(c=>c.querySelector('h2').textContent==='owner.txt')`,'resident workshop inventory loads');
+    const bytes=await page.evaluate(`fetch([...document.querySelectorAll('#inventory-items .creation-card')].find(c=>c.querySelector('h2').textContent==='owner.txt').querySelector('a').href).then(r=>r.text())`);
+    assert.equal(bytes,name+' owns this private workshop file.\n');
+    await page.evaluate(`[...document.querySelectorAll('#inventory-items .creation-card')].find(c=>c.querySelector('h2').textContent==='owner.txt').querySelector('button').click()`);
+    await page.until(`document.getElementById('preview-content').textContent.includes(${js(name+' owns')})`,'file preview uses the named resident’s bytes');
+    assert.equal(await page.evaluate(`document.getElementById('preview-title').textContent`),name+' · owner.txt');
+    await page.evaluate(`document.getElementById('preview-dialog').close()`);
+    await page.shot('native-inventory-scope');
+   }
+   if(view==='journal'){
+    await page.until(`document.getElementById('notes').textContent.includes('A notebook note visible across the household.')`,'household notebook persists across resident selection');
+    assert.equal(await page.evaluate(`document.getElementById('notes').textContent.includes('Willow')`),true,'shared note has resident author attribution');
+   }
+   const frame=view==='map'?'#view-map iframe':route==='/settings/connections'?'#settings-connections':route==='/settings/appearance'?'#settings-appearance':null;
+   if(frame)await page.until(`document.querySelector(${js(frame)}).contentDocument?.getElementById('household-panel-scope')?.dataset.residentId===${js(actor)}`,'embedded '+route+' names and binds the correct resident');
+   assert.equal(await page.evaluate(`document.documentElement.scrollWidth<=innerWidth`),true,'menu page fits mobile width');
+  }
+  await page.evaluate(`TamagiShell.navigate('/settings')`);
+  assert.equal(await page.evaluate(`document.querySelector('.hh-colors .hh-section-scope').textContent.includes('across all residents')`),true);
+  assert.equal(await page.evaluate(`document.querySelector('#backup-form button').disabled&&document.querySelector('#restore-form button').disabled&&document.getElementById('enable-deployment').disabled&&document.getElementById('disable-deployment').disabled`),true,'unavailable household recovery controls do not imply an individual resident backup');
+  await page.shot('native-settings-scope');
+  await page.evaluate(`document.getElementById('grants').textContent='OLD_RESIDENT_PERMISSION';document.getElementById('evidence').textContent='OLD_RESIDENT_EVIDENCE'`);
+  await page.evaluate(`TamagiShell.navigate('/inventory');document.querySelector('#view-inventory .hh-scope-chooser').click()`);
+  await page.until(`document.getElementById('household-wheel-dialog').open`,'menu page can open the existing resident chooser');
+  const other=actor===first?second:first;
+  await page.evaluate(`document.querySelector('.hh-wheel-person[data-resident-id=${js(other)}]').click()`);
+  await page.until(`TamagiHousehold.selectedResidentId()===${js(other)}&&!!document.querySelector('#inventory-items .creation-card')`,'menu resident chooser refreshes the current page');
+  assert.equal(await page.evaluate(`TamagiShell.view()`),'inventory','switching a menu resident preserves the current page');
+  assert.equal(await page.evaluate(`document.getElementById('grants').textContent+document.getElementById('evidence').textContent`),'','switching clears prior resident settings details');
+ }
+ checks.push('every menu page names its selected resident and distinguishes shared sections; embedded map/connections/appearance keep the same resident binding','private inventory previews and downloads return the named resident’s bytes; household notebook and public library remain shared','resident chooser is available within menu pages and unavailable household recovery controls are explicit');
+ await page.evaluate(`TamagiHousehold.selectResident(${js(first)},{openThread:false});TamagiShell.navigate('/archive');switchTab('memories')`);
+ await page.evaluate(`(()=>{const original=window.fetch;let countHeld=false;window.restoreScopeFetch=()=>window.fetch=original;window.fetch=async(input,options={})=>{const path=new URL(String(input),location.origin).pathname;if(path==='/api/memory/recall')return await new Promise(resolve=>window.releaseOldMemory=()=>resolve(new Response(JSON.stringify({memories:[{content:'CEDAR_OLD_SEARCH_MUST_NOT_APPEAR',memory_type:'fact',timestamp:1}]}),{status:200})));if(path==='/api/state'&&!countHeld){countHeld=true;return await new Promise(resolve=>window.releaseOldCount=()=>resolve(new Response(JSON.stringify({memory:{total_memories:987654}}),{status:200})));}return original(input,options);};window.oldScopeSearch=searchMemories('held old resident search');window.oldScopeCount=loadMemTotalCount();})()`);
+ await page.evaluate(`TamagiHousehold.selectResident(${js(second)},{openThread:false})`);
+ await page.evaluate(`(async()=>{releaseOldMemory();releaseOldCount();await Promise.all([oldScopeSearch,oldScopeCount]);restoreScopeFetch();})()`);
+ assert.equal(await page.evaluate(`document.getElementById('mem-entries').textContent.includes('CEDAR_OLD_SEARCH_MUST_NOT_APPEAR')`),false);
+ assert.equal(await page.evaluate(`document.getElementById('mem-count').textContent.includes('987654')`),false);
+ assert.equal(await page.evaluate(`document.querySelector('#view-archive h1').textContent`),'Willow’s Archive');
+ checks.push('late memory results and counts from a previous resident cannot appear under the next resident’s Archive');
+ await page.evaluate(`TamagiHousehold.selectResident(${js(first)},{openThread:false});TamagiShell.navigate('/inventory')`);
+ await page.until(`!![...document.querySelectorAll('#inventory-items .creation-card')].find(c=>c.querySelector('h2').textContent==='owner.txt')`,'old resident inventory is ready for delayed preview');
+ await page.evaluate(`(()=>{const original=window.fetch;window.restorePreviewFetch=()=>window.fetch=original;window.fetch=async(input,options)=>String(input).includes('/inventory/file?')&&String(input).includes('preview=true')?await new Promise(resolve=>window.releaseOldPreview=()=>resolve(new Response('CEDAR_OLD_PREVIEW_MUST_NOT_APPEAR',{status:200}))):original(input,options);[...document.querySelectorAll('#inventory-items .creation-card')].find(c=>c.querySelector('h2').textContent==='owner.txt').querySelector('button').click();})()`);
+ await page.until(`!!window.releaseOldPreview`,'old resident preview request is held');
+ await page.evaluate(`TamagiHousehold.selectResident(${js(second)},{openThread:false})`);
+ await page.evaluate(`restorePreviewFetch();[...document.querySelectorAll('#inventory-items .creation-card')].find(c=>c.querySelector('h2').textContent==='owner.txt').querySelector('button').click()`);
+ await page.until(`document.getElementById('preview-content').textContent.includes('Willow owns')`,'new resident preview loads its own bytes');
+ await page.evaluate(`releaseOldPreview();new Promise(resolve=>setTimeout(resolve,100))`);
+ assert.equal(await page.evaluate(`document.getElementById('preview-content').textContent.includes('CEDAR_OLD_PREVIEW_MUST_NOT_APPEAR')`),false);
+ await page.evaluate(`document.getElementById('preview-dialog').close()`);
+ checks.push('late private file previews cannot overwrite the next resident’s detail view; old permission and evidence panels clear on selection');
+ await page.evaluate(`TamagiShell.navigate('/');document.getElementById('household-character-wheel').click()`);
+ assert.equal(await page.evaluate(`document.getElementById('household-wheel-dialog').open`),true);await page.evaluate(`document.getElementById('household-wheel-dialog').close()`);
+ assert.deepEqual(errors,[]);
  const report={passed:true,actual_worker_processes:true,external_provider:false,checks,uncaught_errors:errors,limits:['Injected deterministic provider; sustained autonomous behavior and real upstream model quality remain separate checks.'],artifacts:root};await writeFile(root+'/report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }catch(error){if(page){await page.shot('failure').catch(()=>{});try{await writeFile(root+'/world-failure.json',JSON.stringify(await page.evaluate(`fetch('/api/fixture/world-evidence').then(r=>r.json())`),null,2));}catch{}}console.error(JSON.stringify({passed:false,message:error.stack,errors,artifacts:root}));process.exitCode=1;}finally{page?.socket.close();browser.kill('SIGTERM');await sleep(250);await rm(profile,{recursive:true,force:true});}

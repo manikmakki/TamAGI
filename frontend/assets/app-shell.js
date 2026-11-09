@@ -315,6 +315,7 @@
       for(const id of ['operator','connections','appearance'])$('settings-'+id).hidden=setting!==id;
       document.querySelectorAll('[data-setting]').forEach(link=>link.dataset.setting===setting?link.setAttribute('aria-current','page'):link.removeAttribute('aria-current'));
     }
+    window.TamagiHousehold?.paintScopes?.();
     document.querySelectorAll('#view-'+view+' iframe[data-src]').forEach(frame=>{if(!frame.src&&!frame.hidden)frame.src=window.TamagiHousehold?TamagiHousehold.scopeUrl(frame.dataset.src):frame.dataset.src;});
     if(['journal','map','companions','settings'].includes(view))window.TamagiHomeViews?.load().catch(e=>notice(e.message));
     if(view==='inventory')window.TamagiHomeViews?.inventory().catch(e=>notice(e.message));

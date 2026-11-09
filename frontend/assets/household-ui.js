@@ -151,18 +151,53 @@
       const avatar = entry.avatar || 'vex', bones = TamagiAvatarRuntime.createBones(avatar,createBone,() => applyPivotDefaults(PRESETS.default.bones()));
       renderFrame(face,bones,TamagiAvatarRuntime.manifest(avatar,bones,buildManifest),ANIMATIONS.idle(bones,0)||{},0,avatar,{});
       button.append(face,node('span',entry.name,'hh-wheel-name'));
-      button.onclick = () => { $('household-wheel-dialog').close(); selectResident(entry.id).catch(error => notice(error.message)); };
+      button.onclick = () => { $('household-wheel-dialog').close(); selectResident(entry.id,{openThread:!window.TamagiShell||TamagiShell.view()==='chat'}).catch(error => notice(error.message)); };
       button.onkeydown = event => { if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? residents.length-1 : (index+(['ArrowLeft','ArrowUp'].includes(event.key)?-1:1)+residents.length)%residents.length; wheel.querySelectorAll('button')[next].focus(); };
       wheel.append(button);
     });
     if (focused) [...wheel.querySelectorAll('button')].find(button => button.dataset.residentId === focused)?.focus();
     $('household-character-wheel').textContent = '◉ ' + label(selected); $('household-character-wheel').style.setProperty('--hh-person-color',color(selected));
   }
+  function paintScopes() {
+    const name=label(selected), settings=!$('settings-connections')?.hidden?'connections':!$('settings-appearance')?.hidden?'appearance':'operator';
+    const pages={
+      map:[`${name}’s Map`,`World graph for ${name}. The places list includes household places visible to ${name}; pursuits belong to ${name}.`],
+      journal:[`${name}’s Journal`,`${name}’s activity and reflections. The World Thread clock and notebook are shared by the household.`],
+      inventory:[`${name}’s Inventory`,`Files and saved artifacts from ${name}’s private workshop. Published work is available in Shared library.`],
+      companions:[`${name}’s Companions`,`Companions introduced to ${name}, with their own memories and conversations.`],
+      archive:[`${name}’s Archive`,`Conversations that include ${name}, and ${name}’s private memories.`],
+      settings:['Settings',settings==='connections'?`Secrets and connected tool services for ${name}.`:settings==='appearance'?`Avatar art and animation settings for ${name}.`:`Permissions and runtime evidence for ${name}. Conversation colors apply to the whole household.`]
+    };
+    for(const [view,[title,description]]of Object.entries(pages)){
+      const heading=$('view-'+view)?.querySelector('.page-heading');if(!heading)continue;
+      heading.querySelector('h1').textContent=title;
+      heading.querySelector('.hh-scope-description').textContent=description;
+      const chooser=heading.querySelector('.hh-scope-chooser');chooser.textContent='Viewing as '+name+' ▾';chooser.setAttribute('aria-label','Choose a resident. Viewing as '+name);chooser.dataset.residentId=selected;
+    }
+    $('household-drawer-scope').textContent='Browsing as '+name;
+    $('settings-connections').title=name+'’s connections and credentials';
+    $('settings-appearance').title=name+'’s avatar appearance editor';
+    $('view-map').querySelector('iframe').title=name+'’s world graph';
+    $('household-places-scope').textContent='Household places visible to '+name;
+    $('pursuits').previousElementSibling.textContent='Pursuits for '+name;
+    $('growth-resident-scope').textContent=name+'’s growth';
+  }
+  function clearResidentViews() {
+    window.closeMindFlyout();
+    for(const id of ['mind-entries','inventory-items','earlier-items','companions','places','pursuits','conv-list'])$(id).replaceChildren(node('p','Loading '+label(selected)+'’s entries…','muted'));
+    $('mem-search').value='';$('mem-count').textContent='Loading memories…';
+    window.setMemFilter($('mem-filters').querySelector('[data-type=all]'),'all');
+    if($('preview-dialog').open)$('preview-dialog').close();
+    if($('growth-dialog').open)$('growth-dialog').close();
+    $('consultation').hidden=true;$('restore-preview').hidden=true;
+    for(const id of ['grants','archives','evidence','runtime-details','backup-download','restore-details'])$(id).replaceChildren();
+  }
   async function selectResident(id,{openThread = true} = {}) {
     if (!residents.some(entry => entry.id === id)) throw new Error('That resident is unavailable');
     if (id === selected) return;
     window.TamagiShell?.saveDraft(); selected = id; epoch++; current = null; snapshot = null;
     localStorage.setItem(storageKey('resident'),id); paintWheel(); paintParticipants(); hideMentions(); const token = epoch;
+    clearResidentViews();paintScopes();
     if (!convId) window.TamagiShell?.restoreDraft();
     _avatarId = person(id)?.avatar || 'vex'; _spriteConfig = null; _spriteImages = {};
     _rigBones = TamagiAvatarRuntime.createBones(_avatarId,createBone,() => applyPivotDefaults(PRESETS.default.bones())); _rigStartTime = null;
@@ -173,6 +208,9 @@
     await Promise.all([loadSpriteConfig(),loadState()]);
     if (token !== epoch) return;
     await window.loadConversations();
+    if(token!==epoch)return;
+    if(window.TamagiShell?.view()==='journal')await window.loadMindPanel();
+    if(window.TamagiShell?.view()==='archive'){await window.loadMemTotalCount();await window.searchMemories($('mem-search').value.trim());}
     if (window.TamagiShell && ['map','journal','inventory','companions','settings'].includes(TamagiShell.view())) { if (TamagiShell.view() === 'inventory') await window.TamagiHomeViews?.inventory(); else await window.TamagiHomeViews?.load(); }
   }
   function scheduleRead() { if (readFrame !== null) return; readFrame = requestAnimationFrame(() => { readFrame = requestAnimationFrame(() => { readFrame = null; acknowledgeRead().catch(error => notice(error.message)); }); }); }
@@ -194,7 +232,7 @@
     for (const update of state.residents || []) Object.assign(person(update.id) || {},update);
     if ($('household-unread')) $('household-unread').textContent = `Unread threads (${state.unread_count || 0})`;
     if ($('household-for-you')) { $('household-for-you').textContent = `For you (${state.addressed_thread_count || 0})`; $('household-for-you').disabled = !state.addressed_thread_count; }
-    paintWheel(); paintParticipants();
+    paintWheel(); paintParticipants();paintScopes();
     for (const element of document.querySelectorAll('.msg[data-author-id]')) element.style.setProperty('--hh-speaker-color',color(element.dataset.authorId));
     for (const element of document.querySelectorAll('.hh-mention[data-actor-id]')) element.style.setProperty('--hh-mention-color',color(element.dataset.actorId));
     await refreshWorld();
@@ -234,22 +272,46 @@
     const worldStatus=node('section',undefined,'card');worldStatus.id='household-world-status';$('view-journal')?.querySelector('.page-heading')?.after(worldStatus);
     const wheelButton=node('button','','hh-wheel-toggle');wheelButton.type='button';wheelButton.id='household-character-wheel';wheelButton.setAttribute('aria-haspopup','dialog');wheelButton.setAttribute('aria-label','Choose a resident');$('a-name').before(wheelButton);
     const wheel=dialog('household-wheel-dialog','Choose a resident');wheel.classList.add('hh-wheel-dialog');const options=node('div',undefined,'hh-wheel-options');options.id='household-wheel-options';wheel.append(options);wheelButton.onclick=()=>{paintWheel();wheel.showModal();options.querySelector('[aria-pressed=true]')?.focus();};
+    for(const heading of document.querySelectorAll('.shell-page .page-heading')){
+      for(const p of heading.querySelectorAll(':scope > p'))p.hidden=true;
+      const chooser=node('button','','hh-scope-chooser');chooser.type='button';chooser.setAttribute('aria-haspopup','dialog');chooser.onclick=()=>wheelButton.click();
+      heading.append(node('p','','hh-scope-description'),chooser);
+    }
+    const drawerScope=node('p','','hh-section-scope');drawerScope.id='household-drawer-scope';$('drawer').querySelector('.drawer-header').after(drawerScope);
+    const growthScope=node('p','','hh-section-scope');growthScope.id='growth-resident-scope';$('growth-title').before(growthScope);
+    const companionIntro=$('view-companions').querySelector(':scope > .sub');if(companionIntro)companionIntro.hidden=true;
+    $('notes').before(node('p','Shared with the whole household.','hh-section-scope'));
+    const placeScope=node('h3','','hh-section-scope');placeScope.id='household-places-scope';$('places').before(placeScope);
+    $('pursuits').before(node('p','These pursuits belong to the resident selected above.','hh-section-scope'));
+    const libraryShortcut=node('button','Shared library','hh-scope-chooser');libraryShortcut.id='household-inventory-library';libraryShortcut.type='button';libraryShortcut.onclick=()=>showLibrary().catch(error=>notice(error.message));$('view-inventory').querySelector('.page-heading').append(libraryShortcut);
+    // These operations are already rejected by the household gateway. Make the
+    // existing recovery limitation visible before an operator fills a form.
+    $('backup-form').closest('article').before(node('p','Household backup, restore and release changes are unavailable in this test build.','hh-section-scope'));
+    for(const id of ['backup-form','restore-form'])for(const input of $(id).elements)input.disabled=true;
+    for(const id of ['restore-commit','enable-deployment','disable-deployment'])$(id).disabled=true;
     const toolbar=node('div',undefined,'hh-chat-toolbar');
     for(const[id,text,action]of[['household-new-thread','＋ New Thread',()=>window.newConversation()],['household-unread','Unread threads (0)',()=>showUnread().catch(error=>notice(error.message))],['household-for-you','For you (0)',()=>showUnread(true).catch(error=>notice(error.message))],['household-participants','Participants',showParticipants],['household-library','Shared library',()=>showLibrary().catch(error=>notice(error.message))]]){const button=node('button',text);button.id=id;button.type='button';button.onclick=action;if(id==='household-for-you'){button.disabled=true;button.classList.add('hh-attention');button.setAttribute('aria-live','polite');}toolbar.append(button);}
     const strip=node('div',undefined,'hh-participant-strip');strip.id='household-participant-strip';$('chat-messages').before(toolbar,strip);
     const mentions=node('div',undefined,'hh-mention-list');mentions.id='household-mention-list';mentions.hidden=true;mentions.setAttribute('role','listbox');mentions.setAttribute('aria-label','Mention a participant');$('input').before(mentions);$('input').setAttribute('aria-autocomplete','list');$('input').setAttribute('aria-controls',mentions.id);$('input').setAttribute('aria-expanded','false');
     $('input').addEventListener('input',updateMentions);$('input').addEventListener('click',updateMentions);$('input').addEventListener('keydown',event=>{if(!choices.length||!['ArrowDown','ArrowUp','Enter','Tab','Escape'].includes(event.key))return;event.preventDefault();event.stopImmediatePropagation();if(event.key==='Escape')hideMentions();else if(event.key==='Enter'||event.key==='Tab')completeMention(choiceIndex);else{choiceIndex=(choiceIndex+(event.key==='ArrowDown'?1:-1)+choices.length)%choices.length;paintMentionChoices();}},true);
-    const unread=dialog('household-unread-dialog','Unread conversations'), unreadList=node('div');unreadList.id='household-unread-list';unread.append(unreadList);
+    const unread=dialog('household-unread-dialog','Unread household conversations'), unreadList=node('div');unreadList.id='household-unread-list';unread.append(node('p','Your unread threads across all residents.'),unreadList);
     const library=dialog('household-library-dialog','Household-public artifacts'),libraryList=node('div');libraryList.id='household-library-list';library.append(node('p','Published versions are available to every resident. Importing a version makes a private copy; executable skills require separate activation.'),libraryList);
     const membership=dialog('household-participants-dialog','Conversation participants'), memberList=node('div');memberList.id='household-participant-options';membership.append(memberList);const text=node('p','Invited residents choose whether to join. Joining shares all earlier messages in this thread. Current participants choose whether to leave.','muted');text.id='household-membership-notice';membership.append(text);
     const save=node('button','Use these participants');save.type='button';save.onclick=async()=>{const ids=[...memberList.querySelectorAll('input:checked')].map(input=>input.value);if(!ids.length){notice('Choose at least one resident.');return;}save.disabled=true;try{if(convId){const id=convId,result=await request('/api/household/threads/'+encodeURIComponent(id)+'/participants',{method:'POST',body:JSON.stringify({participants:ids})});if(id===convId)await TamagiShell.refreshHistory();notice(result.notice||'Invitations sent. Residents choose whether to join.');}else{newParticipants.set(selected,ids);paintParticipants();}membership.close();hideMentions();}catch(error){notice(error.message);}finally{save.disabled=false;}};membership.append(save);
-    const appearance=node('article',undefined,'card hh-colors');appearance.append(node('h2','Conversation colors'),node('p','Choose a color for each speaker. Names stay visible below every message.','muted'));const form=node('form');form.id='household-color-form';
+    const appearance=node('article',undefined,'card hh-colors');appearance.append(node('h2','Conversation colors'),node('p','Household preference · These speaker colors apply across all residents.','hh-section-scope'),node('p','Choose a color for each speaker. Names stay visible below every message.','muted'));const form=node('form');form.id='household-color-form';
     for(const entry of people()){const row=node('label',undefined,'hh-color-row'),input=document.createElement('input');input.type='color';input.value=color(entry.id);input.dataset.actorId=entry.id;row.append(node('span',entry.name),input);form.append(row);}
     const submit=node('button','Save conversation colors');submit.type='submit';form.append(submit);form.onsubmit=async event=>{event.preventDefault();const values={};for(const input of form.querySelectorAll('input[type=color]'))values[input.dataset.actorId]=input.value;submit.disabled=true;try{await request('/api/household/preferences',{method:'PUT',body:JSON.stringify({colors:values})});colors=values;await refresh();notice('Conversation colors saved.');}catch(error){notice(error.message);}finally{submit.disabled=false;}};appearance.append(form);$('settings-operator').prepend(appearance);
     $('chat-messages').addEventListener('scroll',scheduleRead,{passive:true});window.addEventListener('focus',scheduleRead);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh().then(scheduleRead).catch(error=>notice(error.message));});paintWheel();paintParticipants();
   }
   async function start() {
-    if (!$('chat-messages')) return; mount();
+    if (!$('chat-messages')) {
+      const panel=location.pathname.split('/').at(-1), name=label(selected);
+      document.body.dataset.householdPanel=panel;
+      const description={map:name+'’s world graph',settings:'Connections and credentials for '+name,appearance:'Avatar appearance for '+name}[panel];
+      if(description){const scope=node('p',description,'hh-panel-scope');scope.id='household-panel-scope';scope.dataset.residentId=selected;document.body.prepend(scope);}
+      return;
+    }
+    mount();
     const oldNew=window.newConversation, oldOpen=window.openConversation;
     window.newConversation=function(){opening++;snapshot=null;current=null;oldNew();paintParticipants();hideMentions();};
     window.openConversation=async function(id){
@@ -267,9 +329,9 @@
     await refresh();for(const input of $('household-color-form').querySelectorAll('input[type=color]'))input.value=color(input.dataset.actorId);
     setInterval(()=>{if(!document.hidden)refresh().then(scheduleRead).catch(()=>{});},5000);
   }
-  window.TamagiHousehold={enabled:true,selectedResidentId:()=>selected,residentName:label,selectionEpoch:()=>epoch,selectResident,scopeUrl,storageKey,
+  window.TamagiHousehold={enabled:true,selectedResidentId:()=>selected,residentName:label,paintScopes,selectionEpoch:()=>epoch,selectResident,scopeUrl,storageKey,
     draftKey:id=>id||'new:'+selected,participants:()=>[...participantIds()].filter(id=>id!==operator.id),resolveMentions,safeMarkdown,decorateMessage,decorateProgress,historyRendered,refresh,scheduleRead,
     clearThread:()=>{snapshot=null;current=null;if($('household-participant-strip'))paintParticipants();},acceptResponse:(id,token)=>id===selected&&token===epoch};
-  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/assets/household-ui.css?v=1';document.head.append(stylesheet);
+  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/assets/household-ui.css?v=2';document.head.append(stylesheet);
   document.addEventListener('DOMContentLoaded',()=>start().catch(error=>notice(error.message)));
 })();

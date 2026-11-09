@@ -29,3 +29,10 @@ body[data-household=true] .input-bar{position:relative}
 .hh-thread-choice .hh-attention{display:block;margin-top:6px}
 .hh-chat-toolbar button:disabled{opacity:.5;cursor:default}
 #household-library-list a{overflow-wrap:anywhere}
+.hh-scope-chooser{background:var(--bg-elevated);border:1px solid var(--border-bright);border-radius:6px;color:var(--text-primary);font:inherit;font-size:11px;padding:8px 10px;min-height:36px;cursor:pointer;margin:0 6px 6px 0;max-width:100%;overflow-wrap:anywhere}
+.hh-scope-chooser:hover{border-color:var(--accent)}
+.hh-scope-description,.hh-section-scope{color:var(--text-secondary);font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+#household-drawer-scope{padding:0 16px}
+.hh-panel-scope{font:12px/1.6 var(--font-mono,monospace);color:var(--text-primary,#ddd);background:var(--bg-elevated,#181824);padding:10px 16px;margin:0;overflow-wrap:anywhere}
+body[data-household-panel=map]{display:flex;flex-direction:column}
+body[data-household-panel=map] .app{height:auto;flex:1;min-height:0}

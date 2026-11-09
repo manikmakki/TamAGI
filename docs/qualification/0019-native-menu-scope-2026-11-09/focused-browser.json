@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "actual_worker_processes": true,
+  "external_provider": false,
+  "checks": [
+    "chat controls are visible and unobstructed by onboarding",
+    "normal login with private household session cookie",
+    "every menu page names its selected resident and distinguishes shared sections; embedded map/connections/appearance keep the same resident binding",
+    "private inventory previews and downloads return the named resident\u2019s bytes; household notebook and public library remain shared",
+    "resident chooser is available within menu pages and unavailable household recovery controls are explicit",
+    "late memory results and counts from a previous resident cannot appear under the next resident\u2019s Archive",
+    "late private file previews cannot overwrite the next resident\u2019s detail view; old permission and evidence panels clear on selection"
+  ],
+  "uncaught_errors": [],
+  "limits": [
+    "Injected deterministic provider; sustained autonomous behavior and real upstream model quality remain separate checks."
+  ],
+  "artifacts": "/tmp/tamagi-native-actual-browser-lqg2cJ"
+}
