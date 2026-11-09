@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 from contextvars import ContextVar
 import json
-from typing import Any
 
 import httpx
 
-from backend.core.llm import LLMMessage, LLMResponse, ToolCall
+from backend.core.llm import LLMResponse, ToolCall
 from backend.core.runtime.contracts import BudgetExhausted, current_execution
 from .contracts import AccessDenied, Conflict, ReconciliationRequired
 from .store import uid

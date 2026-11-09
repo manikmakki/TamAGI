@@ -70,6 +70,23 @@ These guards cover Python socket/DNS traffic and isolated fixtures. They are not
 OS confinement of arbitrary native commands. Mechanical continuity and transport
 checks do not establish real-model behavior or vision understanding.
 
+## PR #8 CI preflight follow-up
+
+The first [PR workflow run](https://github.com/manikmakki/TamAGI/actions/runs/42704461269/job/129457478277)
+stopped at **Check Python**, before unit tests and frontend checks ran. The log
+confirmed successful dependency validation followed by 12 Ruff findings: eleven
+unused imports and one unused local assignment. The local suite and syntax checks
+above had not included CI's Ruff preflight; their passing results did not establish
+that the complete GitHub workflow would pass.
+
+The follow-up removes unused imports and the unused assignment while retaining
+message validation. CI's exact Python preflight now passes locally: `pip check`,
+Ruff 0.17.3 with `check backend tests scripts --select F`, and `compileall`.
+The service worker and both inline frontend script blocks also pass the workflow's
+Node syntax checks. All 17 native model tests pass in 1.456 seconds under the
+offline guard, with one guarded process, zero denied operations and no real model.
+The full GitHub workflow remains the merge check for the follow-up commit.
+
 ## Remaining rollout work
 
 The branch is ready for PR review. Household mode remains opt-in; the review did

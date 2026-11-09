@@ -248,7 +248,7 @@ class NativeModelServer:
             raise Conflict("Native coordinator is shutting down")
         if self.maintenance:
             raise Conflict("Household paused briefly for resident recovery")
-        messages = self._messages(body["messages"])
+        self._messages(body["messages"])
         if type(body["stream"]) is not bool or not isinstance(body["options"], dict) or set(body["options"]) - {"temperature", "max_tokens", "tool_choice"}:
             raise ProtocolError("Unsupported native completion options")
         if body["tools"] is not None and not isinstance(body["tools"], list):

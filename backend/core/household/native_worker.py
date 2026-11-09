@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from .contracts import WorkerBinding

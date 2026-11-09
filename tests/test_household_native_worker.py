@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
 
 from backend.config import TamAGIConfig, get_config, set_config
-from backend.core.agent import Message, TamAGIAgent
+from backend.core.agent import TamAGIAgent
 from backend.core.household.contracts import AccessDenied, ProtocolError, WorkerBinding
 from backend.core.household.conversations import Conversations
 from backend.core.household.model_transport import current_household_admission

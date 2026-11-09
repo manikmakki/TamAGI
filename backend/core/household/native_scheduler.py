@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 from croniter import croniter
 import httpx
 
-from .store import uid
 from .native_service import TERMINAL
 
 

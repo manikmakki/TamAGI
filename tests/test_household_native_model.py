@@ -14,11 +14,11 @@ import httpx
 from backend.config import TamAGIConfig, OrchestratorConfig, get_config, set_config
 from backend.core.agent import TamAGIAgent
 from backend.core.identity import IdentityManager
-from backend.core.llm import LLMClient, LLMMessage, LLMResponse
+from backend.core.llm import LLMClient, LLMMessage
 from backend.core.personality import PersonalityEngine
 from backend.core.orchestrator import Orchestrator
 from backend.core.runtime import RuntimeService, RuntimeStore, GovernedLLM, set_runtime
-from backend.core.runtime.contracts import BudgetExhausted, current_execution
+from backend.core.runtime.contracts import BudgetExhausted
 from backend.core.runtime.memory import CanonicalMemory
 from backend.core.runtime.companions import Companions
 from backend.core.runtime.chat_turns import run_chat_turns

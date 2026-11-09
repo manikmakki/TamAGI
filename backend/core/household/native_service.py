@@ -13,7 +13,7 @@ import httpx
 
 from backend.core.runtime.interactions import AdmissionError
 from .conversations import Conversations
-from .contracts import AccessDenied, Conflict, NotFound
+from .contracts import AccessDenied, NotFound
 from .store import uid
 
 

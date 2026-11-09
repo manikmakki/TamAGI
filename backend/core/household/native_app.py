@@ -264,7 +264,6 @@ def create_household_app(config, *, provider=None, registry=None):
 
     @app.get("/api/household/artifacts/{identity}/versions/{version}/files/{path:path}")
     async def artifact_file(identity: str, version: int, path: str):
-        import base64
         from .native_artifacts import verified_files
         files = verified_files(artifacts.version(identity, version)["data"]["files"])
         if path not in files:
