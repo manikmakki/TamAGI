@@ -41,15 +41,16 @@ def install_messaging(runtime, skills):
                               {"status": status, "payload": body}, category="platform")
 
     skills.register(RuntimeSkill(runtime, "contact",
-        "Household messaging: choose action=create for a NEW thread, send for an existing thread, invite to bring one or more residents INTO THE CURRENT THREAD, or respond to accept/decline an invitation. send/invite default to your current thread. Never substitute create for inviting into a conversation. Joining reveals the full prior thread only after the invitee accepts. Uses the current shared allowance; creates no human input. household_contacts lists stable IDs and invitations.",
+        "Household messaging: choose action=create for a NEW thread, send for an existing thread, invite to bring one or more residents INTO THE CURRENT THREAD, or respond ONLY to accept/decline an invitation you received. send/invite default to your current thread. To invite, supply participants and message; mentions are unnecessary. To respond, supply decision and optional invitation_id only, with no message. Never substitute create for inviting into a conversation. Joining reveals the full prior thread only after the invitee accepts. Uses the current shared allowance; creates no human input. household_contacts lists stable IDs and invitations.",
         {"action": param("string", required=True, enum=["create", "send", "invite", "respond"]),
          "message": param("string", "Opening/post/invitation message; required for create, send and invite"),
          "participants": param("array", "One or more stable recipient IDs for create or invite"),
          "conversation_id": param("string", "Existing thread ID; defaults to current for send/invite"),
-         "title": param("string"), "mentions": param("array"),
+         "title": param("string", "New thread title for create only"),
+         "mentions": param("array", "Joined addressee IDs for create/send; for invite, may only repeat IDs in participants"),
          "context_refs": param("array", "Explicit attributed references for create/send"),
          "invitation_id": param("string", "Invitation to answer; defaults to the invitation currently delivered"),
-         "decision": param("string", "Required for respond", enum=["accept", "decline"])}, contact))
+         "decision": param("string", "Required for respond to a received invitation; omit for other actions", enum=["accept", "decline"])}, contact))
 
     def contacts():
         result = runtime.household._request("GET", "/_native/contacts")
@@ -168,8 +169,15 @@ class NativeMessaging:
             if action == "invite":
                 if not conversation_id:
                     raise ProtocolError("An invitation needs an existing thread")
-                if any(body.get(key) for key in ("title", "mentions", "context_refs")):
+                if any(body.get(key) for key in ("title", "context_refs")):
                     raise ProtocolError("invite shares its message in the existing thread; use create/send for other message options")
+                mentions = body.get("mentions")
+                members = body.get("participants")
+                if mentions and (not isinstance(mentions, list) or not isinstance(members, list)
+                        or any(not isinstance(m, str) or m not in members for m in mentions)):
+                    raise ProtocolError("For invite, mentions may only repeat IDs in participants; use participants to choose invitees")
+                # Redundant recipient mentions do not address the canonical notice
+                # to unjoined residents. They still receive only invitation cards.
                 return self.invite_members(actor, conversation_id, body.get("participants"),
                     body.get("message"), body["command_id"], lineage)
             if action == "send":

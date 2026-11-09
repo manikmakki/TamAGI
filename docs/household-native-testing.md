@@ -261,3 +261,35 @@ the desired thread for the interactive retest.
 The [unified-contact regression record](qualification/0019-native-invitations-2026-11-08.md)
 retains the 289-test clean-revision qualification, actual invitation flow proof
 and Chromium pending-to-joined checks.
+
+## NATIVE-008 — Valid invitation rejected when the model repeats recipients in mentions
+
+Reported on 2026-11-09 in the operator's latest private Cedar conversation,
+`conversation-af7f5b63f733452fad4eb67496b7e98f`. Cedar used `contact` with
+`action="invite"`, the correct current conversation ID and Willow's stable ID in
+`participants`. The same ID was also included in `mentions`. The coordinator
+rejected all invitation mentions, and the worker hid the argument error behind
+the generic message "Household coordinator rejected this resident operation."
+Cedar consequently speculated that resident invitations were unsupported or
+forbidden. No invitation record was created and Willow received no decision card.
+
+Invitations now accept mentions that only repeat IDs in `participants`. They do
+not address the ordinary thread notice to unjoined residents or bypass the
+invitation decision. Other mentions are rejected with explicit repair guidance,
+before any invitation or delivery is created. The tool descriptions clarify
+which arguments belong to each action, including that `respond` answers a
+received invitation rather than an ordinary greeting. Workers preserve bounded
+coordinator argument-error text for HTTP 400 responses; authentication and other
+failures retain the generic rejection.
+
+Actual-worker regressions reproduce Cedar inviting Willow with both recipient
+fields and check acceptance in the same thread. A second regression rejects an
+unrelated mention without effects, delivers specific guidance to the model and
+successfully retries the corrected invitation. Existing saved messages and
+failed requests are not rewritten or replayed automatically.
+
+Focused offline validation passed all 25 invitation and worker tests in 61.411
+seconds, with 35 guarded Python processes, zero denied network operations and
+unchanged source during the run. Providers were injected and homes disposable;
+no real-model request or retained resident interaction was submitted. The report
+and raw logs are retained at `/tmp/tamagi-invite-mentions-focused-20261109-final`.

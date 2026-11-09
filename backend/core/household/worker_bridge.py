@@ -102,6 +102,13 @@ class NativeWorkerBridge:
     def _request(self, method, path, **kwargs):
         response = self.client.request(method, path, **kwargs)
         if response.status_code >= 400:
+            if response.status_code == 400:
+                try:
+                    detail = response.json().get("detail")
+                except (ValueError, AttributeError):
+                    detail = None
+                if isinstance(detail, str) and 0 < len(detail) <= 1024:
+                    raise ProtocolError("Household request invalid: " + detail)
             raise AccessDenied("Household coordinator rejected this resident operation")
         return response.json()
 

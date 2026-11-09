@@ -49,6 +49,56 @@ class NativeInvitationTests(unittest.IsolatedAsyncioTestCase):
         return await self.request('POST', '/api/chat/requests', actor=self.second, expected=202,
             json={'request_id': 'invite-current-thread', 'conversation_id': thread, 'message': 'Please invite Cedar into this thread.'})
 
+    async def test_cedar_invites_willow_with_redundant_mentions_in_existing_thread(self):
+        opened = await self.request('POST', '/api/chat/requests', actor=self.first, expected=202,
+            json={'request_id': 'cedar-thread', 'message': 'Good morning Cedar.'})
+        await self.completed(opened['work_id'])
+        thread = opened['conversation_id']
+        self.provider.responses = [LLMResponse(tool_calls=[ToolCall('invite-willow', 'contact', {
+            'action': 'invite', 'conversation_id': thread, 'participants': [self.second],
+            'mentions': [self.second], 'message': 'Hey Willow! Want to join us for a bit?'})]),
+            LLMResponse(content='@Tester Invitation sent.'), self.answer('accept'),
+            LLMResponse(content='@Tester Willow joined this conversation.')]
+        work = await self.request('POST', '/api/chat/requests', actor=self.first, expected=202,
+            json={'request_id': 'invite-willow', 'conversation_id': thread, 'message': 'Please invite Willow here.'})
+        await self.completed(work['work_id'])
+        history = await self.request('GET', '/api/conversations/' + thread)
+        self.assertEqual(history['participants'], ['operator', self.first, self.second])
+        self.assertEqual(history['invitations'][0]['status'], 'joined')
+        self.assertEqual(len(self.registry.store.list('conversation')), 1)
+        notice = next(r['data'] for r in self.registry.store.list('message')
+                      if r['data']['content'] == 'Hey Willow! Want to join us for a bit?')
+        self.assertEqual(notice['addressees'], [], 'An unjoined recipient receives a card, not a normal reply offer')
+        self.assertTrue(notice['explicit_mentions'], 'The notice must not fall back to broadcasting reply offers')
+        self.assertEqual(history['messages'][-1]['metadata']['author_id'], self.second)
+
+    async def test_invalid_invite_mentions_give_repair_guidance_without_side_effects(self):
+        thread = await self.private_thread()
+        third = list(self.registry.descriptors)[2]
+        self.provider.responses = [LLMResponse(tool_calls=[ToolCall('invalid-invite', 'contact', {
+            'action': 'invite', 'participants': [self.first], 'mentions': [third],
+            'message': 'Please join us.'})]), self.invite(),
+            LLMResponse(content='@Tester Corrected the invitation.'), self.answer('accept'),
+            LLMResponse(content='@Tester Joined.')]
+        original = self.provider.chat
+        repairs = []
+        async def inspect(messages, **options):
+            if 'For invite, mentions may only repeat IDs in participants' in str([m.content for m in messages]):
+                if not repairs:
+                    self.assertFalse(self.registry.store.list('conversation_invitation'))
+                    self.assertFalse(self.registry.store.list('native_invitation_offer'))
+                repairs.append(messages)
+            return await original(messages, **options)
+        self.provider.chat = inspect
+        work = await self.submit_invite(thread)
+        await self.completed(work['work_id'])
+        self.assertTrue(repairs, 'The real worker must pass specific argument guidance back to its model')
+        history = await self.request('GET', '/api/conversations/' + thread)
+        self.assertEqual(history['participants'], ['operator', self.second, self.first])
+        self.assertNotIn(third, history['participants'])
+        self.assertEqual(len(history['invitations']), 1)
+        self.assertEqual(len(self.registry.store.list('conversation')), 1)
+
     async def test_accept_keeps_thread_and_shares_history_only_after_actual_choice(self):
         thread = await self.private_thread(with_image=True)
         initial_calls = len(self.provider.calls)
