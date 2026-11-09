@@ -55,6 +55,8 @@ def create_household_app(config, *, provider=None, registry=None):
     messaging = NativeMessaging(registry, model, manager)
     from .native_artifacts import NativeArtifacts
     artifacts = NativeArtifacts(registry, model)
+    from .browser_recovery import BrowserRecovery
+    recovery = BrowserRecovery(registry, manager, model, hosts, scheduler=scheduler)
     async def lost(actor):
         model.broker.set_available(actor, False)
         for record in manager.records():
@@ -90,9 +92,11 @@ def create_household_app(config, *, provider=None, registry=None):
                 await host.start()
             manager.start()
             scheduler.start()
+            recovery.start()
             yield
         finally:
             await scheduler.close()
+            await recovery.close()
             await manager.close()
             for host in hosts.values():
                 await host.close()
@@ -105,6 +109,7 @@ def create_household_app(config, *, provider=None, registry=None):
     app.state.household = registry
     app.state.interactions, app.state.model, app.state.hosts = manager, model, hosts
     app.state.world_scheduler = scheduler
+    app.state.recovery = recovery
     session_root = registry.root / "session"
     session_root.mkdir(mode=0o700, exist_ok=True)
 
@@ -124,11 +129,23 @@ def create_household_app(config, *, provider=None, registry=None):
             origin = request.headers.get("origin")
             if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
                 return JSONResponse({"detail": "Same-origin request required"}, status_code=403)
+        recovery_path = path.removeprefix("/")
+        if recovery_path.startswith("r/"):
+            recovery_path = recovery_path.split("/", 2)[-1]
+        tracked = not path.startswith("/_native/") and ("/api/" in path or path.startswith(("/r/", "/panels/"))) and not recovery.handles(recovery_path) and not path.startswith("/api/auth/")
+        if tracked and recovery.paused:
+            return JSONResponse({"detail": "Household paused briefly for resident recovery; please try again shortly"}, status_code=503,
+                                headers={"Retry-After": "2"})
+        if tracked:
+            recovery.inflight += 1
         try:
             return await call_next(request)
         except (AccessDenied, Conflict, NotFound, ProtocolError, AdmissionError) as exc:
             status = exc.status if isinstance(exc, AdmissionError) else 403 if isinstance(exc, AccessDenied) else 404 if isinstance(exc, NotFound) else 409 if isinstance(exc, Conflict) else 400
             return JSONResponse({"detail": str(exc)}, status_code=status)
+        finally:
+            if tracked:
+                recovery.inflight -= 1
 
     # SessionMiddleware must be outermost so authentication can inspect session.
     app.add_middleware(SessionMiddleware, secret_key=load_session_secret(str(session_root)),
@@ -190,6 +207,7 @@ def create_household_app(config, *, provider=None, registry=None):
             except (OSError, ValueError, AttributeError):
                 return descriptor.get("avatar", "vex")
         return {"household_id": registry.household_id, "operator": registry.manifest["operator"],
+                "resident_recovery_available": True,
                 "residents": [{"id": actor, "name": d["name"], "avatar": avatar(d),
                                "available": host.process is not None and host.process.returncode is None}
                               for actor, d in registry.descriptors.items() for host in [hosts[actor]]],
@@ -474,11 +492,13 @@ def create_household_app(config, *, provider=None, registry=None):
             raise HTTPException(404, "Invalid resident route")
         if path.startswith(("_native/", "api/chat", "api/conversations")):
             raise HTTPException(404, "This route belongs to the household coordinator")
+        if recovery.handles(path):
+            return await recovery.route(actor, path, request)
         host = hosts[actor]
         if path == "api/world/tick" and request.method == "POST":
             return JSONResponse(await scheduler.opportunity(manual=True), status_code=202)
         if path.startswith(("api/backup", "api/restore", "api/deploy", "api/transfer")):
-            raise HTTPException(409, "Browser recovery and deployment are unavailable; resident recovery uses the offline operator command")
+            raise HTTPException(409, "Household deployment and shared-state recovery remain unavailable")
         if path == "api/config" and request.method != "GET":
             raise HTTPException(409, "Household provider configuration belongs to the coordinator")
         headers = {key: value for key, value in request.headers.items()

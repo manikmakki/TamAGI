@@ -182,7 +182,7 @@ try{
   }
   await page.evaluate(`TamagiShell.navigate('/settings')`);
   assert.equal(await page.evaluate(`document.querySelector('.hh-colors .hh-section-scope').textContent.includes('across all residents')`),true);
-  assert.equal(await page.evaluate(`document.querySelector('#backup-form button').disabled&&document.querySelector('#restore-form button').disabled&&document.getElementById('enable-deployment').disabled&&document.getElementById('disable-deployment').disabled`),true,'unavailable household recovery controls do not imply an individual resident backup');
+  assert.equal(await page.evaluate(`!document.querySelector('#backup-form button').disabled&&!document.querySelector('#restore-form button').disabled&&document.getElementById('enable-deployment').disabled&&document.getElementById('disable-deployment').disabled`),true,'individual recovery controls are available while shared deployment remains disabled');
   await page.shot('native-settings-scope');
   await page.evaluate(`document.getElementById('grants').textContent='OLD_RESIDENT_PERMISSION';document.getElementById('evidence').textContent='OLD_RESIDENT_EVIDENCE'`);
   await page.evaluate(`TamagiShell.navigate('/inventory');document.querySelector('#view-inventory .hh-scope-chooser').click()`);
@@ -215,6 +215,56 @@ try{
  checks.push('late private file previews cannot overwrite the next resident’s detail view; old permission and evidence panels clear on selection');
  await page.evaluate(`TamagiShell.navigate('/');document.getElementById('household-character-wheel').click()`);
  assert.equal(await page.evaluate(`document.getElementById('household-wheel-dialog').open`),true);await page.evaluate(`document.getElementById('household-wheel-dialog').close()`);
+ // Actual browser recovery: encrypted download, file upload, review and commit.
+ await page.evaluate(`(async()=>{await TamagiHousehold.selectResident(${js(first)},{openThread:false});TamagiShell.navigate('/settings');document.getElementById('input').value='Draft retained through resident restore';document.getElementById('input').dispatchEvent(new Event('input',{bubbles:true}));window.recoveryCounts=await Promise.all([${js(first)},${js(second)}].map(actor=>fetch('/api/state',{headers:{'X-Tamagi-Resident':actor}}).then(r=>r.json()).then(s=>s.memory.total_memories)));})()`);
+ assert.equal(await page.evaluate(`document.getElementById('resident-recovery-title').textContent`),'Cedar’s backup and recovery');
+ await page.evaluate(`document.getElementById('backup-password').value='browser recovery archive password';document.getElementById('backup-password-repeat').value='browser recovery archive password';document.querySelector('#backup-form button').click()`);
+ await page.until(`!!document.querySelector('#backup-download a')`,'browser creates an encrypted resident download',600);
+ assert.equal(await page.evaluate(`document.getElementById('backup-password').value+document.getElementById('backup-password-repeat').value`),'');
+ const recoveryLink=await page.evaluate(`document.querySelector('#backup-download a').href`);
+ assert.ok(recoveryLink.includes('/r/'+first+'/api/backups/'),'download URL remains bound to its resident');
+ await page.evaluate(`(async()=>{window.browserRecoveryArchive=new Uint8Array(await fetch(${js(recoveryLink)}).then(r=>r.arrayBuffer()));for(const actor of [${js(first)},${js(second)}]){const response=await fetch('/api/knowledge',{method:'POST',headers:{'Content-Type':'application/json','X-Tamagi-Resident':actor},body:JSON.stringify({content:'Private memory created after the browser recovery checkpoint.'})});if(!response.ok)throw new Error(await response.text());}})()`);
+ assert.equal(await page.evaluate(`caches.keys().then(keys=>Promise.all(keys.map(key=>caches.open(key).then(cache=>cache.match(${js(recoveryLink)}))))).then(matches=>matches.every(value=>!value))`),true,'resident backup responses are never put in the service-worker cache');
+ const chooseRecoveryFile=`(()=>{const transfer=new DataTransfer();transfer.items.add(new File([window.browserRecoveryArchive],'resident.gpg',{type:'application/octet-stream'}));document.getElementById('restore-file').files=transfer.files;document.getElementById('restore-file').dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('restore-password').value='browser recovery archive password';document.querySelector('#restore-form button').click();})()`;
+ await page.evaluate(chooseRecoveryFile);
+ await page.until(`!document.getElementById('restore-preview').hidden`,'browser validates the uploaded checkpoint',600);
+ assert.equal(await page.evaluate(`document.getElementById('restore-password').value`),'');
+ assert.equal(await page.evaluate(`document.getElementById('restore-commit').disabled&&!document.getElementById('source-stopped').checked`),true);
+ assert.equal(await page.evaluate(`document.getElementById('restore-details').textContent.includes('Resident: Cedar')&&document.getElementById('restore-details').textContent.includes('Private changes after the checkpoint')`),true);
+ await page.evaluate(`document.getElementById('restore-preview').scrollIntoView({block:'start'})`);await page.shot('native-recovery-preview');
+ await page.evaluate(`document.getElementById('restore-cancel').click()`);
+ assert.equal(await page.evaluate(`document.getElementById('restore-preview').hidden`),true);
+ assert.equal(await page.evaluate(`fetch('/api/state').then(r=>r.json()).then(s=>s.memory.total_memories===window.recoveryCounts[0]+1)`),true,'cancel leaves later private memory intact');
+ await page.evaluate(`TamagiHousehold.selectResident(${js(second)},{openThread:false})`);
+ assert.equal(await page.evaluate(`document.getElementById('restore-file').files.length`),0,'resident switch clears the selected archive');
+ await page.evaluate(chooseRecoveryFile);
+ await page.until(`document.getElementById('shell-notice').textContent.includes('belongs to another resident')`,'wrong-resident archive is rejected');
+ assert.equal(await page.evaluate(`document.getElementById('restore-preview').hidden`),true);
+ await page.evaluate(`TamagiHousehold.selectResident(${js(first)},{openThread:false})`);
+ await page.evaluate(chooseRecoveryFile);
+ await page.until(`!document.getElementById('restore-preview').hidden`,'correct resident can review the same archive',600);
+ const recoveryEpoch=await page.evaluate(`TamagiHousehold.selectionEpoch()`);
+ await page.evaluate(`document.getElementById('source-stopped').click()`);
+ assert.equal(await page.evaluate(`document.getElementById('restore-commit').disabled`),false);
+ await page.evaluate(`document.getElementById('restore-commit').click()`);
+ await page.until(`document.getElementById('resident-recovery-status').textContent.includes('Resident restored and resumed')`,'browser restores the selected resident and refreshes private views',700);
+ assert.equal(await page.evaluate(`TamagiHousehold.selectionEpoch()>${recoveryEpoch}`),true,'restore invalidates old private responses');
+ assert.equal(await page.evaluate(`fetch('/api/state',{headers:{'X-Tamagi-Resident':${js(first)}}}).then(r=>r.json()).then(s=>s.memory.total_memories===window.recoveryCounts[0])`),true,'selected resident private checkpoint was restored');
+ assert.equal(await page.evaluate(`fetch('/api/state',{headers:{'X-Tamagi-Resident':${js(second)}}}).then(r=>r.json()).then(s=>s.memory.total_memories===window.recoveryCounts[1]+1)`),true,'peer retains its post-checkpoint memory');
+ assert.equal(await page.evaluate(`document.getElementById('input').value`),'Draft retained through resident restore');
+ assert.equal(await page.evaluate(`document.getElementById('restore-preview').hidden&&document.getElementById('restore-commit').disabled`),true);
+ await page.evaluate(`document.getElementById('resident-recovery-title').scrollIntoView({block:'start'})`);await page.shot('native-recovery-complete');
+ checks.push('Settings creates a resident-bound encrypted download and clears both password fields','uploaded checkpoints require a reviewed continuity gap and explicit confirmation','cancel preview leaves later private data intact; wrong-resident archives are rejected','browser restore replaces the selected private state while preserving a peer’s later memories and the current draft','successful restore invalidates delayed private responses and refreshes resident views');
+ // A late preview for Cedar cannot populate Willow’s restore panel.
+ await page.evaluate(`(()=>{const original=window.fetch;window.restoreRecoveryFetch=()=>window.fetch=original;window.fetch=async(input,options)=>{const response=await original(input,options);if(new URL(String(input),location.origin).pathname==='/api/restores/preview')await new Promise(resolve=>window.releaseOldRecovery=resolve);return response;};})()`);
+ await page.evaluate(chooseRecoveryFile);
+ await page.until(`!!window.releaseOldRecovery`,'old resident restore preview is held after validation',600);
+ await page.evaluate(`TamagiHousehold.selectResident(${js(second)},{openThread:false})`);
+ await page.evaluate(`releaseOldRecovery();new Promise(resolve=>setTimeout(resolve,200))`);
+ await page.until(`!document.querySelector('#restore-form button').disabled`,'old preview finishes without binding to the next resident');
+ assert.equal(await page.evaluate(`document.getElementById('restore-preview').hidden&&document.getElementById('restore-details').textContent===''`),true);
+ await page.evaluate(`restoreRecoveryFetch()`);
+ checks.push('late recovery previews are discarded after resident selection changes');
  assert.deepEqual(errors,[]);
  const report={passed:true,actual_worker_processes:true,external_provider:false,checks,uncaught_errors:errors,limits:['Injected deterministic provider; sustained autonomous behavior and real upstream model quality remain separate checks.'],artifacts:root};await writeFile(root+'/report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }catch(error){if(page){await page.shot('failure').catch(()=>{});try{await writeFile(root+'/world-failure.json',JSON.stringify(await page.evaluate(`fetch('/api/fixture/world-evidence').then(r=>r.json())`),null,2));}catch{}}console.error(JSON.stringify({passed:false,message:error.stack,errors,artifacts:root}));process.exitCode=1;}finally{page?.socket.close();browser.kill('SIGTERM');await sleep(250);await rm(profile,{recursive:true,force:true});}

@@ -2,8 +2,8 @@
 
 The operator's 2026-11-09 priority is individual continuity first, followed by
 household recovery for canonical shared records and publications. The first
-implementation is an **offline operator command**, not the Settings UI and not
-a qualified production adoption path.
+implementation provides operator commands and **Settings → Home & recovery**
+controls in the native household. Production adoption remains a separate gate.
 
 The three acceptance scenarios are:
 
@@ -19,7 +19,53 @@ selected missing memories into a newer private database. The preview reports
 that private changes after the checkpoint are absent from the replacement.
 The displaced private directory is retained; recovery never overwrites it.
 
-## Commands
+## Browser controls
+
+Select the resident, open Settings → Home & recovery, and check the resident name
+above the forms. Create an encrypted download with a repeated password of at
+least 12 characters. Download links stay bound to that resident; encrypted server
+copies expire after 24 hours or coordinator restart. Keep the downloaded archive
+and password elsewhere for independent recovery.
+
+Upload a resident archive and enter its password to validate a preview without
+stopping anyone. The preview identifies the resident, checkpoint time, checked
+file count and private continuity gap. A checkpoint for another resident is
+rejected. Changing residents clears passwords, file selection and preview state;
+delayed responses cannot populate the next resident's forms. Cancelling a preview
+discards its decrypted staging directory and makes no resident changes.
+
+Confirm replacement and that no other installation of this resident is active,
+then choose the restored authority. The coordinator refuses backup/restore while
+chat, scheduled work, private evaluations or unsettled generation attempts remain.
+Once idle, it blocks new supported work, drains requests, stops the workers and
+holds their lifetime/instance locks during the checkpoint or replacement. Workers
+resume afterward. Other residents retain their current private continuity; normal
+restart hydration bookkeeping still occurs. The shared clock is retained and
+does not advance during the maintenance window.
+
+Restoration retains the current shared messages/world/publications. Only the
+selected private root is replaced. Old reply/invitation opportunities and execution
+authority for that resident are closed/interrupted instead of replayed; other
+residents' opportunities remain intact. Pending invitations to the restored
+resident expire without being presented as a decline. Invite them again explicitly.
+The UI invalidates private view responses and refreshes the restored resident
+while preserving the current draft.
+
+Browser disconnects do not cancel confirmed operations. A failed worker startup
+exposes **Retry resuming residents**. If a registry selection cannot be reconciled,
+workers stay stopped and new work stays blocked until that control can finish the
+durable transition. Inspect the selected resident before retrying a restore whose
+acknowledgment failed. A known, ownership-checked staging directory lets the next
+coordinator remove decrypted previews after a crash. API downloads and previews
+require operator authentication; resident API paths bypass service-worker caches.
+The private browser staging directory sits beside the household directory, so
+the runtime user needs permission to create that sibling directory.
+
+Browser upload is limited to 1 GiB. Previews expire after 30 minutes or restart.
+Migration into a new household still uses the command below. Shared-state recovery,
+cross-release compatibility and automatic deployment are not enabled by these forms.
+
+## Offline commands
 
 Use the selected application release's Python environment. Stop the source
 household and all its workers before exporting or replacing a resident. The
@@ -103,11 +149,13 @@ or uncertain effect replay is requested by resident restoration.
 
 ## Qualification boundaries
 
-The [2026-11-09 qualification](qualification/0019-resident-recovery-2026-11-09.md)
+The [initial 2026-11-09 qualification](qualification/0019-resident-recovery-2026-11-09.md)
 retains the 319-test offline pass and the actual Cedar/Willow/River checkpoint
 rehearsal. Destructive scenarios ran only in inactive disposable copies with an
 offline network guard. The retained household paused for the checkpoint and
 resumed without replacing its resident roots. Production Ember was excluded.
-Passing scripted checks does not qualify in-browser recovery, hot resident-only
-maintenance, arbitrary cross-release restoration, actual Echo rehydration,
+The [browser qualification](qualification/0019-browser-recovery-2026-11-09.md)
+records the separate UI, maintenance, failure and final cleanup checks.
+Passing scripted checks does not qualify hot resident-only maintenance,
+arbitrary cross-release restoration, actual Echo rehydration,
 individual moves into established households, or whole-household recovery.

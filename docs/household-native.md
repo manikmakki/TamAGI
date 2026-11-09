@@ -138,9 +138,10 @@ The development candidate still needs production resident adoption/history
 migration, coordinated household backup/restore and release activation,
 companion group-activation wiring, PWA push delivery and
 device qualification. Notification intent and unread state already persist;
-device push is not yet dispatched. Browser restore/deployment endpoints fail
-closed. [Individual resident recovery](resident-recovery.md) now has an offline
-operator command; it does not replace coordinated household recovery or qualify
+device push is not yet dispatched. Browser deployment and shared-state recovery
+remain disabled. [Individual resident recovery](resident-recovery.md) provides
+Settings backup/preview/restore controls and offline operator commands; it does
+not replace coordinated household recovery or qualify
 production adoption. Background autonomy
 is opt-in through the household clock; sustained household behavior and Ember's
 burn-in are separate qualifications. Explicit public artifact versions and exact
@@ -163,7 +164,7 @@ selector, participant strip and attributed messages.
 | Inventory | The selected resident's private workshop files and saved artifacts. Shared library opens explicitly published household artifacts. |
 | Companions | Companions introduced to the selected resident, including their memories and conversations. Other household residents are selected through the resident chooser. |
 | Archive | Operator conversations that include the selected resident, plus that resident's private memories. Group threads retain all participants and attribution. |
-| Settings — Home & recovery | Conversation colors are a household preference. Permissions and runtime evidence belong to the selected resident. Household backup, restore and release changes are unavailable in this test build; those controls are disabled. |
+| Settings — Home & recovery | Conversation colors are a household preference. Backup, restore, permissions and runtime evidence belong to the selected resident. Backup/restore briefly pause idle workers; other residents and current shared state are retained. Shared-state recovery and release changes remain unavailable. |
 | Settings — Connections | The selected resident's secrets and connected tool services. The central model endpoint is coordinator configuration. |
 | Settings — Appearance | The selected resident's avatar configuration and uploaded art. |
 

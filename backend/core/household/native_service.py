@@ -29,6 +29,7 @@ class NativeInteractions:
             return model.broker.validate_message_lineage(lineage, author)
         self.conversations = Conversations(self.store, registry.participants, validate)
         self.tasks, self.observers = {}, set()
+        self.maintenance = False
         self._commands = set()
         self._pulse_task = None
         # An interrupted coordinator never silently repeats uncertain effects.
@@ -51,6 +52,8 @@ class NativeInteractions:
         self._pulse_task = asyncio.create_task(self._pulse())
 
     def refresh_availability(self, actor, ready):
+        if self.maintenance:
+            return
         # An independent evaluation can acquire the worker lease as a world/chat
         # activation ends. Its live execution outranks an earlier ready snapshot.
         executing = any(r['data']['actor_id'] == actor and r['data']['status'] == 'running'
@@ -64,6 +67,8 @@ class NativeInteractions:
     async def _pulse(self):
         while True:
             await asyncio.sleep(2)
+            if self.maintenance:
+                continue
             await self._deliver_shared_events()
             for invitation in self.store.list("native_invitation_offer"):
                 data = invitation["data"]
@@ -105,6 +110,8 @@ class NativeInteractions:
         from .world import World
         world = World(self.store)
         for actor, host in self.hosts.items():
+            if self.maintenance:
+                return
             key = "native_wake_cursor:" + actor
             for event in self.store.events(self.store.meta(key, 0))[:128]:
                 eligible = event["kind"] in {"notebook_changed", "world_changed"}
@@ -181,6 +188,8 @@ class NativeInteractions:
             self.observers.discard(queue)
 
     async def submit(self, payload, client_id=None, *, kind="chat"):
+        if self.maintenance:
+            raise AdmissionError("Household paused briefly for resident recovery", 503)
         payload = copy.deepcopy(payload)
         resident = self.registry.resolve(payload.get("resident_id"))["resident_id"]
         request_id = client_id or uid("request")
@@ -312,6 +321,8 @@ class NativeInteractions:
         self.enqueue_contact(actor, data["conversation_id"], {"id": trigger["id"], **trigger["data"]}, lineage)
 
     def submit_world(self, actor, scheduled_at):
+        if self.maintenance:
+            raise AdmissionError("Household paused briefly for resident recovery", 503)
         self.registry.resolve(actor)
         identity, exchange, grant_id = uid("world-work"), uid("world-exchange"), uid("grant")
         with self.store.transaction():
@@ -330,6 +341,8 @@ class NativeInteractions:
         return self.public(self.get(identity))
 
     async def _run_world(self, identity):
+        while self.maintenance:
+            await asyncio.sleep(.05)
         data = self.get(identity)["data"]
         if data["status"] != "queued":
             return
@@ -412,6 +425,8 @@ class NativeInteractions:
             raise RuntimeError("Invitation decision execution failed")
 
     async def _run(self, identity):
+        while self.maintenance:
+            await asyncio.sleep(.05)
         if self.get(identity)["data"]["kind"] == "world":
             return await self._run_world(identity)
         if self.get(identity)["data"]["status"] != "queued":
@@ -420,6 +435,8 @@ class NativeInteractions:
         counts = {}
         try:
             while self.get(identity)["data"]["status"] not in TERMINAL:
+                while self.maintenance:
+                    await asyncio.sleep(.05)
                 data = self.get(identity)["data"]
                 invitations = [r for r in self.store.list("native_invitation_offer")
                     if r["data"]["status"] == "pending" and r["data"]["exchange_id"] == data["exchange_id"]

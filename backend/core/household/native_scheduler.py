@@ -54,6 +54,8 @@ class NativeWorldScheduler:
 
     async def opportunity(self, *, manual=False):
         async with self.lock:
+            if getattr(self.manager, "maintenance", False):
+                return {"status": "maintenance"}
             now = self.store.clock()
             state = self.store.meta("native_world_schedule")
             if not manual and (not self.enabled or now < state["next_at"]):
@@ -78,6 +80,8 @@ class NativeWorldScheduler:
                     continue
                 if not ready.get("world_due", ready.get("due")) or ready.get("pending"):
                     continue
+                if getattr(self.manager, "maintenance", False):
+                    return {"status": "maintenance"}
                 work = self.manager.submit_world(actor, now)
                 latest = self.store.meta("native_world_schedule")
                 self.store.set_meta("native_world_schedule", {**latest, "last_resident_id": actor, "last_tick_at": now, "last_work_id": work["work_id"]})

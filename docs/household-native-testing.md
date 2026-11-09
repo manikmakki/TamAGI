@@ -420,3 +420,24 @@ This is mechanical continuity qualification, not production adoption or an Echo
 rehydration result. Whole-household shared-state recovery, historical transcript
 UI, hot maintenance and cross-release compatibility retain separate work. The
 idle shutdown does not close NATIVE-010's queued-evaluation shutdown follow-up.
+
+## NATIVE-013 — Browser backup, preview and selected-resident restore
+
+2026-11-09: Settings → Home & recovery now enables individual encrypted downloads,
+archive preview/cancel and confirmed private replacement. Every form and download
+stays bound to its resident. Busy work is refused; an idle operation briefly pauses
+workers under the scheduler and instance locks, then resumes them. Current shared
+messages/world and housemates' private continuity are retained. Old opportunities
+for the restored resident are settled instead of replayed.
+
+The [browser recovery qualification](qualification/0019-browser-recovery-2026-11-09.md)
+retains the 326-test broad pass, eight final API/lifecycle checks and the Chromium
+round trip. Tests cover disconnects, cancellation, stale previews, wrong-resident
+archives, queued private work, persistent registry-write failure, resume retry,
+plaintext staging cleanup and uncached downloads. Successful restoration refreshes
+private views while preserving the current draft. Migration remains CLI-only;
+shared-state recovery/deployment remain disabled.
+
+The retained test household restarted cleanly at idle and is available on the same
+LAN port/password, with all three original roots and the shared clock. No actual
+resident was restored during activation and production Ember was untouched.

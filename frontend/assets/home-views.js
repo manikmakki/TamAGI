@@ -6,6 +6,27 @@
   let state=null,friend=null,thread=null,restore=null;
   let loadedResident=null;
   let previewRequest=0;
+  let recoveryVersion=0;
+  const recoveryScope=()=>({actor:window.TamagiHousehold?.selectedResidentId(),epoch:window.TamagiHousehold?.selectionEpoch(),version:recoveryVersion});
+  const recoveryCurrent=scope=>scope.version===recoveryVersion&&(!window.TamagiHousehold||TamagiHousehold.acceptResponse(scope.actor,scope.epoch));
+  const recoveryApi=async(scope,path,options={})=>{try{return await api(path,{...options,headers:{...options.headers,...(scope.actor?{'X-Tamagi-Resident':scope.actor}:{})}});}catch(error){if(scope.actor)recoveryNotice(scope,error.message);throw error;}};
+  function recoveryNotice(scope,message){if(!recoveryCurrent(scope))return;if($('resident-recovery-status'))$('resident-recovery-status').textContent=message;notice(message);}
+  function clearRecovery(){
+    const old=restore;restore=null;recoveryVersion++;
+    if(old&&typeof old==='object')recoveryApi(old,'/restores/'+encodeURIComponent(old.id),{method:'DELETE'}).catch(()=>{});
+    for(const id of ['backup-password','backup-password-repeat','restore-password','restore-file'])if($(id))$(id).value='';
+    $('source-stopped').checked=false;$('restore-preview').hidden=true;
+    for(const id of ['backup-download','restore-details','resident-recovery-status'])if($(id))$(id).replaceChildren();
+    if(window.TamagiHousehold)$('restore-commit').disabled=true;
+  }
+  async function recoveryStatus(){
+    if(!window.TAMAGI_HOUSEHOLD_BOOTSTRAP?.resident_recovery_available)return;
+    const scope=recoveryScope(),result=await recoveryApi(scope,'/recovery/status');if(!recoveryCurrent(scope))return;
+    $('resident-recovery-resume').hidden=!result.unavailable_residents.length;
+    if(result.busy)recoveryNotice(scope,'Resident recovery in progress · '+result.phase.replaceAll('_',' ')+'. The household will resume shortly.');
+    else if(result.unavailable_residents.length)recoveryNotice(scope,'Some residents could not resume. Use “Retry resuming residents”. The saved private roots are retained.');
+    else if(result.last_operation?.error&&result.last_operation.resident_replaced)recoveryNotice(scope,'The restored checkpoint is selected and residents have resumed. Review the resident before retrying restoration.');
+  }
   const item=(title,text='')=>{const node=document.createElement('div');node.className='item';const strong=document.createElement('strong');strong.textContent=title;const p=document.createElement('p');p.className='muted';p.textContent=text;node.append(strong,p);return node;};
   const empty=(target,text='')=>{target.replaceChildren();if(text){const p=document.createElement('p');p.className='empty';p.textContent=text;target.append(p);}};
   const button=(label,handler)=>{const b=document.createElement('button');b.textContent=label;b.onclick=()=>perform(handler);return b;};
@@ -65,7 +86,7 @@
     const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
     const result=await api('/runtime',household?{headers:{'X-Tamagi-Resident':actor}}:{});
     if(household&&!household.acceptResponse(actor,token))return;
-    if(household&&loadedResident!==actor){friend=null;thread=null;restore=null;$('consultation').hidden=true;$('restore-preview').hidden=true;loadedResident=actor;}
+    if(household&&loadedResident!==actor){friend=null;thread=null;if(restore?.actor&&restore.actor!==actor)clearRecovery();$('consultation').hidden=true;loadedResident=actor;}
     state=result;render();
   }
   async function growth(){await load();$('growth').open=true;if(!$('growth-dialog').open)$('growth-dialog').showModal();}
@@ -110,7 +131,7 @@
     if(force||work.actor_id===friend || !friend){friend=work.actor_id;thread=work.result?.thread_id||work.conversation_id;$('consultation').hidden=false;$('consult-title').textContent='With '+(work.result?.speaker||'a companion');$('friend-reply').append(item(work.result?.speaker||'Companion',work.result?.text||work.detail||work.status));return true;}
     return false;
   }
-  window.TamagiHomeViews={load,growth,inventory,finished};
+  window.TamagiHomeViews={load,growth,inventory,finished,clearRecovery};
   document.addEventListener('DOMContentLoaded',()=>{
     form('note-form',async()=>{await api('/runtime/notebook',{method:'POST',body:JSON.stringify({text:$('note-text').value})});$('note-text').value='';await load();});
     form('companion-form',async()=>{await api('/companions',{method:'POST',body:JSON.stringify({name:$('friend-name').value,seed:$('friend-seed').value})});$('companion-form').reset();await load();});
@@ -124,20 +145,46 @@
     });
     form('pursuit-form',async()=>{await api('/pursuits',{method:'POST',body:JSON.stringify({action:'create',attributes:{title:$('pursuit-title').value,next_step:$('pursuit-step').value,origin:'operator invitation',commitment:false}})});$('pursuit-form').reset();await load();});
     form('backup-form',async()=>{
-      notice('Gathering a checkpoint and encrypting the download…');let password=$('backup-password').value;$('backup-password').value='';
-      const result=await api('/backups',{method:'POST',body:JSON.stringify({password})});password='';
-      empty($('backup-download'));const a=link('Download encrypted home',result.download);a.download=result.filename;$('backup-download').append(a);notice('Your download is ready. Keep it and its password on another device.');
+      const scope=recoveryScope();let password=$('backup-password').value;const repeat=$('backup-password-repeat')?.value;
+      $('backup-password').value='';if($('backup-password-repeat'))$('backup-password-repeat').value='';
+      if(scope.actor&&password!==repeat)throw new Error('Backup passwords do not match. Enter them again.');
+      recoveryNotice(scope,'Checking that everyone is idle, then encrypting the checkpoint…');
+      const result=await recoveryApi(scope,'/backups',{method:'POST',body:JSON.stringify({password})});password='';
+      if(!recoveryCurrent(scope))return;
+      empty($('backup-download'));const a=link(scope.actor?'Download '+TamagiHousehold.residentName(scope.actor)+'’s encrypted backup':'Download encrypted home',result.download);a.download=result.filename;$('backup-download').append(a);
+      recoveryNotice(scope,result.workers_available===false?'Backup ready. Some residents need “Retry resuming residents”.':'Your encrypted download is ready. Keep it and its password on another device.');await recoveryStatus();
     });
     form('restore-form',async()=>{
-      notice('Decrypting and checking the archive…');const body=new FormData();body.append('archive',$('restore-file').files[0]);body.append('password',$('restore-password').value);$('restore-password').value='';
-      const result=await api('/restores/preview',{method:'POST',body});restore=result.id;$('restore-details').textContent=JSON.stringify(result,null,2);$('restore-preview').hidden=false;notice('Preview checked. Review the resident and source installation before restoring.');
+      clearRecoveryPreview();const scope=recoveryScope();recoveryNotice(scope,'Decrypting and checking the archive…');
+      const body=new FormData();body.append('archive',$('restore-file').files[0]);body.append('password',$('restore-password').value);$('restore-password').value='';
+      const result=await recoveryApi(scope,'/restores/preview',{method:'POST',body});
+      if(!recoveryCurrent(scope)){if(scope.actor)recoveryApi(scope,'/restores/'+encodeURIComponent(result.id),{method:'DELETE'}).catch(()=>{});return;}
+      restore=scope.actor?{...scope,id:result.id}:result.id;
+      $('restore-details').textContent=scope.actor?['Resident: '+result.name,'Resident ID: '+result.resident_id,'Checkpoint: '+new Date(result.exported_at*1000).toLocaleString(),'Source installation: '+result.source_installation_id,'Files checked: '+result.file_count,'',result.continuity_gap,'Current shared conversations, world state and other residents will be retained.','Credentials and connected services will need reconnection.'].join('\n'):JSON.stringify(result,null,2);
+      $('source-stopped').checked=false;if(scope.actor)$('restore-commit').disabled=true;$('restore-preview').hidden=false;recoveryNotice(scope,'Preview checked. Review the checkpoint and confirm replacement below.');
     });
     $('restore-commit').onclick=()=>perform(async()=>{
-      if(!$('source-stopped').checked)throw new Error('Confirm the source installation is stopped.');
+      const scope=recoveryScope(),preview=restore;
+      if(!preview||typeof preview==='object'&&!recoveryCurrent(preview))throw new Error('Upload and review a checkpoint for the selected resident first.');
+      if(!$('source-stopped').checked)throw new Error(scope.actor?'Confirm checkpoint replacement and that no other copy of this resident is active.':'Confirm the source installation is stopped.');
       $('restore-commit').disabled=true;
-      try{const result=await api('/restores/'+encodeURIComponent(restore)+'/commit',{method:'POST',body:JSON.stringify({source_stopped:true,authority:$('restore-authority').value})});$('restore-details').textContent=JSON.stringify(result,null,2);notice(result.activation_required?'Restored to a new instance. Use the displayed configuration to continue.':'Restore committed. Sign in again after the supervisor switches homes.');}
-      finally{$('restore-commit').disabled=false;}
+      if(scope.actor){$('restore-cancel').disabled=true;$('source-stopped').disabled=true;$('restore-authority').disabled=true;}
+      try{
+        recoveryNotice(scope,'Checking that everyone is idle, then restoring the selected resident…');
+        const result=await recoveryApi(scope,'/restores/'+encodeURIComponent(typeof preview==='object'?preview.id:preview)+'/commit',{method:'POST',body:JSON.stringify({confirmed:true,source_stopped:true,authority:$('restore-authority').value})});
+        if(!recoveryCurrent(scope))return;
+        if(scope.actor){restore=null;await TamagiHousehold.refresh();await TamagiHousehold.selectResident(scope.actor,{openThread:false,force:true}).catch(()=>{});if(TamagiHousehold.selectedResidentId()!==scope.actor)return;await TamagiShell.refreshHistory().catch(()=>{});recoveryNotice(recoveryScope(),result.workers_available===false?'Resident restored. Some residents need “Retry resuming residents”.':'Resident restored and resumed. Other residents and shared state were retained. Reconnect this resident’s credentials and services as needed.');await recoveryStatus();}
+        else{$('restore-details').textContent=JSON.stringify(result,null,2);notice(result.activation_required?'Restored to a new instance. Use the displayed configuration to continue.':'Restore committed. Sign in again after the supervisor switches homes.');}
+      }finally{if(scope.actor){$('restore-cancel').disabled=false;$('source-stopped').disabled=false;$('restore-authority').disabled=false;}if(recoveryCurrent(scope))$('restore-commit').disabled=!!scope.actor&&(!restore||!$('source-stopped').checked);}
     });
+    function clearRecoveryPreview(){const old=restore;restore=null;recoveryVersion++;$('restore-preview').hidden=true;$('source-stopped').checked=false;if(window.TamagiHousehold)$('restore-commit').disabled=true;if(old&&typeof old==='object')recoveryApi(old,'/restores/'+encodeURIComponent(old.id),{method:'DELETE'}).catch(()=>{});}
+    if(window.TamagiHousehold){
+      $('restore-file').addEventListener('change',clearRecoveryPreview);
+      $('source-stopped').onchange=()=>{$('restore-commit').disabled=!restore||!$('source-stopped').checked;};
+      $('restore-cancel').onclick=()=>{clearRecoveryPreview();recoveryNotice(recoveryScope(),'Restore preview cancelled.');};
+      $('resident-recovery-resume').onclick=()=>perform(async()=>{const scope=recoveryScope(),result=await recoveryApi(scope,'/recovery/resume',{method:'POST'});if(recoveryCurrent(scope)){await TamagiHousehold.refresh();await TamagiHousehold.selectResident(scope.actor,{openThread:false,force:true}).catch(()=>{});await recoveryStatus();if(TamagiHousehold.selectedResidentId()===scope.actor&&result.workers_available)recoveryNotice(recoveryScope(),'Residents resumed.');}});
+      setInterval(()=>{if(TamagiShell.view()==='settings')recoveryStatus().catch(()=>{});},2000);
+    }
     $('refresh-evidence').onclick=()=>perform(async()=>{$('evidence').textContent=JSON.stringify(await api('/runtime/events'),null,2);});
     $('load-archives').onclick=()=>perform(async()=>{
       const result=await api('/operator-archives');empty($('archives'),result.archives.length?'':'No predecessor archive is registered.');

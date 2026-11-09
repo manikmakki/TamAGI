@@ -36,6 +36,7 @@ class NativeModelServer:
         self._observers = {}
         self._overflowed = set()
         self._closed = False
+        self.maintenance = False
         self._tokenizer_gate = asyncio.Semaphore(1)
         self._routes()
 
@@ -166,6 +167,8 @@ class NativeModelServer:
         return value
 
     async def start_execution(self, resident, body):
+        if self.maintenance:
+            raise Conflict("Household paused briefly for resident recovery")
         local, actor, origin = body["execution_id"], body["actor_id"], body["origin"]
         if not all(isinstance(v, str) and v for v in (local, actor, origin)) or type(body["max_calls"]) is not int or body["max_calls"] < 1:
             raise ProtocolError("Invalid native execution binding")
@@ -237,6 +240,8 @@ class NativeModelServer:
         return messages
 
     async def submit(self, resident, body):
+        if self.maintenance:
+            raise Conflict("Household paused briefly for resident recovery")
         messages = self._messages(body["messages"])
         if type(body["stream"]) is not bool or not isinstance(body["options"], dict) or set(body["options"]) - {"temperature", "max_tokens", "tool_choice"}:
             raise ProtocolError("Unsupported native completion options")

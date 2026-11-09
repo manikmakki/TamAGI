@@ -166,7 +166,7 @@
       inventory:[`${name}’s Inventory`,`Files and saved artifacts from ${name}’s private workshop. Published work is available in Shared library.`],
       companions:[`${name}’s Companions`,`Companions introduced to ${name}, with their own memories and conversations.`],
       archive:[`${name}’s Archive`,`Conversations that include ${name}, and ${name}’s private memories.`],
-      settings:['Settings',settings==='connections'?`Secrets and connected tool services for ${name}.`:settings==='appearance'?`Avatar art and animation settings for ${name}.`:`Permissions and runtime evidence for ${name}. Conversation colors apply to the whole household.`]
+      settings:['Settings',settings==='connections'?`Secrets and connected tool services for ${name}.`:settings==='appearance'?`Avatar art and animation settings for ${name}.`:`Backup, restore, permissions and runtime evidence for ${name}. Conversation colors apply to the whole household.`]
     };
     for(const [view,[title,description]]of Object.entries(pages)){
       const heading=$('view-'+view)?.querySelector('.page-heading');if(!heading)continue;
@@ -175,6 +175,9 @@
       const chooser=heading.querySelector('.hh-scope-chooser');chooser.textContent='Viewing as '+name+' ▾';chooser.setAttribute('aria-label','Choose a resident. Viewing as '+name);chooser.dataset.residentId=selected;
     }
     $('household-drawer-scope').textContent='Browsing as '+name;
+    if($('resident-recovery-title'))$('resident-recovery-title').textContent=name+'’s backup and recovery';
+    $('backup-form').closest('article').querySelector('h2').textContent='Back up '+name;
+    $('restore-form').closest('article').querySelector('h2').textContent='Restore '+name;
     $('settings-connections').title=name+'’s connections and credentials';
     $('settings-appearance').title=name+'’s avatar appearance editor';
     $('view-map').querySelector('iframe').title=name+'’s world graph';
@@ -183,6 +186,7 @@
     $('growth-resident-scope').textContent=name+'’s growth';
   }
   function clearResidentViews() {
+    window.TamagiHomeViews?.clearRecovery?.();
     window.closeMindFlyout();
     for(const id of ['mind-entries','inventory-items','earlier-items','companions','places','pursuits','conv-list'])$(id).replaceChildren(node('p','Loading '+label(selected)+'’s entries…','muted'));
     $('mem-search').value='';$('mem-count').textContent='Loading memories…';
@@ -192,9 +196,9 @@
     $('consultation').hidden=true;$('restore-preview').hidden=true;
     for(const id of ['grants','archives','evidence','runtime-details','backup-download','restore-details'])$(id).replaceChildren();
   }
-  async function selectResident(id,{openThread = true} = {}) {
+  async function selectResident(id,{openThread = true,force = false} = {}) {
     if (!residents.some(entry => entry.id === id)) throw new Error('That resident is unavailable');
-    if (id === selected) return;
+    if (id === selected&&!force) return;
     window.TamagiShell?.saveDraft(); selected = id; epoch++; current = null; snapshot = null;
     localStorage.setItem(storageKey('resident'),id); paintWheel(); paintParticipants(); hideMentions(); const token = epoch;
     clearResidentViews();paintScopes();
@@ -284,11 +288,20 @@
     const placeScope=node('h3','','hh-section-scope');placeScope.id='household-places-scope';$('places').before(placeScope);
     $('pursuits').before(node('p','These pursuits belong to the resident selected above.','hh-section-scope'));
     const libraryShortcut=node('button','Shared library','hh-scope-chooser');libraryShortcut.id='household-inventory-library';libraryShortcut.type='button';libraryShortcut.onclick=()=>showLibrary().catch(error=>notice(error.message));$('view-inventory').querySelector('.page-heading').append(libraryShortcut);
-    // These operations are already rejected by the household gateway. Make the
-    // existing recovery limitation visible before an operator fills a form.
-    $('backup-form').closest('article').before(node('p','Household backup, restore and release changes are unavailable in this test build.','hh-section-scope'));
-    for(const id of ['backup-form','restore-form'])for(const input of $(id).elements)input.disabled=true;
-    for(const id of ['restore-commit','enable-deployment','disable-deployment'])$(id).disabled=true;
+    const recoveryTitle=node('h2','','hh-section-scope');recoveryTitle.id='resident-recovery-title';
+    const recoveryNote=node('p',bootstrap.resident_recovery_available?'Back up or replace the selected resident’s private state. Workers pause briefly once everyone is idle. Other residents and the current shared world are retained.':'Restart the household server to enable browser recovery.','hh-section-scope');
+    const recoveryStatus=node('p','','hh-section-scope');recoveryStatus.id='resident-recovery-status';recoveryStatus.setAttribute('role','status');
+    const resume=node('button','Retry resuming residents');resume.id='resident-recovery-resume';resume.type='button';resume.hidden=true;
+    $('backup-form').closest('.grid')?.before(recoveryTitle,recoveryNote,recoveryStatus,resume);
+    if(!recoveryTitle.isConnected)$('backup-form').closest('article').before(recoveryTitle,recoveryNote,recoveryStatus,resume);
+    const repeatLabel=node('label','Repeat backup password');repeatLabel.htmlFor='backup-password-repeat';
+    const repeat=node('input');repeat.id='backup-password-repeat';repeat.type='password';repeat.minLength=12;repeat.required=true;repeat.autocomplete='new-password';
+    $('backup-form').querySelector('button').before(repeatLabel,repeat);
+    $('source-stopped').parentElement.replaceChildren($('source-stopped'),document.createTextNode('I accept replacing private changes since this checkpoint, and confirm no other copy of this resident is active.'));
+    $('restore-commit').textContent='Restore selected resident';$('restore-commit').disabled=true;
+    const cancel=node('button','Cancel preview');cancel.id='restore-cancel';cancel.type='button';$('restore-commit').after(cancel);
+    if(!bootstrap.resident_recovery_available)for(const id of ['backup-form','restore-form'])for(const input of $(id).elements)input.disabled=true;
+    for(const id of ['enable-deployment','disable-deployment'])$(id).disabled=true;
     const toolbar=node('div',undefined,'hh-chat-toolbar');
     for(const[id,text,action]of[['household-new-thread','＋ New Thread',()=>window.newConversation()],['household-unread','Unread threads (0)',()=>showUnread().catch(error=>notice(error.message))],['household-for-you','For you (0)',()=>showUnread(true).catch(error=>notice(error.message))],['household-participants','Participants',showParticipants],['household-library','Shared library',()=>showLibrary().catch(error=>notice(error.message))]]){const button=node('button',text);button.id=id;button.type='button';button.onclick=action;if(id==='household-for-you'){button.disabled=true;button.classList.add('hh-attention');button.setAttribute('aria-live','polite');}toolbar.append(button);}
     const strip=node('div',undefined,'hh-participant-strip');strip.id='household-participant-strip';$('chat-messages').before(toolbar,strip);

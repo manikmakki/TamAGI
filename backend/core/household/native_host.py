@@ -34,6 +34,7 @@ class NativeHost:
         self.ready = None
 
     async def start(self):
+        self.closing = False
         self.registry.validate(self.descriptor)
         if len(os.fsencode(self.socket)) > 100:
             raise ValueError("Household IPC path is too long; choose a shorter data root")

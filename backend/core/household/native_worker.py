@@ -89,8 +89,14 @@ def configure_app(app):
         from backend.api.chat import get_agent
 
         agent = get_agent()
+        runtime = agent.runtime
+        with runtime.store.lock:
+            retained_work = bool(runtime.store.db.execute(
+                "SELECT 1 FROM records WHERE kind='evaluation_job' AND json_extract(payload,'$.status') IN ('queued','running') LIMIT 1"
+            ).fetchone()) or bool(runtime.store.db.execute("SELECT 1 FROM runs WHERE status='running' LIMIT 1").fetchone())
+        pending = runtime.interactions.has_pending() or runtime.root_lock.locked()
         return {"resident_id": agent.runtime.actor_id, "ready": True,
-                "pending": agent.runtime.interactions.has_pending() or agent.runtime.root_lock.locked(),
+                "pending": pending, "recovery_pending": pending or retained_work,
                 "activity": agent.runtime.activity_state(),
                 "due": agent.runtime.due(ignore_decompression=True),
                 "world_due": agent.runtime.due() and not getattr(agent.identity, "needs_onboarding", False)}
