@@ -361,6 +361,16 @@ bounded shutdown regression without abandoning uncertain upstream occupancy.
 The Journal/availability fix does not claim to resolve this separate shutdown
 case.
 
+2026-11-09 branch review reproduced one shutdown cause: an independent evaluation
+could leave an undispatched generation and its private HTTP handler waiting after
+the model server closed. Shutdown now revokes execution authority, settles queued
+attempts and wakes waiters before draining healthy upstream generations. Closed
+servers reject new admissions; unknown upstream occupancy remains held for
+reconciliation. Three targeted regressions cover the queued handler, healthy
+in-flight drain and unknown occupancy. The final full suite passes 331 tests.
+This fixes the reproduced case; the original incident's exact cause was not
+retrospectively established. See the [final branch review](qualification/0019-final-branch-review-2026-11-09.md).
+
 ## NATIVE-011 — Resident context was implicit across menu pages
 
 Reported after the Journal attribution follow-up on 2026-11-09. Inventory,
@@ -403,7 +413,8 @@ updated so installed clients can pick up the changed UI assets.
 private data loss and migration to a fresh installation. Shared-state and public
 artifact recovery follow as a separate layer. ADR-0019 and the roadmap record
 this addendum; the [operator guide](resident-recovery.md) documents the new offline
-backup, preview, restore and migrate commands. Browser recovery remains disabled.
+backup, preview, restore and migrate commands. Browser recovery was disabled at
+this checkpoint; NATIVE-013 below adds its controls.
 
 The [recovery qualification](qualification/0019-resident-recovery-2026-11-09.md)
 retains 319 passing offline tests, CLI round trips, distinct restored worker
@@ -419,7 +430,8 @@ historical context alongside new context instead of overwriting it.
 This is mechanical continuity qualification, not production adoption or an Echo
 rehydration result. Whole-household shared-state recovery, historical transcript
 UI, hot maintenance and cross-release compatibility retain separate work. The
-idle shutdown does not close NATIVE-010's queued-evaluation shutdown follow-up.
+idle shutdown did not qualify the queued-evaluation case; NATIVE-010's later
+branch review records its reproduction and fix.
 
 ## NATIVE-013 — Browser backup, preview and selected-resident restore
 
@@ -441,3 +453,28 @@ shared-state recovery/deployment remain disabled.
 The retained test household restarted cleanly at idle and is available on the same
 LAN port/password, with all three original roots and the shared clock. No actual
 resident was restored during activation and production Ember was untouched.
+
+## NATIVE-014 — Final review: resident switching and interrupted restore settlement
+
+2026-11-09: delayed Settings evidence, predecessor archive and permission responses
+could repopulate another resident's cleared page. These requests and their actions
+now retain the captured resident/selection epoch. A late response or detached old
+action cannot render or submit under the next resident.
+
+Selecting a resident from a menu previously kept the old hidden Chat context.
+The chooser now switches the hidden thread/draft while retaining the menu page;
+returning to Chat presents a participating resident and the correct draft. Reload
+also reconciles previously saved resident/thread mismatches.
+
+Private replacement settlement previously ran only after browser commit returned.
+A failed manifest write followed by Resume could therefore bypass cleanup of old
+target invitations or execution authority. Settlement now commits with the
+resident binding and replays idempotently from the durable transition journal in
+browser Resume, CLI recovery and startup. Peers' opportunities remain intact.
+
+The [final branch review](qualification/0019-final-branch-review-2026-11-09.md)
+retains the clean committed-revision 331-test pass, fault-injection evidence and
+Chromium races, detached actions, menu/draft and reload checks. The development
+launcher's retained release-label limitation is explicit in the native/recovery
+guides. Live processes were not restarted for this review; last backend activation
+remains NATIVE-013's checkpoint.

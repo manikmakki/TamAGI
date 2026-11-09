@@ -131,6 +131,11 @@ The [2026-11-09 World Thread record](qualification/0019-native-world-2026-11-09.
 retains the full 303-test run, final focused world checks, native Chromium world,
 operator-mention and public-library evidence, and retained-household activation.
 
+The [final branch review](qualification/0019-final-branch-review-2026-11-09.md)
+retains the 331-test pass on a clean committed revision and final Chromium checks.
+It fixes a reproduced queued-evaluation shutdown hang, interrupted restore
+settlement, delayed Settings responses and menu-to-Chat resident mismatches.
+
 Run the repeatable offline Chromium regressions from the isolated worktree with:
 
 ```bash
