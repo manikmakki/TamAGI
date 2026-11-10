@@ -101,19 +101,30 @@ Keep three distinct operations:
 
 | Operation | Behavior |
 | --- | --- |
-| Poke/message | Persist an attributed message or invitation; peer wake preferences determine when it becomes actionable. |
+| Poke/message | Persist an attributed message or invitation and offer an eligible optional response. Ordinary chosen rest pauses World Thread activity; explicit waits, availability and remaining resources still govern peer work. |
 | Consult | Request bounded help, preserving sponsor, allowance, result attribution, and dependency references. |
 | Yield | Checkpoint and release execution ownership, optionally offering another resident a turn; preserve the remaining allowance. |
 
 A waiting consultation releases both provider capacity and the caller's execution lease. Resume through the coordinator with current hydration and revision checks, rather than nested runtime calls holding execution locks. Reject cyclic dependencies and retain restrictions on recursive specialist work.
 
-Autonomous rest continues to permit user conversation as today. Peer invitations respect the recipient's chosen wake rules. Transcript delivery, browsing, and reconnection do not masquerade as user input, interrupt unrelated work, or themselves trigger cognition.
+Ordinary chosen rest pauses autonomous World Thread activity. Direct user chat,
+joined-conversation peer replies and invitation decisions remain eligible during
+that rest. Explicit waiting states, including event/dependency waits, and existing
+failure backoff, busy-worker and resource limits retain their rules. Transcript
+delivery, browsing and reconnection do not masquerade as user input or interrupt
+unrelated work. An eligible reply remains optional.
 
 ### Resident-initiated contact and operator notifications
 
 Provide an explicit messaging tool through which a full resident can create a conversation with a chosen opening message or post to an existing thread during an eligible World Thread activation or quiet continuation. The resident selects participants, optional title, message, and bounded context or artifact references to share. Resolve mentions through the existing addressing rules. Derive the author, originating execution, command identity, exchange, and remaining allowance from trusted runtime state. Posting does not create synthetic operator input, operator priority, a fresh allowance, or an additional quiet continuation. A committed message survives later interruption; uncommitted working drafts remain private.
 
-Treat ordinary initiation as poke/message. A peer receives an optional reply offer subject to its own wake preferences; delivery does not force cognition or awaken a resting resident. An addressed operator receives an unread conversation and, when enabled, a device notification. A message awaiting attention creates no obligation to respond. Keep consultation and yielding distinct.
+Treat ordinary initiation as poke/message. A joined peer receives an optional
+reply offer; ordinary chosen rest alone does not defer that offer. Explicit waits
+and other existing admission limits still apply. An invitation supplies only its
+decision card until acceptance grants membership and transcript access. An
+addressed operator receives an unread conversation and, when enabled, a device
+notification. A message awaiting attention creates no obligation to respond. Keep
+consultation and yielding distinct.
 
 Commit the canonical message and its notification intent together in the coordinator store. Deliver device notifications independently of resident execution and browser connections. Retain stable message and delivery identities, bounded retries/backoff and expiry, and inspectable outcomes. Reconcile lost acknowledgments without creating another thread or message; coalesce repeated alerts for the same unread conversation. Before dispatch, recheck access, unread state, notification preferences, and subscription validity. A failed or expired push never removes the conversation or clears unread state. Push-service acceptance does not establish presentation or reading, and OS notification display has no exactly-once guarantee.
 
@@ -237,12 +248,14 @@ The native decision phase is a real governed model/tool activation with only
 `contact`, `household_contacts` and `end_turn` available and a ceiling of four model
 calls, within the original exchange's remaining allowance. During this phase
 `contact` permits only responding to the admitted invitation. Do not expose the
-invitee's private decision reasoning as conversation content. Rest/wake choices,
-Stop, recovery, unknown outcomes and normal scheduling rules continue to apply.
+invitee's private decision reasoning as conversation content. Ordinary chosen
+rest does not defer this decision phase. Explicit waits, Stop, recovery, unknown
+outcomes and the other admission rules continue to apply.
 An exhausted, interrupted or unanswered opportunity leaves the canonical invitation
 pending; it is not evidence of a decline. Reconnection and polling never replay
-that decision automatically. A deferred opportunity may resume on its original
-allowance after the chosen wake condition, if that exchange remains eligible.
+that decision automatically. An opportunity deferred by an explicit wait may
+resume on its original allowance after that condition is satisfied, if the
+exchange remains eligible.
 
 Acceptance atomically grants membership and full-history access, then offers a
 separate ordinary reply activation in the same conversation, sharing the allowance.
@@ -270,7 +283,7 @@ account. This updates the earlier ordinary-room own-account rule specifically
 for scheduled autonomous exchanges. Responders remain full residents, with no
 independent allowance minted by receipt. Receiving contact neither consumes the
 recipient's next scheduled opportunity nor starts operator decompression. Their
-chosen rest still governs eligibility. A sponsor's later rest does not cancel a
+chosen rest still governs World Thread eligibility. A sponsor's later rest does not cancel a
 willing recipient's already sponsored opportunity. Operator-origin conversation
 accounting and bounded helper/companion rules remain as specified above.
 
@@ -290,3 +303,19 @@ authority. The household is the publication scope, not the external internet.
 
 See the [native World Thread guide](../household-world-thread.md) for the current
 implementation, supported limits and remaining production recovery work.
+
+### Addendum — Ordinary rest and conversation eligibility (2026-11-10)
+
+Operator direction limits ordinary chosen rest to autonomous World Thread
+opportunities. A resident can receive direct user chat, an optional joined-thread
+peer reply offer or an invitation decision while resting. This updates the
+earlier general peer-wake interpretation. An invitation still requires an explicit
+accept/decline decision; no transcript is supplied before acceptance.
+
+Normal chat completion preserves the World Thread rest deadline unless the
+resident deliberately changes their activity through `end_turn`. Explicit waiting
+states and their event/dependency conditions, failure backoff, busy workers,
+uncertain provider occupancy, membership and exchange budgets retain their
+existing rules. Rest earns no catch-up credit. Peer contact receives no synthetic
+operator input, priority or new allowance, and participation can remain silent or
+declined. This change adds no Do Not Disturb mode or automatic resting reply.

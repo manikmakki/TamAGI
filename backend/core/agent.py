@@ -1557,9 +1557,18 @@ class TamAGIAgent:
             return None
 
         conversation_id = str(entry.metadata.get("conversation_id") or "")
-        conversation = (
-            self.get_conversation(conversation_id) if conversation_id else None
-        )
+        conversation = None
+        if conversation_id:
+            from backend.core.runtime import get_runtime
+
+            runtime = getattr(self, "runtime", None) or get_runtime()
+            household = getattr(runtime, "household", None)
+            if household is not None:
+                # Legacy transcripts are private quoted evidence, not active
+                # conversations or input to recent-dialogue consolidation.
+                conversation = household.fetch_memory_conversation(conversation_id)
+            else:
+                conversation = self.get_conversation(conversation_id)
         messages: list[dict[str, Any]] = []
         if conversation is not None:
             anchor_index = entry.metadata.get("anchor_message_index")

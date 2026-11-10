@@ -150,6 +150,12 @@ class BrowserRecovery:
                     except Exception:
                         self.blocked = True
                         self.resume_errors = list(self.hosts)
+                if not self.blocked and getattr(self, "creation", None) is not None:
+                    try:
+                        await asyncio.to_thread(self.creation.reconcile)
+                    except Exception:
+                        self.blocked = True
+                        self.resume_errors = list(self.hosts)
                 if not self.blocked:
                     for actor, host in self.hosts.items():
                         host.descriptor = self.registry.descriptors[actor]

@@ -10,6 +10,7 @@ import copy
 import base64
 import hashlib
 import json
+import math
 import os
 import sqlite3
 from pathlib import Path
@@ -301,6 +302,46 @@ class NativeWorkerBridge:
         metadata = record_data(result["conversation"])
         return Conversation(id=metadata["id"], title=metadata.get("title", "Conversation"),
                             messages=[self._message(message) for message in result["messages"]])
+
+    def fetch_memory_conversation(self, conversation_id):
+        """Resolve quoted memory evidence without admitting or caching old chat."""
+        from backend.core.agent import Conversation, Message
+
+        if self.runtime.scope() != self.runtime.actor_id:
+            raise AccessDenied("Historical conversation lookup belongs to the primary resident")
+        try:
+            return self.fetch_conversation(conversation_id)
+        except NotFound:
+            # Only absence permits private legacy evidence. Denial, a revoked
+            # grant or a failed coordinator transport must retain its failure.
+            pass
+        record = self.runtime.store.get("conversation", conversation_id)
+        if record is None:
+            return None
+        if record["actor"] != self.runtime.actor_id:
+            raise AccessDenied("Historical conversation belongs to another actor")
+        data = record["data"]
+        if not isinstance(data, dict) or data.get("id") != conversation_id:
+            raise ProtocolError("Historical conversation identity is inconsistent")
+        saved = data.get("messages")
+        if not isinstance(saved, list):
+            raise ProtocolError("Historical conversation messages are invalid")
+        messages = []
+        for message in saved:
+            if (not isinstance(message, dict)
+                    or any(not isinstance(message.get(key), str) for key in ("id", "role", "content"))
+                    or not message["id"]
+                    or type(message.get("timestamp")) not in (int, float)
+                    or not math.isfinite(message["timestamp"])
+                    or not isinstance(message.get("metadata", {}), dict)):
+                raise ProtocolError("Historical conversation message is invalid")
+            messages.append(Message(**{key: message[key] for key in Message.__dataclass_fields__ if key in message}))
+        fields = {key: value for key, value in data.items()
+                  if key in Conversation.__dataclass_fields__ and key != "messages"}
+        fields.setdefault("created_at", record["created"])
+        fields.setdefault("updated_at", record["updated"])
+        # No agent cache, projection, save, Growth, offer or model side effect.
+        return Conversation(**fields, messages=messages)
 
     def world_action(self, action, object_id="", attributes=None, expected=None):
         from backend.core.runtime import current_execution

@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "release": "sha256:3adf86aa2bb240f3a14ba0ce41c1e0a39a9018a6b43a73389388566742615b2b",
+  "resident_id": "resident-e3395ef821ce4bdbb5bc58bfe1fe27b5",
+  "resident_workers": [
+    442185
+  ],
+  "name": "Ember",
+  "memories": 187,
+  "legacy_conversations": 12,
+  "shared_messages": 11,
+  "lived_record_payloads_preserved": true,
+  "allowed_startup_bookkeeping": [
+    "graph.timestamp",
+    "personality.last_stats_update",
+    "derived JSON serialization"
+  ],
+  "private_files_preserved": 105,
+  "installation_ids_preserved": true,
+  "chosen_activity_preserved": true,
+  "rest": {
+    "status": "resting",
+    "wait_reason": "chosen_rest",
+    "wake_at": 1794333600.0,
+    "wake_event": null
+  },
+  "shared_content_preserved": true,
+  "clock_preserved": true,
+  "creation_schema_ready": true,
+  "provider_calls": 0,
+  "public_listener": false,
+  "workers_exited": true
+}

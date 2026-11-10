@@ -53,7 +53,14 @@ runtime:
   timezone: "America/New_York"
 ```
 
-Merge settings into the generated configuration; do not replace its instance paths. The cron schedule offers an opportunity every fifteen minutes. Active hours are local to `runtime.timezone` in platform mode; `0` through `24` allows all hours. Chosen rest, event waits, pending chat work, onboarding, and error backoff can suppress inference. The post-conversation interval begins from admitted work’s visit deadline, not from closing a browser tab.
+Merge settings into the generated configuration; do not replace its instance paths. The cron schedule offers an opportunity every fifteen minutes. Active hours are local to `runtime.timezone` in platform mode; `0` through `24` allows all hours. Chosen rest, event waits, pending chat work, onboarding, and error backoff can suppress autonomous inference. The post-conversation interval begins from admitted work’s visit deadline, not from closing a browser tab.
+
+In a native household, ordinary chosen rest pauses World Thread opportunities.
+Direct user chat, optional joined-peer replies and invitation decisions remain
+eligible during that rest. Explicit waiting states and other admission limits
+retain their rules; normal chat completion preserves the World Thread rest
+deadline unless the resident deliberately changes it. See the
+[World Thread guide](household-world-thread.md).
 
 Default home-platform allowances:
 

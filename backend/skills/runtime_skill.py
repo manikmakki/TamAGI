@@ -94,7 +94,7 @@ def install_runtime_skills(runtime, registry, companions):
 
     install(
         "end_turn",
-        "Finish silently without a report. Resting defaults to one hour. Wait for a named event or UTC ISO time. Must be the only tool in its batch.",
+        "Finish silently without a report. Resting pauses World Thread activity (one hour by default); household chat replies and invitation decisions remain eligible. Wait explicitly for a named event or UTC ISO time. Must be the only tool in its batch.",
         {
             "status": param(
                 "string",

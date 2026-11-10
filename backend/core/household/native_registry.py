@@ -118,6 +118,8 @@ class NativeRegistry:
             self.store = HouseholdStore(self.root / "household.sqlite3")
             from .resident_recovery import reconcile_transition
             reconcile_transition(self)
+            from .native_creation import reconcile_creation
+            reconcile_creation(self)
             for descriptor in self.descriptors.values():
                 self.validate(descriptor)
             with self.store.transaction():

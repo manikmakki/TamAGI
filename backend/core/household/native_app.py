@@ -69,6 +69,8 @@ def create_household_app(config, *, provider=None, registry=None):
                     model.broker.stop_execution(record["data"]["broker_execution_id"])
     for host in hosts.values():
         host.lost = lost
+    from .native_creation import NativeCreation
+    creation = NativeCreation(registry, recovery, model, hosts, world, coordinator_socket, lost=lost)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -110,6 +112,7 @@ def create_household_app(config, *, provider=None, registry=None):
     app.state.interactions, app.state.model, app.state.hosts = manager, model, hosts
     app.state.world_scheduler = scheduler
     app.state.recovery = recovery
+    app.state.creation = creation
     session_root = registry.root / "session"
     session_root.mkdir(mode=0o700, exist_ok=True)
 
@@ -132,7 +135,7 @@ def create_household_app(config, *, provider=None, registry=None):
         recovery_path = path.removeprefix("/")
         if recovery_path.startswith("r/"):
             recovery_path = recovery_path.split("/", 2)[-1]
-        tracked = not path.startswith("/_native/") and ("/api/" in path or path.startswith(("/r/", "/panels/"))) and not recovery.handles(recovery_path) and not path.startswith("/api/auth/")
+        tracked = not path.startswith("/_native/") and ("/api/" in path or path.startswith(("/r/", "/panels/"))) and not recovery.handles(recovery_path) and not path.startswith("/api/auth/") and path != "/api/household/residents"
         if tracked and recovery.paused:
             return JSONResponse({"detail": "Household paused briefly for resident recovery; please try again shortly"}, status_code=503,
                                 headers={"Retry-After": "2"})
@@ -218,6 +221,21 @@ def create_household_app(config, *, provider=None, registry=None):
     def operator_work(record):
         conversation = store.get("conversation", record["data"].get("conversation_id"))
         return bool(conversation and "operator" in conversation["data"]["participants"])
+
+    @app.get("/api/household/creation")
+    async def creation_options():
+        return creation.schema()
+
+    @app.post("/api/household/residents", status_code=201)
+    async def create_resident(request: Request):
+        raw = await request.body()
+        if len(raw) > 32 * 1024:
+            raise ProtocolError("Choose shorter starting notes for your new TamAGI")
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            raise ProtocolError("Choose valid creation details") from None
+        return await creation.create(body)
 
     def resident(request, bound=None):
         return registry.resolve(bound or request.headers.get("x-tamagi-resident") or request.query_params.get("resident_id"))["resident_id"]
@@ -520,7 +538,7 @@ def create_household_app(config, *, provider=None, registry=None):
 
     def inject(content):
         encoded = json.dumps(bootstrap(), ensure_ascii=True).replace("<", "\\u003c")
-        return content.replace("<head>", "<head><script>window.TAMAGI_HOUSEHOLD_BOOTSTRAP=" + encoded + ";</script><script src='/assets/household-ui.js'></script>", 1)
+        return content.replace("<head>", "<head><script>window.TAMAGI_HOUSEHOLD_BOOTSTRAP=" + encoded + ";</script><script src='/assets/household-ui.js?v=6'></script>", 1)
 
     @app.api_route("/r/{actor}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"])
     async def scoped(actor: str, path: str, request: Request):

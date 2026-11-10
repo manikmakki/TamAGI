@@ -1,0 +1,111 @@
+{
+  "passed": true,
+  "recorded_at": "2026-11-10T19:32:58.999905+00:00",
+  "release": "sha256:c8097c6f9650dca63cb944ef5574f38049e34434b8849a3adec56a228af1f8a0",
+  "resident_count": 2,
+  "residents": [
+    {
+      "name": "Ember",
+      "resident_id": "resident-e3395ef821ce4bdbb5bc58bfe1fe27b5",
+      "installation_id": "installation-0807af7eb6e240b7bc7979c7c1959f66",
+      "private_root_preserved": true,
+      "authority": "unrestricted_host",
+      "automatic_deployment": false,
+      "memories_before": 259,
+      "memories_now": 259,
+      "pending": false,
+      "chat_due": true,
+      "world_due": false,
+      "chosen_activity_matches_cold_checkpoint": false,
+      "activity": {
+        "status": "resting",
+        "wait_reason": "chosen_rest",
+        "wake_at": 1794362400.0,
+        "wake_event": null
+      },
+      "future_rest_policy_verified": true
+    },
+    {
+      "name": "Echo",
+      "resident_id": "resident-0571cfb0892a4a8f87bc684ee6fe7e32",
+      "installation_id": "installation-8a423be45b3e420ab918e46eb265d815",
+      "private_root_preserved": true,
+      "authority": "guarded",
+      "automatic_deployment": false,
+      "memories_before": 95,
+      "memories_now": 95,
+      "pending": false,
+      "chat_due": true,
+      "world_due": false,
+      "chosen_activity_matches_cold_checkpoint": true,
+      "activity": {
+        "status": "resting",
+        "wait_reason": "chosen_rest",
+        "wake_at": 1794339618.3220477,
+        "wake_event": null
+      },
+      "future_rest_policy_verified": true
+    }
+  ],
+  "resident_worker_count": 2,
+  "authenticated_http_checks_passed": true,
+  "creation_flow_available": true,
+  "frontend_matches_pinned_source": true,
+  "config_and_session_files_preserved": 6,
+  "units": {
+    "tamagi-household.service": {
+      "MainPID": "461579",
+      "NRestarts": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "tamagi-platform.service": {
+      "MainPID": "0",
+      "NRestarts": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead",
+      "UnitFileState": "disabled"
+    },
+    "tamagi.service": {
+      "MainPID": "0",
+      "NRestarts": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead",
+      "UnitFileState": "disabled"
+    }
+  },
+  "future_chosen_rest_ready_checks": 2,
+  "cold_offline_preservation_passed": true,
+  "exact_preservation_verified_before_public_start": true,
+  "provider_calls_in_offline_gate": 0,
+  "operator_test_chat_requests": 0,
+  "activation_requested_world_ticks": 0,
+  "normal_scheduled_progress": [
+    {
+      "id": "world-work-14616ac2b44b494486a567b987b494cb",
+      "kind": "world",
+      "status": "resting",
+      "scheduled_at": 1794339030.6535594
+    }
+  ],
+  "clock_schedule": "*/15 * * * *",
+  "clock_timezone": "America/New_York",
+  "schedule_before": {
+    "last_resident_id": "resident-e3395ef821ce4bdbb5bc58bfe1fe27b5",
+    "last_tick_at": 1794338100.5398328,
+    "last_work_id": "world-work-18c096438a054a7fa0493addc3551da3",
+    "next_at": 1794339000.0
+  },
+  "schedule_now": {
+    "last_resident_id": "resident-e3395ef821ce4bdbb5bc58bfe1fe27b5",
+    "last_tick_at": 1794339030.6535594,
+    "last_work_id": "world-work-14616ac2b44b494486a567b987b494cb",
+    "next_at": 1794339900.0
+  },
+  "broker_attempts_before": 317,
+  "broker_attempts_now": 320,
+  "shared_messages_before": 227,
+  "shared_messages_now": 227,
+  "limits": "Production autonomy resumed normally; exact unchanged-state comparisons were performed in the stopped offline gate before public startup."
+}

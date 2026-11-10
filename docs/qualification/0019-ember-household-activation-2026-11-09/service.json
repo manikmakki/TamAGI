@@ -1,0 +1,30 @@
+{
+  "recorded_at": "2026-11-09T22:31:54.365385-05:00",
+  "units": {
+    "tamagi-household.service": {
+      "MainPID": "412207",
+      "NRestarts": "0",
+      "ExecMainStatus": "0",
+      "ActiveState": "active",
+      "SubState": "running",
+      "UnitFileState": "enabled",
+      "ActiveEnterTimestamp": "Mon 2026-11-09 22:30:20 EST"
+    },
+    "tamagi-platform.service": {
+      "MainPID": "0",
+      "NRestarts": "0",
+      "ExecMainStatus": "0",
+      "ActiveState": "inactive",
+      "SubState": "dead",
+      "UnitFileState": "disabled",
+      "ActiveEnterTimestamp": ""
+    }
+  },
+  "controlled_restart": {
+    "passed": true,
+    "previous_worker_exited": true,
+    "graceful_stop_reported_by_systemd": true,
+    "forced_kill_or_timeout_logged": false,
+    "model_generation_requested": false
+  }
+}

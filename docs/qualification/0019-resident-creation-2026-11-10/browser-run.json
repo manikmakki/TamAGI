@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "returncode": 0,
+  "guarded_python_processes": 10,
+  "denied_network_operations": 0,
+  "external_provider": false,
+  "limits": "Injected provider; Python network guard and restricted Chromium DNS, not OS network confinement."
+}

@@ -384,7 +384,12 @@ class RuntimeService:
             ):
                 self.wake("evaluation_completed")
 
-    def due(self, *, ignore_decompression=False, ignore_error_backoff=False, exclude_work_id=None):
+    def due(self, *, ignore_decompression=False, ignore_error_backoff=False, ignore_rest=False, exclude_work_id=None):
+        """Check readiness without consuming a chosen World Thread rest.
+
+        Household chat may ignore an ordinary rest deadline, while explicit
+        waits and failure backoff continue to defer optional activations.
+        """
         self.reconcile_evaluation_wait()
         if getattr(self, "interactions", None) and self.interactions.has_pending(**({"exclude_work_id": exclude_work_id} if exclude_work_id else {})):
             return False
@@ -397,10 +402,16 @@ class RuntimeService:
             "runtime_unavailable",
             "generation_truncated",
         }
+        chosen_rest = (
+            state["status"] == "resting"
+            and state.get("wait_reason") in {None, "chosen_rest"}
+            and not state.get("wake_event")
+        )
         if (
             state.get("wake_at")
             and state["wake_at"] > now
             and not (ignore_error_backoff and error_wait)
+            and not (ignore_rest and chosen_rest)
         ):
             return False
         if state["status"] == "waiting" and state.get("wake_event"):

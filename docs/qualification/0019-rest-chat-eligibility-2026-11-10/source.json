@@ -1,0 +1,20 @@
+{
+  "base_revision": "8945161a73417ccb4348c12a5878fe71cf927444",
+  "working_tree_implementation": true,
+  "qualification_source": {
+    "diff_sha256": "9664cb3a88a245d759b7012bb157e4f1434fa4bed09b2aee5e4178bf1211703a",
+    "dirty": true,
+    "revision": "8945161a73417ccb4348c12a5878fe71cf927444"
+  },
+  "implementation_test_sha256": {
+    "backend/core/runtime/service.py": "4a5583cf7920982dba60ab632578c905d184920745b0e9424cc98483d374e142",
+    "backend/core/household/native_worker.py": "086a66571eb6e0c17584a878042511890a5526aede19a25f778b60acf7021de7",
+    "backend/skills/runtime_skill.py": "66c43738fd1ae638a54bdebff57908cf29281ecad6c2bfd87218581ae56feac3",
+    "tests/test_household_chat_rest.py": "5ad73f24761e40c80977e904418fdcf8003aa5d94c8ba51d18fe4459b980278b"
+  },
+  "test_count": 363,
+  "test_seconds": 366.378,
+  "production_activated": false,
+  "real_model_used": false,
+  "existing_live_resident_used": false
+}

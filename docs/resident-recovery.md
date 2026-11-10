@@ -137,8 +137,15 @@ operator password setup and provider/credential reconnection, and starts with
 autonomy and automatic deployment disabled. No peer is enrolled from memories
 or historical author references. Archived shared transcripts remain private
 historical evidence, **not active conversations in the new household's Chat or
-Archive UI**. A historical transcript viewer and optional canonical shared-state
-recovery remain follow-up work; the raw evidence is preserved independently.
+Archive UI**. For an existing conversation-memory pointer, the dedicated private
+memory lookup tries canonical history first, then an exact primary-owned legacy
+SQL conversation only when the canonical conversation is missing. Denial and
+transport errors do not authorize fallback. Missing transcripts leave only the
+memory's stored window/snippet; recovery-context exports are not searched by this
+lookup. See the [existing-user action plan](legacy-conversation-access.md).
+A historical transcript viewer and optional canonical shared-state recovery
+remain follow-up work; ordinary conversation lookup does not fall back to
+private caches or import old threads into Chat.
 MCP connections are described in the encrypted manifest but are not activated
 on restored worker startup; reconnect them explicitly after review.
 
@@ -148,6 +155,13 @@ evidence, not automatically selected as shared application code. An application
 code regression needs separate compatible code recovery. Legacy portable v1
 archives are accepted for explicit one-resident migration; qualify the selected
 release's compatibility before committing them.
+
+Older standalone exporters can omit private history and other `data/` files
+outside sprites, even though they retain the runtime SQL database. Inspect the
+archive's file manifest and omissions. Preserve a complete stopped-source
+checkpoint before migration, and qualify any additional private-file capture on
+a disposable copy. Never replace a newer home's database with a raw copy of the
+old database; use a reviewed restore transition and report its continuity gap.
 
 Queued private interactions/evaluations become interrupted and pending outbox
 effects become outcome-unknown. Normal shared coordinator restart recovery still

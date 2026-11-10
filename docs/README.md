@@ -1,12 +1,15 @@
 # TamAGI documentation
 
-Start with the [project README](../README.md) for a new home-platform installation. These guides describe the `codex/dependable-home` development branch. The public default `main` branch still uses the older runtime as of the 2026-11-06 audit.
+Start with the [project README](../README.md) for a new home-platform installation. These guides distinguish standalone operation from the opt-in native household. A merged source revision does not select the release used by an existing installation.
 
 ## Using TamAGI
 
 | Guide | Contents |
 | --- | --- |
 | [Running and recovery](running.md) | Configuration, scheduling, access, existing residents, services, Docker, backups, and troubleshooting. |
+| [Create a TamAGI](creating-a-tamagi.md) | Add a new household resident, choose an avatar and starting personality, and open their first conversation. |
+| [Production multi-resident enablement](production-multi-resident-enablement.md) | Ember preservation, migration gaps, manual checkpoints, staged cutover and recovery decisions. |
+| [Private access to retained conversations](legacy-conversation-access.md) | Exact legacy memory lookup, existing-user migration choices, low-cost validation and recovery limits. |
 | [Integrations and memory](integrations.md) | Search, MCP, credential handling, and optional retrieval indexes. |
 | [Workspace and tool development](workspace-layout.md) | Active paths, Inventory, worker contract, tool evaluation and activation. |
 | [Appearance](sprite-customization.md) | Character selection, rigs, sprite uploads, and API reference. |
@@ -16,7 +19,7 @@ Start with the [project README](../README.md) for a new home-platform installati
 
 [Implementation and evidence](platform-roadmap.md) maps the current code to its verification and limitations. Accepted [architecture decisions](adrs/README.md) describe design intent; their acceptance alone does not prove implementation or behavioral success.
 
-The burn-in platform has **one primary resident per instance** and invitation-only companions. The isolated `codex/adr-0019-household` branch adds an opt-in [native household](household-native.md), shared inference scheduling, resident contact/invitations, durable unread threads, Chat’s New Thread control and coordinated world turns. [Individual resident recovery](resident-recovery.md) supports browser backup/restore and offline migration. Production resident adoption, coordinated shared-state recovery and PWA Web Push remain gates in the [multi-resident roadmap](multi-resident-roadmap.md).
+The standalone platform has **one primary resident per instance** and invitation-only companions. PR #8 adds an opt-in [native household](household-native.md), shared inference scheduling, resident contact/invitations, durable unread threads, Chat’s New Thread control and coordinated world turns. [Individual resident recovery](resident-recovery.md) supports browser backup/restore and offline migration; [private legacy conversation access](legacy-conversation-access.md) preserves exact memory lookups without a bulk Chat import. Production resident adoption, coordinated shared-state recovery and PWA Web Push retain their separate scope in the [multi-resident roadmap](multi-resident-roadmap.md).
 
 Burn-in observations remain separate from fixture tests. Documentation changes do not enroll residents, migrate live data, complete the pilot, or select a new application release.
 

@@ -1,0 +1,35 @@
+{
+  "command": [
+    "/opt/TamAGI/.venv/bin/python",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "/tmp/tamagi-world-rest-48sxzj8n/source/tests",
+    "-q"
+  ],
+  "denied_network_operations": 0,
+  "evidence_class": "scripted",
+  "finished_at": 1794338655.8912995,
+  "guarded_python_processes": 243,
+  "limits": "Python socket/DNS guard; this is not OS confinement of arbitrary native commands.",
+  "live_instance_used": false,
+  "passed": true,
+  "real_model_used": false,
+  "returncode": 0,
+  "schema": 1,
+  "source": "/tmp/tamagi-world-rest-48sxzj8n/source",
+  "source_after": {
+    "diff_sha256": "9664cb3a88a245d759b7012bb157e4f1434fa4bed09b2aee5e4178bf1211703a",
+    "dirty": true,
+    "revision": "8945161a73417ccb4348c12a5878fe71cf927444"
+  },
+  "source_before": {
+    "diff_sha256": "9664cb3a88a245d759b7012bb157e4f1434fa4bed09b2aee5e4178bf1211703a",
+    "dirty": true,
+    "revision": "8945161a73417ccb4348c12a5878fe71cf927444"
+  },
+  "source_unchanged": true,
+  "started_at": 1794338287.5766926,
+  "timed_out": false
+}

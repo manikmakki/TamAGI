@@ -98,7 +98,7 @@ def configure_app(app):
         return {"resident_id": agent.runtime.actor_id, "ready": True,
                 "pending": pending, "recovery_pending": pending or retained_work,
                 "activity": agent.runtime.activity_state(),
-                "due": agent.runtime.due(ignore_decompression=True),
+                "due": agent.runtime.due(ignore_decompression=True, ignore_rest=True),
                 "world_due": agent.runtime.due() and not getattr(agent.identity, "needs_onboarding", False)}
 
     @app.post("/_native/wake")

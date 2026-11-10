@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "returncode": 0,
+  "guarded_python_processes": 3,
+  "denied_network_operations": 0,
+  "report": "/opt/tamagi-world-rest-checkpoint-20261110T192623Z/offline/report.json"
+}

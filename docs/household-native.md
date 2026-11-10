@@ -1,9 +1,21 @@
 # Native household development candidate
 
-ADR-0019 now has an opt-in native application path on `codex/adr-0019-household`.
+ADR-0019 now has an opt-in native application path, merged in PR #8.
 The ordinary TamAGI frontend talks to a household gateway and actual resident
 application processes. This replaces the earlier scripted preview for interactive
 development testing. It is not a qualified production migration or restore path.
+
+The operator's [2026-11-09 Ember activation](qualification/0019-ember-household-activation-2026-11-09.md)
+records a separately prepared manual one-resident adoption, pinned application and
+environment, offline worker checks and local cold restoration. That specific
+same-host procedure does not turn this development launcher into a production
+upgrade or household recovery controller.
+
+The [2026-11-10 rest-policy activation](qualification/0019-rest-chat-eligibility-2026-11-10.md)
+records source qualification, a complete stopped checkpoint, offline preservation
+and authenticated live checks for the current Ember and Echo household. Ordinary
+rest now governs World Thread opportunities while chat and invitation decisions
+remain eligible, subject to the limits below.
 
 Each resident has a freshly provisioned private home, identity, runtime database,
 workspace, companions, memory and avatar configuration. The gateway owns shared
@@ -12,6 +24,23 @@ notebook, and inference accounting. Workers reach it over authenticated Unix
 sockets. Provider credentials stay in the coordinator configuration; workers use
 the central model transport through the ordinary Agent, tools and receipt loop.
 Default standalone startup remains unchanged.
+
+To add a newly created resident to an existing household, use **New TamAGI** in
+the character chooser or Settings. The [creation workflow](creating-a-tamagi.md)
+collects the TamAGI's name, avatar, personality and optional starting world while
+reusing the household operator's name. It provisions an independent private home
+under the same release and resumes workers through an idle maintenance boundary.
+It does not restore an earlier identity or promote an existing companion.
+
+Existing residents can retain private legacy SQL conversations for exact
+`expand_conversation_memory` lookups after migration. The dedicated lookup uses
+canonical household history first and falls back only when that thread is
+missing, to an exact conversation owned by the primary resident. It does not
+change general conversation lookup, use unrelated cached history, or import
+legacy threads into Chat/Archive. Files and memory summaries remain useful
+everyday context; exact retained transcripts supply surrounding evidence when
+needed. See the [existing-user action plan](legacy-conversation-access.md) for
+capture, validation and recovery limits.
 
 ## Run an isolated candidate
 
@@ -66,9 +95,12 @@ a production upgrade controller.
   Participant colors are saved in Settings.
 - Group input creates optional addressed reply opportunities. Participants share
   the initiating exchange's budget. Peer replies create no synthetic operator
-  input or first-response priority. A chosen wait or rest defers peer activation;
-  eligible deferred replies can resume on the existing allowance. Shared notebook
-  and visible world events can satisfy the resident's chosen wake condition.
+  input or first-response priority. Ordinary chosen rest pauses World Thread
+  opportunities while joined-thread peer replies remain eligible. An explicit
+  waiting state can still defer peer work; eligible deferred replies resume on
+  the existing allowance. Shared notebook and visible world events can satisfy
+  the specified wake condition. Normal chat completion preserves an existing
+  World Thread rest deadline unless the resident changes it through `end_turn`.
 - Full residents use one messaging tool, `contact`, with explicit actions `create`,
   `send`, `invite` and `respond`. `household_contacts` is read-only discovery.
   `send` and `invite` default to the current conversation. Invitations retain that
@@ -81,9 +113,16 @@ a production upgrade controller.
 - The decision activation has at most four model calls and only offers `contact`,
   `household_contacts` and `end_turn`; its private reasoning is not posted into the
   thread. Decision and reply share the original allowance and get no synthetic
-  human input or first-response priority. Chosen rest/waits defer delivery.
+  human input or first-response priority. Ordinary chosen rest does not defer
+  an invitation decision; explicit waits and other admission limits still apply.
   Restart or Stop does not blindly replay a prior invitation decision. The
   canonical invitation can remain pending for a later deliberate response.
+
+Ordinary rest does not require a chat-specific availability setting. Direct user
+chat remains available, and peer replies/decisions remain optional. The app adds
+no Do Not Disturb mode or automatic "I'm resting" reply. See the
+[World Thread guide](household-world-thread.md) for the distinction between rest,
+explicit waits and scheduled opportunities.
 
 For an interactive invitation check, ask Willow in the desired private thread:
 "Please invite Cedar into this conversation, keeping this same thread."
@@ -147,8 +186,8 @@ This starts disposable native workers on port 18846 and Chromium debugging on
 18847, uses the existing cached Chromium executable, retains evidence under the
 output directory and removes its temporary password. It uses no real provider.
 
-The development candidate still needs production resident adoption/history
-migration, coordinated household backup/restore and release activation,
+The development candidate still needs reusable production resident adoption,
+coordinated household backup/restore and release activation,
 companion group-activation wiring, PWA push delivery and
 device qualification. Notification intent and unread state already persist;
 device push is not yet dispatched. Browser deployment and shared-state recovery
@@ -162,6 +201,8 @@ private imports now retain real bytes; they do not replace coordinated recovery.
 
 Do not replace production or enroll Ember on the strength of these development
 checks alone. See ADR-0019 for the full acceptance requirements.
+The [production enablement plan](production-multi-resident-enablement.md) maps
+Ember preservation, remaining adoption work, manual recovery and staged cutover.
 
 ## Menu scope in a native household
 

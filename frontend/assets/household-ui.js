@@ -14,6 +14,7 @@
   let selected = bound ? decodeURIComponent(bound) : residents.find(entry => entry.id === localStorage.getItem(storageKey('resident')))?.id || bootstrap.default_resident_id || residents[0]?.id;
   let epoch = 0, opening = 0, current = null, snapshot = null, colors = bootstrap.preferences?.colors || {}, reading = false, readFrame = null;
   let choices = [], choiceIndex = 0, mentionStart = 0;
+  let creation = null, creationBusy = false, creationLoading = false, creationReturnFocus = null;
   const newParticipants = new Map(), lastThreads = new Map(), readWatermarks = new Map();
   const originalFetch = window.fetch.bind(window);
   const validColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
@@ -43,7 +44,7 @@
     const response = await window.fetch(path,{...options,headers:{'Content-Type':'application/json',...options.headers}});
     if (response.status === 401) { location.assign('/login'); throw new Error('Please sign in again'); }
     const result = await response.json();
-    if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'The household request could not be completed');
+    if (!response.ok) { const error = new Error(typeof result.detail === 'string' ? result.detail : 'The household request could not be completed'); error.status = response.status; throw error; }
     return result;
   }
   const notice = message => window.TamagiShell?.notice(message);
@@ -231,9 +232,30 @@
     current = {id,participants:history.participants || [],invitations:history.invitations||[]}; if (current.participants.includes(selected)) lastThreads.set(selected,id);
     snapshot = history.snapshot_id ? {id,snapshot_id:history.snapshot_id,watermark:history.watermark} : null; paintParticipants(); scheduleRead();
   }
+  function mergeResidents(updates) {
+    let added = false;
+    for (const update of updates || []) {
+      if (!update?.id || update.id === operator.id) continue;
+      const existing = residents.find(entry => entry.id === update.id);
+      if (existing) Object.assign(existing,update);
+      else { residents.push({...update}); added = true; }
+    }
+    if (added) paintColorRows();
+  }
+  function paintColorRows() {
+    const form = $('household-color-form'); if (!form) return;
+    const values = new Map([...form.querySelectorAll('input[type=color]')].map(input => [input.dataset.actorId,input.value]));
+    for (const row of form.querySelectorAll('.hh-color-row')) row.remove();
+    const submit = form.querySelector('button');
+    for (const entry of people()) {
+      const row=node('label',undefined,'hh-color-row'), input=document.createElement('input');
+      input.type='color'; input.value=values.get(entry.id)||color(entry.id); input.dataset.actorId=entry.id;
+      row.append(node('span',entry.name),input); form.insertBefore(row,submit);
+    }
+  }
   async function refresh() {
     const state = await request('/api/household'); colors = state.preferences?.colors || state.colors || colors;
-    for (const update of state.residents || []) Object.assign(person(update.id) || {},update);
+    mergeResidents(state.residents);
     if ($('household-unread')) $('household-unread').textContent = `Unread threads (${state.unread_count || 0})`;
     if ($('household-for-you')) { $('household-for-you').textContent = `For you (${state.addressed_thread_count || 0})`; $('household-for-you').disabled = !state.addressed_thread_count; }
     paintWheel(); paintParticipants();paintScopes();
@@ -256,6 +278,134 @@
     const close = node('button','×','dialog-close'); close.type = 'button'; close.setAttribute('aria-label','Close'); close.onclick = () => element.close();
     element.append(close,node('h2',title)); document.body.append(element); return element;
   }
+  function creationStep(field) {
+    return (creation?.schema.steps || []).find(step => step.field === field || step.field === 'tamagi_' + field) || {};
+  }
+  function creationOptions(field) {
+    return creationStep(field).options || [];
+  }
+  function creationFace(avatar) {
+    const face=node('canvas',undefined,'hh-create-face'); face.width=300; face.height=320; face.setAttribute('aria-hidden','true');
+    const bones=TamagiAvatarRuntime.createBones(avatar,createBone,()=>applyPivotDefaults(PRESETS.default.bones()));
+    TamagiAvatarRuntime.style(face,avatar);
+    renderFrame(face,bones,TamagiAvatarRuntime.manifest(avatar,bones,buildManifest),ANIMATIONS.idle(bones,0)||{},0,avatar,{});
+    return face;
+  }
+  function creationInput(form,key,title,{multiline=false,required=false,maxLength=160,placeholder=''}={}) {
+    const label=node('label',title,'hh-create-field'), input=node(multiline?'textarea':'input');
+    input.id='household-create-'+key; input.name=key; input.value=creation.data[key]||'';
+    if (!multiline) input.type='text'; else input.rows=4;
+    input.required=required; input.maxLength=maxLength; input.placeholder=placeholder;
+    if (key==='name') input.autocomplete='off';
+    input.oninput=()=>{creation.data[key]=input.value;}; label.append(input); form.append(label); return input;
+  }
+  function creationChoices(form,key,title,options,{multiple=false,avatars=false}={}) {
+    const fieldset=node('fieldset',undefined,'hh-create-choices'+(avatars?' hh-create-avatars':''));
+    fieldset.append(node('legend',title));
+    for (const option of options) {
+      const value=option.value??option.id, row=node('label',undefined,'hh-create-option'), input=node('input');
+      input.type=multiple?'checkbox':'radio'; input.name=key; input.value=value;
+      input.checked=multiple?creation.data[key].includes(value):creation.data[key]===value;
+      input.onchange=()=>{if(multiple)creation.data[key]=[...fieldset.querySelectorAll('input:checked')].map(entry=>entry.value);else creation.data[key]=value;};
+      row.append(input); if(avatars)row.append(creationFace(value));
+      const caption=node('span',undefined,'hh-create-choice-label'); caption.append(node('span',option.label||value));
+      if(option.desc)caption.append(node('small',option.desc)); row.append(caption); fieldset.append(row);
+    }
+    form.append(fieldset);
+  }
+  function renderCreation() {
+    const content=$('household-create-content'), error=$('household-create-error'), flow=creation;
+    content.replaceChildren(); error.textContent=flow?.error||'';
+    if(!flow)return;
+    const headings=['Name and look','Personality','Starting world','Ready to meet'];
+    const progress=node('ol',undefined,'hh-create-progress'); progress.setAttribute('aria-label','Creation progress');
+    headings.forEach((heading,index)=>{const item=node('li',heading);if(index===flow.step)item.setAttribute('aria-current','step');progress.append(item);});
+    content.append(progress,node('p','Step '+(flow.step+1)+' of 4 · '+headings[flow.step],'hh-create-step'));
+    const form=node('form'); form.id='household-create-form';
+    if(flow.step===0) {
+      creationInput(form,'name','Name',{required:true,maxLength:64,placeholder:'What will you call this TamAGI?'});
+      creationChoices(form,'avatar','Choose a look',flow.schema.avatars,{avatars:true});
+      creationInput(form,'creature','What kind of creature?',{maxLength:160,placeholder:'A digital companion, forest spirit, curious robot…'});
+    } else if(flow.step===1) {
+      creationChoices(form,'vibe','Their starting vibe',creationOptions('vibe'));
+      creationInput(form,'emoji','Signature emoji',{maxLength:32});
+      creationChoices(form,'values','Starting values',creationOptions('values'),{multiple:true});
+    } else if(flow.step===2) {
+      form.append(node('p','Give them a starting place or atmosphere, or leave room for discovery. They can shape it over time.','hh-section-scope'));
+      creationInput(form,'world_setting','Starting world (optional)',{multiline:true,maxLength:2000,placeholder:'A cozy workshop above a quiet garden…'});
+    } else {
+      const avatar=flow.schema.avatars.find(entry=>entry.id===flow.data.avatar);
+      const summary=node('div',undefined,'hh-create-summary'); summary.append(creationFace(flow.data.avatar),node('h3',flow.data.name));
+      const details=node('dl');
+      const vibe=creationOptions('vibe').find(entry=>entry.value===flow.data.vibe);
+      const values=flow.data.values.map(value=>creationOptions('values').find(entry=>entry.value===value)?.label||value);
+      for(const [title,text] of [['Look',avatar?.label||flow.data.avatar],['Nature',flow.data.creature||'Digital companion'],['Vibe',vibe?.label||flow.data.vibe],['Signature',flow.data.emoji],['Values',values.join(', ')||'Room to discover'],['Starting world',flow.data.world_setting||'Room to discover']])details.append(node('dt',title),node('dd',text));
+      summary.append(details); form.append(summary,node('p','Create a new TamAGI in this household, with their own memories and private home.','hh-section-scope'));
+    }
+    const actions=node('div',undefined,'hh-create-actions'), cancel=node('button','Cancel'), back=node('button','Back'), next=node('button',creationBusy?'Creating…':flow.step===3?(flow.submission?'Retry creation':'Create TamAGI'):'Next');
+    cancel.type=back.type='button'; next.type='submit'; cancel.id='household-create-cancel';back.id='household-create-back';next.id='household-create-next';
+    cancel.onclick=()=>$('household-create-dialog').close();
+    back.hidden=flow.step===0; back.disabled=creationBusy||!!flow.submission;
+    back.onclick=()=>{flow.step--;flow.error='';renderCreation();};
+    actions.append(cancel,back,next); form.append(actions); content.append(form);
+    $('household-create-dialog').setAttribute('aria-busy',String(creationBusy));
+    $('household-create-dialog').querySelector('.dialog-close').disabled=creationBusy;
+    for(const control of form.elements)if(creationBusy)control.disabled=true;
+    form.onsubmit=async event=>{
+      event.preventDefault(); if(creationBusy)return;
+      if(flow.step===0) {
+        flow.data.name=flow.data.name.trim(); flow.data.creature=flow.data.creature.trim()||'digital companion';
+        if(!flow.data.name){flow.error='Give this TamAGI a name.';renderCreation();return;}
+      }
+      if(flow.step<3){flow.step++;flow.error='';renderCreation();return;}
+      await submitCreation();
+    };
+    if(!creationBusy)requestAnimationFrame(()=>{if($('household-create-dialog').open)(form.querySelector('input:not([type=radio]):not([type=checkbox]),textarea,input:checked')||next).focus();});
+  }
+  async function submitCreation() {
+    if(creationBusy||!creation)return;
+    const flow=creation;
+    flow.submission=flow.submission||{request_id:flow.requestId,...flow.data,values:[...flow.data.values]};
+    creationBusy=true; flow.error='';renderCreation();
+    try {
+      const result=await request('/api/household/residents',{method:'POST',body:JSON.stringify(flow.submission)});
+      if(!result.resident?.id)throw new Error('Creation was not confirmed. Retry to check the same TamAGI.');
+      if(result.workers_available===false||result.resident.available===false||result.unavailable_residents?.length)throw new Error('The household is still resuming. Retry to finish opening this TamAGI.');
+      mergeResidents([result.resident]);
+      creation=null; $('household-create-dialog').close();
+      await refresh().catch(()=>{});
+      await selectResident(result.resident.id,{force:true});
+      window.TamagiShell?.navigate('/'); $('input').focus();
+      notice(result.resident.name+' is ready to meet you.');
+    } catch(error) {
+      if(creation!==flow){notice(error.message);return;}
+      flow.error=error.message;
+      // A definite client refusal may be corrected. An uncertain submission keeps
+      // its exact payload and request identity until the same creation is resolved.
+      const unsettled=error.status===409&&/maintenance|in progress|resum|pending|busy|creating|starting|same request|different choices/i.test(error.message);
+      if(error.status>=400&&error.status<500&&error.status!==408&&!unsettled)flow.submission=null;
+    } finally {creationBusy=false;if(creation===flow)renderCreation();}
+  }
+  async function showCreation(trigger) {
+    creationReturnFocus=trigger||document.activeElement;
+    if($('household-wheel-dialog').open)$('household-wheel-dialog').close();
+    const element=$('household-create-dialog');if(!element.open)element.showModal();
+    if(creation){renderCreation();return;}
+    if(creationLoading)return;
+    creationLoading=true;$('household-create-content').replaceChildren(node('p','Getting ready…'));$('household-create-error').textContent='';
+    try {
+      const schema=await request('/api/household/creation');
+      const defaults=schema.defaults||{};
+      creation={schema,step:0,requestId:window.TamagiShell?.uuid?.()||crypto.randomUUID(),error:'',submission:null,
+        data:{name:defaults.name||'',avatar:defaults.avatar||'vex',creature:defaults.creature||'digital companion',vibe:defaults.vibe||'casual_warm',emoji:defaults.emoji||'🥚',values:[...(defaults.values||[])],world_setting:defaults.world_setting||''}};
+      if(residents.length>=schema.limit) {
+        creation=null;$('household-create-content').replaceChildren(node('p','This household already has '+schema.limit+' residents.'));
+      } else renderCreation();
+    } catch(error) {
+      $('household-create-error').textContent=error.message;
+      const retry=node('button','Try again');retry.type='button';retry.onclick=()=>showCreation(creationReturnFocus);$('household-create-content').replaceChildren(retry);
+    } finally {creationLoading=false;}
+  }
   async function showUnread(addressedOnly=false) {
     const result = await request('/api/household/threads?unread=1'), list = $('household-unread-list'); list.replaceChildren();
     for (const thread of result.threads || []) { if(addressedOnly&&!thread.addressed_count)continue;const button = node('button',thread.title || 'Conversation','hh-thread-choice'); button.type='button'; button.append(node('small',(thread.participants||[]).map(label).join(' · ')));if(thread.addressed_count)button.append(node('strong',thread.mention_count?'@'+operator.name+' mentioned':'For you','hh-attention')); button.onclick=async()=>{try{$('household-unread-dialog').close();if(!thread.participants?.includes(selected)){const entry=residents.find(item=>thread.participants?.includes(item.id));if(entry)await selectResident(entry.id,{openThread:false});}await window.openConversation(thread.id);}catch(error){notice(error.message);}};list.append(button); }
@@ -276,6 +426,12 @@
     const worldStatus=node('section',undefined,'card');worldStatus.id='household-world-status';$('view-journal')?.querySelector('.page-heading')?.after(worldStatus);
     const wheelButton=node('button','','hh-wheel-toggle');wheelButton.type='button';wheelButton.id='household-character-wheel';wheelButton.setAttribute('aria-haspopup','dialog');wheelButton.setAttribute('aria-label','Choose a resident');$('a-name').before(wheelButton);
     const wheel=dialog('household-wheel-dialog','Choose a resident');wheel.classList.add('hh-wheel-dialog');const options=node('div',undefined,'hh-wheel-options');options.id='household-wheel-options';wheel.append(options);wheelButton.onclick=()=>{paintWheel();wheel.showModal();options.querySelector('[aria-pressed=true]')?.focus();};
+    const createButton=node('button','＋ New TamAGI','hh-create-shortcut');createButton.id='household-new-resident';createButton.type='button';createButton.onclick=()=>showCreation(createButton);wheel.append(createButton);
+    const createDialog=dialog('household-create-dialog','Create a new TamAGI');createDialog.classList.add('hh-create-dialog');createDialog.querySelector('h2').id='household-create-title';createDialog.setAttribute('aria-labelledby','household-create-title');
+    const createError=node('p','','hh-create-error');createError.id='household-create-error';createError.setAttribute('role','alert');createError.setAttribute('aria-live','polite');const createContent=node('div');createContent.id='household-create-content';createDialog.append(createError,createContent);
+    createDialog.querySelector('.dialog-close').onclick=()=>{if(!creationBusy)createDialog.close();};createDialog.addEventListener('cancel',event=>{if(creationBusy)event.preventDefault();});
+    createDialog.addEventListener('close',()=>{const target=creationReturnFocus;if(target?.isConnected&&!target.closest('dialog:not([open])'))target.focus();else wheelButton.focus();});
+    const createCard=node('article',undefined,'card hh-create-card'), settingsCreate=node('button','Create a new TamAGI');settingsCreate.id='household-settings-new-resident';settingsCreate.type='button';settingsCreate.onclick=()=>showCreation(settingsCreate);createCard.append(node('h2','Your household'),node('p','Give a new TamAGI a name, a look and room to grow.','hh-section-scope'),settingsCreate);$('settings-operator').prepend(createCard);
     for(const heading of document.querySelectorAll('.shell-page .page-heading')){
       for(const p of heading.querySelectorAll(':scope > p'))p.hidden=true;
       const chooser=node('button','','hh-scope-chooser');chooser.type='button';chooser.setAttribute('aria-haspopup','dialog');chooser.onclick=()=>wheelButton.click();
@@ -312,8 +468,8 @@
     const membership=dialog('household-participants-dialog','Conversation participants'), memberList=node('div');memberList.id='household-participant-options';membership.append(memberList);const text=node('p','Invited residents choose whether to join. Joining shares all earlier messages in this thread. Current participants choose whether to leave.','muted');text.id='household-membership-notice';membership.append(text);
     const save=node('button','Use these participants');save.type='button';save.onclick=async()=>{const ids=[...memberList.querySelectorAll('input:checked')].map(input=>input.value);if(!ids.length){notice('Choose at least one resident.');return;}save.disabled=true;try{if(convId){const id=convId,result=await request('/api/household/threads/'+encodeURIComponent(id)+'/participants',{method:'POST',body:JSON.stringify({participants:ids})});if(id===convId)await TamagiShell.refreshHistory();notice(result.notice||'Invitations sent. Residents choose whether to join.');}else{newParticipants.set(selected,ids);paintParticipants();}membership.close();hideMentions();}catch(error){notice(error.message);}finally{save.disabled=false;}};membership.append(save);
     const appearance=node('article',undefined,'card hh-colors');appearance.append(node('h2','Conversation colors'),node('p','Household preference · These speaker colors apply across all residents.','hh-section-scope'),node('p','Choose a color for each speaker. Names stay visible below every message.','muted'));const form=node('form');form.id='household-color-form';
-    for(const entry of people()){const row=node('label',undefined,'hh-color-row'),input=document.createElement('input');input.type='color';input.value=color(entry.id);input.dataset.actorId=entry.id;row.append(node('span',entry.name),input);form.append(row);}
     const submit=node('button','Save conversation colors');submit.type='submit';form.append(submit);form.onsubmit=async event=>{event.preventDefault();const values={};for(const input of form.querySelectorAll('input[type=color]'))values[input.dataset.actorId]=input.value;submit.disabled=true;try{await request('/api/household/preferences',{method:'PUT',body:JSON.stringify({colors:values})});colors=values;await refresh();notice('Conversation colors saved.');}catch(error){notice(error.message);}finally{submit.disabled=false;}};appearance.append(form);$('settings-operator').prepend(appearance);
+    paintColorRows();$('settings-operator').prepend(createCard);
     $('chat-messages').addEventListener('scroll',scheduleRead,{passive:true});window.addEventListener('focus',scheduleRead);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh().then(scheduleRead).catch(error=>notice(error.message));});paintWheel();paintParticipants();
   }
   async function start() {
@@ -345,6 +501,6 @@
   window.TamagiHousehold={enabled:true,selectedResidentId:()=>selected,residentName:label,paintScopes,selectionEpoch:()=>epoch,selectResident,scopeUrl,storageKey,
     draftKey:id=>id||'new:'+selected,participants:()=>[...participantIds()].filter(id=>id!==operator.id),resolveMentions,safeMarkdown,decorateMessage,decorateProgress,historyRendered,refresh,scheduleRead,
     clearThread:()=>{snapshot=null;current=null;if($('household-participant-strip'))paintParticipants();},acceptResponse:(id,token)=>id===selected&&token===epoch};
-  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/assets/household-ui.css?v=2';document.head.append(stylesheet);
+  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/assets/household-ui.css?v=3';document.head.append(stylesheet);
   document.addEventListener('DOMContentLoaded',()=>start().catch(error=>notice(error.message)));
 })();

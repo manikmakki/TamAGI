@@ -49,7 +49,7 @@ def main():
                 if result.returncode == 0:
                     browser_report = json.loads(result.stdout.strip().splitlines()[-1])
                     (output / "browser.json").write_text(json.dumps(browser_report, indent=2) + "\n")
-                    for name in ("native-desktop.png", "native-mobile-wheel.png", "native-reasoning.png", "native-invitation.png", "native-world.png", "native-operator-ping.png", "native-shared-library.png", "native-inventory-scope.png", "native-settings-scope.png", "native-recovery-preview.png", "native-recovery-complete.png"):
+                    for name in ("native-desktop.png", "native-mobile-wheel.png", "native-reasoning.png", "native-invitation.png", "native-world.png", "native-operator-ping.png", "native-shared-library.png", "native-inventory-scope.png", "native-settings-scope.png", "native-recovery-preview.png", "native-recovery-complete.png", "native-create-mobile.png", "native-create-review.png"):
                         shutil.copyfile(Path(browser_report["artifacts"]) / name, output / name)
             finally:
                 fixture.terminate()

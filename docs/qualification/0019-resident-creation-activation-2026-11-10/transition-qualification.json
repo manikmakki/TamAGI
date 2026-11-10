@@ -1,0 +1,46 @@
+{
+  "passed": true,
+  "source_access": "read-only metadata and SQLite backup API",
+  "source_release": "sha256:758fc06923a751e755382cf3f93840c2d5fc6ec58595408bebb45d0f88a38d58",
+  "target_release": "sha256:3adf86aa2bb240f3a14ba0ce41c1e0a39a9018a6b43a73389388566742615b2b",
+  "worker_started": false,
+  "model_requests": 0,
+  "held_coordinator_rejected": true,
+  "scenarios": [
+    {
+      "interruption": null,
+      "passed": true,
+      "resident_count": 1,
+      "private_files_unchanged": 3,
+      "audit_event_count": 1
+    },
+    {
+      "interruption": "journal",
+      "passed": true,
+      "resident_count": 1,
+      "private_files_unchanged": 3,
+      "audit_event_count": 1
+    },
+    {
+      "interruption": "database",
+      "passed": true,
+      "resident_count": 1,
+      "private_files_unchanged": 3,
+      "audit_event_count": 1
+    },
+    {
+      "interruption": "instances",
+      "passed": true,
+      "resident_count": 1,
+      "private_files_unchanged": 3,
+      "audit_event_count": 1
+    },
+    {
+      "interruption": "manifest",
+      "passed": true,
+      "resident_count": 1,
+      "private_files_unchanged": 3,
+      "audit_event_count": 1
+    }
+  ]
+}

@@ -17,6 +17,14 @@ are ineligible, or the previous autonomous root is still running, that slot is
 skipped without model calls. Restart retains rotation, closes uncertain work and
 does not replay accumulated missed slots.
 
+Ordinary chosen rest applies to these autonomous opportunities. Direct user chat,
+joined-conversation peer replies and invitation decisions remain eligible while
+the resident rests. Explicit waiting states, including event/dependency waits,
+and existing backoff, busy-worker and resource limits still apply. Replies are
+optional, and an invitation's transcript remains unavailable until the resident
+explicitly accepts it. Normal chat completion retains the World Thread rest
+deadline unless the resident deliberately changes it through `end_turn`.
+
 The chosen resident runs the existing autonomous World Thread tool loop, with
 their own identity, recent world turns, receipts, pursuits and personal tools.
 Silence, chosen rest and choosing an activity remain valid. Private world prose
@@ -30,7 +38,9 @@ tick's initiating resident, including invitation decisions and peer replies.
 Recipients remain full residents with their own identity/tools, not bounded
 helpers. Their own next scheduled opportunity is unaffected by receiving contact.
 Peer conversation does not start operator decompression. Chosen rest or a real
-operator conversation may still make them ineligible. An initiator's later rest
+operator conversation may still make a resident ineligible for their next World
+Thread opportunity. Ordinary rest does not block a joined peer reply or invitation
+decision. An initiator's later rest
 does not confiscate a willing recipient's already sponsored reply. The usual
 own-account behavior remains for ordinary operator-origin room conversations.
 Provider-time fairness and scheduled opportunity rotation are separate controls.
