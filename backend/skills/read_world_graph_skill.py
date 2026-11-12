@@ -88,6 +88,14 @@ class ReadWorldGraphSkill(Skill):
                 output="World graph is not initialized.",
             )
 
+        from backend.core.runtime import get_runtime
+        runtime = get_runtime()
+        household = runtime is not None and runtime.household is not None
+        if household:
+            # Reads must include canonical places created by other residents
+            # since this worker last saved its personal graph projection.
+            runtime.project_graph(sm)
+
         query    = str(kwargs.get("query", "")).strip()
         ntype    = str(kwargs.get("node_type", "")).strip().lower()
         node_id  = str(kwargs.get("node_id", "")).strip()
@@ -141,7 +149,8 @@ class ReadWorldGraphSkill(Skill):
             skills = [s.to_dict() for s in sm.get_skills()[:3]]
             mysteries = [m.to_dict() for m in sm.get_mysteries()[:2]]
             lore = [l.to_dict() for l in sm.get_lore()[:2]]
-            nodes = quests + skills + mysteries + lore
+            locations = sm.get_all_nodes("location")[-3:] if household else []
+            nodes = (locations + quests + skills + mysteries + lore)[:limit]
 
         if not nodes:
             type_note  = f" of type '{ntype}'" if ntype else ""
@@ -153,6 +162,13 @@ class ReadWorldGraphSkill(Skill):
             )
 
         lines = [f"World graph: {len(nodes)} node(s)\n"]
+        details = {"nodes": nodes, "count": len(nodes)}
+        if household:
+            total = len(sm.get_all_nodes())
+            details.update(total_count=total, partial=True, resident_id=runtime.actor_id)
+            lines = [f"World graph query: {len(nodes)} returned; {total} nodes in this resident's current projection. "
+                     "This is a filtered or limited view, not an inventory; an omitted node does not establish absence. "
+                     "Use node_type=location, a name query, or a node_id to check saved places.\n"]
         for node in nodes:
             if not isinstance(node, dict):
                 try:
@@ -164,7 +180,7 @@ class ReadWorldGraphSkill(Skill):
         return SkillResult(
             success=True,
             output="\n".join(lines),
-            data={"nodes": nodes, "count": len(nodes)},
+            data=details,
         )
 
     def _traverse(self, sm, root_id: str, depth: int) -> SkillResult:

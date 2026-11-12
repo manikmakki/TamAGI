@@ -1,8 +1,12 @@
 # Customizing Your TamAGI's Appearance
 
-TamAGI's avatar uses a **skeleton rig** — a hierarchy of named bones that drive the position, rotation, and scale of each body-part sprite. By default the renderer draws procedural placeholder art, but you can replace any part with your own PNG files.
+Built-in names on this page label artwork presets only. They do not identify
+canonical residents or operators, and selecting a preset does not name, copy or
+recover a resident.
 
-You don't need to replace every part at once. Missing PNGs fall back silently to the placeholder, so you can swap in artwork one piece at a time.
+TamAGI's avatar uses a **skeleton rig** — a hierarchy of named bones that drive the position, rotation, and scale of each body-part sprite. Choose **Vex**, the blue-and-gold cyber fennec; **Echo**, the original glowing pixel character; or **Ember**, the hooded humanoid with flowing amber energy, in the rig editor. Vex is the default for a new configuration. All three characters are drawn procedurally and support the existing animations and custom PNG uploads. Ember adds a gentle hover, curious gestures, and traveling energy pulses.
+
+You don't need to replace every part at once. Missing PNGs use the selected character's artwork, so you can swap in artwork one piece at a time. Changing character keeps your uploaded overrides; removing an override restores that character's built-in part. Existing saved rigs continue to use their original appearance under **Custom rig** until you choose another character.
 
 ---
 
@@ -12,19 +16,19 @@ You don't need to replace every part at once. Missing PNGs fall back silently to
 /rig-editor               ← built-in rig editor (open in your browser)
         │  Save to TamAGI button
         ▼
-PUT /api/sprites/config   ← saves skeleton + sprite manifest to data/sprite_config.json
+PUT /api/sprites/config   ← saves character + skeleton + sprite manifest to data/sprite_config.json
 POST /api/sprites/upload/… ← saves your PNGs to data/sprites/ → served at /sprites/…
         │
         ▼
 TamAGI frontend           ← loads config on startup, preloads PNGs,
-                             draws them in place of procedural placeholders
+                             draws them in place of built-in character parts
 ```
 
 ---
 
 ## Step 1 — Open the Rig Editor
 
-Navigate to **`http://localhost:7741/rig-editor`** while TamAGI is running. You can also reach it from the hamburger menu inside the main TamAGI UI.
+Open **Settings → Appearance** in the app drawer while TamAGI is running. The earlier `http://localhost:7741/rig-editor` link remains a compatible entry point; use your installation's actual host and port.
 
 The editor shows a live animated canvas preview on the left and controls on the right.
 
@@ -32,7 +36,8 @@ The editor shows a live animated canvas preview on the left and controls on the 
 
 | Control | What it does |
 |---------|-------------|
-| **Preset buttons** (Default / Chibi / Tall / Stocky) | Switch between body proportion presets |
+| **Character buttons** (Vex / Echo / Ember / Custom rig) | Choose built-in artwork or retain a custom rig; then save to apply it to the main avatar |
+| **Proportion buttons** (Default / Chibi / Tall / Stocky) | Switch body proportions in Custom rig mode |
 | **Animation buttons** (idle / happy / sad / …) | Preview each animation state |
 | **Bone Properties panel** | Click a bone name to expand sliders; adjust position, scale, and pivot |
 | **Bones / Labels checkboxes** | Toggle the debug skeleton overlay |
@@ -86,13 +91,13 @@ Each body part has one or more **variants** — the specific state shown during 
 | `leg_right` | `default` | |
 | `foot_left` | `default` | |
 | `foot_right` | `default` | |
-| `accessory` | `default` | Hat, hair, or any head accessory |
+| `accessory` | `default` | Vex's tail; Ember's neck energy; empty for Echo; head accessory in Custom rig mode |
 
-You don't have to provide all variants. If `eye_left:happy` is missing, it falls back to the procedural version automatically.
+You don't have to provide all variants. If `eye_left:happy` is missing, it uses the selected character's happy eye automatically. Vex's ears and receiver are part of its head. Echo's original tiny hands are part of its arm artwork; its separate hand slots stay available for uploads. Ember's hood is part of the head, while its eyes and mouth remain independently animated.
 
 ### Layer order
 
-Each part in the **Custom Sprites** panel has a **Layer** number (0–99). Higher numbers render on top. Use this to control depth — for example, set `accessory` to a high layer so a hat renders above the head and eyes.
+Each part in the **Custom Sprites** panel has a **Layer** number (−99–99). Higher numbers render on top. Vex's tail uses a low layer behind the body. Set `accessory` to a high layer for an accessory that should render above the head and eyes, and adjust its position as needed.
 
 ### Uploading PNGs
 
@@ -104,28 +109,28 @@ Click **Upload** next to any variant slot to pick a file, or:
 
 No browser permission prompt is required for the paste method.
 
-You can also upload via the API directly:
+You can also upload through the authenticated API. These examples assume port 7741 and a cookie jar containing a current operator session from `/api/auth/login`. Set `TAMAGI_COOKIE_JAR` to that file; the browser UI handles its session automatically.
 
 ```bash
 # Upload a single PNG
-curl -X POST http://localhost:7741/api/sprites/upload/head/default \
+curl -b "$TAMAGI_COOKIE_JAR" -X POST http://localhost:7741/api/sprites/upload/head/default \
      -F "file=@my_head.png"
 
 # Upload all eye variants
-curl -X POST http://localhost:7741/api/sprites/upload/eye_left/open   -F "file=@eye_open.png"
-curl -X POST http://localhost:7741/api/sprites/upload/eye_left/closed -F "file=@eye_closed.png"
-curl -X POST http://localhost:7741/api/sprites/upload/eye_left/happy  -F "file=@eye_happy.png"
+curl -b "$TAMAGI_COOKIE_JAR" -X POST http://localhost:7741/api/sprites/upload/eye_left/open   -F "file=@eye_open.png"
+curl -b "$TAMAGI_COOKIE_JAR" -X POST http://localhost:7741/api/sprites/upload/eye_left/closed -F "file=@eye_closed.png"
+curl -b "$TAMAGI_COOKIE_JAR" -X POST http://localhost:7741/api/sprites/upload/eye_left/happy  -F "file=@eye_happy.png"
 ```
 
-To revert a part to the procedural placeholder:
+To revert a part to the selected character's built-in artwork:
 
 ```bash
-curl -X DELETE http://localhost:7741/api/sprites/upload/head/default
+curl -b "$TAMAGI_COOKIE_JAR" -X DELETE http://localhost:7741/api/sprites/upload/head/default
 ```
 
 ### Sprite dimensions
 
-The **Scale** slider in Bone Properties determines the rendered size of each slot. The table below shows the base bone-space sizes for the **Default** preset (before any Scale multiplier):
+The **Scale** slider in Bone Properties determines the rendered size of each slot. Vex, Echo, and Ember have their own slot sizes and proportions. The table below shows the base bone-space sizes for the **Default** proportion preset in **Custom rig** mode (before any Scale multiplier):
 
 | Part | Base Width | Base Height | At 2.5× render scale, Scale=1 |
 |------|-----------|------------|-------------------------------|
@@ -153,7 +158,7 @@ If your art looks offset, use the **Pivot X / Pivot Y** sliders in Bone Properti
 
 ### PNG requirements
 
-- **Format**: PNG with alpha transparency (RGBA). The canvas renders with `imageSmoothingEnabled = false`, so pixel art stays crisp.
+- **Format**: PNG; alpha transparency (RGBA) is useful for separate body parts. Pixelated characters use nearest-neighbor rendering; smooth characters can enable image smoothing, so not every avatar uses pixel-art rendering.
 - **Background**: Transparent background recommended; opaque backgrounds will cover whatever is drawn beneath that bone.
 - **Orientation**: Draw limbs pointing downward at rest. The rig rotates them automatically during animation.
 
@@ -161,7 +166,7 @@ If your art looks offset, use the **Pivot X / Pivot Y** sliders in Bone Properti
 
 ## Step 4 — Save and Reload
 
-Click **Save to TamAGI** in the editor. This writes to `data/sprite_config.json` and updates sprite files in `data/sprites/`. Then **reload the main TamAGI page** to see your changes take effect — no server restart needed.
+Click **Save to TamAGI** in the editor to save the character, rig, and sprite manifest in `data/sprite_config.json`. PNG uploads are saved separately when uploaded, under `data/sprites/`. In platform mode, these paths are relative to the active instance, not the repository. Then **reload the main TamAGI page** to see your changes take effect — no server restart needed.
 
 Changes to `data/sprite_config.json` and `data/sprites/*.png` take effect on the next page load.
 
@@ -174,6 +179,6 @@ Changes to `data/sprite_config.json` and `data/sprites/*.png` take effect on the
 | `GET` | `/api/sprites/config` | Fetch the current sprite config |
 | `PUT` | `/api/sprites/config` | Save a full config JSON |
 | `POST` | `/api/sprites/upload/{part}/{variant}` | Upload a PNG for one slot |
-| `DELETE` | `/api/sprites/upload/{part}/{variant}` | Remove a PNG, reverting that slot to placeholder |
+| `DELETE` | `/api/sprites/upload/{part}/{variant}` | Remove a PNG, reverting that slot to the selected character's built-in artwork |
 
 Sprites are served as static files at `/sprites/{part}_{variant}.png`.

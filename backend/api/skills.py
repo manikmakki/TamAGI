@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from backend.api.chat import get_agent
@@ -30,7 +30,7 @@ async def list_skills():
 async def execute_skill(request: SkillExecRequest):
     """Manually execute a skill (for testing/direct use)."""
     agent = get_agent()
-    result = await agent.skills.execute(name=request.name, **request.arguments)
+    result = await agent.skills.execute(request.name, **{k:v for k,v in request.arguments.items() if not k.startswith("_")})
     agent.personality.state.use_skill()
     agent.personality.save_state()
     return {
@@ -43,6 +43,9 @@ async def execute_skill(request: SkillExecRequest):
 async def reload_custom_skills():
     """Reload custom skills from disk."""
     agent = get_agent()
+    runtime=getattr(agent,'runtime',None)
+    if runtime:
+        runtime.adaptation.reconcile()
     count = agent.skills.discover_custom_skills()
     return {
         "discovered": count,

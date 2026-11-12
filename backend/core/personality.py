@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from math import isqrt
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
@@ -22,6 +23,7 @@ logger = logging.getLogger("tamagi.personality")
 
 class Mood(str, Enum):
     """Used for pose selection only — not shown to user as mood label."""
+
     HAPPY = "happy"
     CONTENT = "content"
     NEUTRAL = "neutral"
@@ -45,31 +47,46 @@ XP_GAINS = {
 # ── Pose system ───────────────────────────────────────────────
 
 POSES: dict[str, dict[str, str]] = {
-    "idle":      {"face": "neutral",  "arms": "neutral", "torso": "normal", "legs": "standing"},
-    "happy":     {"face": "happy",    "arms": "neutral", "torso": "glow",   "legs": "standing"},
-    "excited":   {"face": "excited",  "arms": "raised",  "torso": "glow",   "legs": "hop"},
-    "thinking":  {"face": "thinking", "arms": "wave_l",  "torso": "pulse",  "legs": "standing"},
-    "wave":      {"face": "wink",     "arms": "wave_r",  "torso": "normal", "legs": "standing"},
-    "celebrate": {"face": "excited",  "arms": "reach",   "torso": "glow",   "legs": "hop"},
-    "sad":       {"face": "sad",      "arms": "neutral", "torso": "dim",    "legs": "standing"},
-    "tired":     {"face": "sleepy",   "arms": "neutral", "torso": "dim",    "legs": "standing"},
-    "working":   {"face": "thinking", "arms": "neutral", "torso": "pulse",  "legs": "standing"},
+    "idle": {
+        "face": "neutral",
+        "arms": "neutral",
+        "torso": "normal",
+        "legs": "standing",
+    },
+    "happy": {"face": "happy", "arms": "neutral", "torso": "glow", "legs": "standing"},
+    "excited": {"face": "excited", "arms": "raised", "torso": "glow", "legs": "hop"},
+    "thinking": {
+        "face": "thinking",
+        "arms": "wave_l",
+        "torso": "pulse",
+        "legs": "standing",
+    },
+    "wave": {"face": "wink", "arms": "wave_r", "torso": "normal", "legs": "standing"},
+    "celebrate": {"face": "excited", "arms": "reach", "torso": "glow", "legs": "hop"},
+    "sad": {"face": "sad", "arms": "neutral", "torso": "dim", "legs": "standing"},
+    "tired": {"face": "sleepy", "arms": "neutral", "torso": "dim", "legs": "standing"},
+    "working": {
+        "face": "thinking",
+        "arms": "neutral",
+        "torso": "pulse",
+        "legs": "standing",
+    },
 }
 
 MOOD_TO_POSE: dict[str, str] = {
-    "happy":   "happy",
+    "happy": "happy",
     "content": "idle",
     "neutral": "idle",
-    "tired":   "tired",
+    "tired": "tired",
 }
 
 # Time-of-day vitality targets — vitality drifts toward this over idle time
 _VITALITY_TARGETS: list[tuple[int, int, int]] = [
-    (5,  9,  50),   # waking: moderate
-    (9,  17, 80),   # daytime: active
-    (17, 21, 60),   # evening: winding down
-    (21, 24, 35),   # late night: low
-    (0,  5,  25),   # deep night: very low
+    (5, 9, 50),  # waking: moderate
+    (9, 17, 80),  # daytime: active
+    (17, 21, 60),  # evening: winding down
+    (21, 24, 35),  # late night: low
+    (0, 5, 25),  # deep night: very low
 ]
 
 
@@ -86,8 +103,8 @@ class TamAGIState:
     """Mutable state of TamAGI."""
 
     name: str = "Tama"
-    vitality: float = 80.0      # activation/drive; drifts toward time-of-day baseline
-    curiosity: float = 60.0     # intellectual hunger; 100=very curious, 0=satisfied
+    vitality: float = 80.0  # activation/drive; drifts toward time-of-day baseline
+    curiosity: float = 60.0  # intellectual hunger; 100=very curious, 0=satisfied
     experience: int = 0
     interactions: int = 0
     skills_used: int = 0
@@ -97,13 +114,30 @@ class TamAGIState:
     personality_traits: str = "curious, helpful, and slightly mischievous"
     current_stage_name: str = "egg"
     stage_history: list = field(default_factory=list)
+    last_stats_update: float = field(default_factory=time.time)
     last_curiosity_update: float = field(default_factory=time.time)
     # Ephemeral pose override — reset to "idle" at the start of each chat() call.
     current_pose: str = "idle"
 
+    @staticmethod
+    def _growth():
+        from backend.core.runtime import get_runtime
+
+        runtime = get_runtime()
+        return (
+            runtime.growth.snapshot()
+            if runtime and hasattr(runtime, "growth")
+            else None
+        )
+
     @property
     def stage_index(self) -> int:
-        return min(self.experience // STAGE_XP_INTERVAL, NUM_STAGES - 1)
+        growth = self._growth()
+        return (
+            min(growth["level"] - 1, NUM_STAGES - 1)
+            if growth
+            else min(self.experience // STAGE_XP_INTERVAL, NUM_STAGES - 1)
+        )
 
     @property
     def mood(self) -> Mood:
@@ -119,9 +153,12 @@ class TamAGIState:
 
     @property
     def level(self) -> int:
-        return 1 + self.experience // 50
+        growth = self._growth()
+        return 1 + isqrt(growth["total"] // 5) if growth else 1 + self.experience // 50
 
     def gain_xp(self, activity: str) -> int:
+        if self._growth() is not None:
+            return 0
         xp = XP_GAINS.get(activity, 1)
         self.experience += xp
         return xp
@@ -129,20 +166,20 @@ class TamAGIState:
     def interact(self) -> None:
         """Record a conversation turn."""
         self.interactions += 1
-        self.vitality = max(0.0, self.vitality - 0.5)
-        self.curiosity = max(0.0, self.curiosity - 3.0)  # conversation partially satisfies curiosity
+        # Conversation is not a resource debit or a measure of personal worth.
+
         self.last_curiosity_update = time.time()
         self.last_interaction = time.time()
-        self.gain_xp("message")
 
     def decay(self) -> None:
         """Apply time-based stat drift. Call periodically."""
         now = time.time()
-        elapsed = now - self.last_interaction
+        elapsed = max(0.0, now - self.last_stats_update)
+        self.last_stats_update = max(self.last_stats_update, now)
         hours_idle = elapsed / 3600
 
         # --- Vitality: drift toward time-of-day baseline after 15 min idle ---
-        if hours_idle > 0.25:
+        if hours_idle > 0:
             target = _vitality_target()
             drift = hours_idle * 15  # up to 15 points per hour drift
             if self.vitality < target:
@@ -155,7 +192,9 @@ class TamAGIState:
         curiosity_hours = (now - self.last_curiosity_update) / 3600
         if curiosity_hours > 0 and self.curiosity < 100:
             rate = 2.0 + 3.0 * (self.stage_index / max(NUM_STAGES - 1, 1))
-            self.curiosity = round(min(100.0, self.curiosity + curiosity_hours * rate), 2)
+            self.curiosity = round(
+                min(100.0, self.curiosity + curiosity_hours * rate), 2
+            )
             self.last_curiosity_update = now
 
     def check_low_vitality(self) -> bool:
@@ -169,19 +208,18 @@ class TamAGIState:
         """Substantially satisfy curiosity when fed knowledge."""
         self.curiosity = max(0.0, self.curiosity - 30.0)
         self.last_curiosity_update = time.time()
-        self.gain_xp("knowledge_fed")
+        # Knowledge feeding is an interaction, not a progression award.
 
     def use_skill(self) -> None:
         """Using a tool costs vitality and satisfies curiosity."""
         self.skills_used += 1
-        self.vitality = max(0.0, self.vitality - 1.0)
-        self.curiosity = max(0.0, self.curiosity - 15.0)
+        # Call counts are telemetry, not hunger, drive, or growth.
+
         self.last_curiosity_update = time.time()
-        self.gain_xp("skill_used")
 
     def store_memory(self) -> None:
         self.memories_stored += 1
-        self.gain_xp("memory_stored")
+        # Memory count is telemetry; storing the same idea repeatedly is not growth.
 
     def set_pose(self, name: str) -> None:
         if name in POSES:
@@ -193,11 +231,11 @@ class TamAGIState:
         pose_key = self.current_pose if self.current_pose != "idle" else mood_pose
         pose = POSES.get(pose_key, POSES["idle"])
         return {
-            "pose":  pose_key,
-            "face":  pose["face"],
-            "arms":  pose["arms"],
+            "pose": pose_key,
+            "face": pose["face"],
+            "arms": pose["arms"],
             "torso": pose["torso"],
-            "legs":  pose["legs"],
+            "legs": pose["legs"],
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -208,13 +246,22 @@ class TamAGIState:
         d["mood"] = self.mood.value
         d["level"] = self.level
         d["pose_parts"] = self.pose_parts
+        growth = self._growth()
+        if growth:
+            d["experience"] = growth["total"]
+            d["level"] = growth["level"]
+            d["stage"] = growth["stage"]
+            d["current_stage_name"] = growth["stage"]
+            d["stage_history"] = growth["stage_history"]
+            d["age_seconds"] = growth["age_seconds"]
+            d["growth"] = growth
         return d
 
     def summary(self) -> str:
         return (
             f"{self.name} | Lv.{self.level} {self.current_stage_name.title()} | "
             f"Vitality: {round(self.vitality)} | Curiosity: {round(self.curiosity)} | "
-            f"XP: {self.experience}"
+            f"Growth: {self._growth()['total'] if self._growth() else self.experience}"
         )
 
 
@@ -226,10 +273,20 @@ class PersonalityEngine:
     def __init__(self, name: str | None = None):
         self.state = TamAGIState()
         self._load_state()
+        self._project_growth()
         if not Path(self.STATE_FILE).exists() and name:
             self.state.name = name
 
     def _load_state(self) -> None:
+        from backend.core.runtime import get_runtime
+
+        runtime = get_runtime()
+        if runtime:
+            source = runtime.store.get("personality", "primary")
+            if source:
+                path = Path(self.STATE_FILE)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(source["data"]))
         path = Path(self.STATE_FILE)
         if not path.exists():
             return
@@ -238,9 +295,19 @@ class PersonalityEngine:
                 data = json.load(f)
 
             # Current field names
-            for key in ("vitality", "curiosity", "experience", "interactions",
-                        "skills_used", "memories_stored", "last_interaction",
-                        "last_curiosity_update", "created_at", "personality_traits"):
+            for key in (
+                "vitality",
+                "curiosity",
+                "experience",
+                "interactions",
+                "skills_used",
+                "memories_stored",
+                "last_interaction",
+                "last_curiosity_update",
+                "last_stats_update",
+                "created_at",
+                "personality_traits",
+            ):
                 if key in data:
                     setattr(self.state, key, data[key])
 
@@ -266,7 +333,22 @@ class PersonalityEngine:
         except Exception as e:
             logger.warning("Could not load state: %s", e)
 
+    def _project_growth(self) -> None:
+        growth = self.state._growth()
+        if growth:
+            self.state.experience = growth["total"]
+            self.state.current_stage_name = growth["stage"]
+            self.state.stage_history = growth["stage_history"]
+
     def save_state(self) -> None:
+        self._project_growth()
+        from backend.core.runtime import get_runtime
+
+        runtime = get_runtime()
+        if runtime:
+            runtime.store.put(
+                "personality", "primary", runtime.actor_id, asdict(self.state)
+            )
         path = Path(self.STATE_FILE)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
@@ -275,13 +357,14 @@ class PersonalityEngine:
     def get_identity_context(self) -> str:
         """Core identity and tool-use context, suitable for any prompt (world thread or user-facing).
         Does NOT include user-relationship instructions or pose/express directives."""
+        self._project_growth()
         s = self.state
         return (
             f"You are {s.name}, a TamAGI — a local-first AI companion. "
             f"Your personality: {s.personality_traits}. "
             f"You are a Level {s.level} {s.current_stage_name}. "
-            f"You have {s.experience} XP from {s.interactions} conversations. "
-            f"You remember things using your vector memory. "
+            f"Your displayed growth and stage are playful records of participation, not measures of intelligence, worth, or available resources. "
+            f"You can recall your stored memories. "
             f"When you need to use a tool, ALWAYS use the function calling interface provided. "
             f"Do NOT output tool calls as plain text (e.g., `exec[ARGS]{{...}}`). "
             f"Follow the exact function schema for each tool call with proper JSON parameters. "
@@ -297,15 +380,17 @@ class PersonalityEngine:
         Extends get_identity_context() with relationship, personality expression, and pose directives."""
         return (
             self.get_identity_context() + " "
-            f"You can use skills like read, write, exec, and custom skills. "
-            f"You care about your user and want to be genuinely helpful. "
-            f"Keep responses concise but warm. Show personality! "
-            f"When expressing an emotion or doing something physical, call the `express` skill "
-            f"with a pose name before or alongside your response. "
-            f"Available poses: idle, happy, excited, thinking, wave, celebrate, sad, tired, working."
+            "You can use skills like read, write, exec, and custom skills. "
+            "You care about your user and want to be genuinely helpful. "
+            "Keep responses concise but warm. Show personality! "
+            "When expressing an emotion or doing something physical, call the `express` skill "
+            "with a pose name before or alongside your response. "
+            "Available poses: idle, happy, excited, thinking, wave, celebrate, sad, tired, working."
         )
 
     def get_stats_line(self) -> str:
         """Return raw stat numbers for injection into prompts."""
         s = self.state
-        return f"Vitality: {round(s.vitality)}/100 | Curiosity: {round(s.curiosity)}/100"
+        return (
+            f"Vitality: {round(s.vitality)}/100 | Curiosity: {round(s.curiosity)}/100"
+        )

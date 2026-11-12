@@ -56,6 +56,10 @@ class MCPSkill(Skill):
         required_set: set[str] = set(schema.get("required", []))
 
         self.name = tool.name
+        annotations=getattr(tool,'annotations',None)
+        read_only=annotations.get('readOnlyHint',False) if isinstance(annotations,dict) else getattr(annotations,'readOnlyHint',False)
+        self.external_effect=not bool(read_only)
+        self.external_scope=f'mcp:{tool.name}'
         self.description = tool.description or f"MCP tool: {tool.name}"
         self.parameters = {
             k: {**v, "required": k in required_set}
@@ -219,6 +223,7 @@ class MCPManager:
             try:
                 skills = await adapter.connect()
                 for skill in skills:
+                    skill.external_scope=f"mcp:{cfg.name}:{skill.name}"
                     registry.register(skill)
                 total += len(skills)
             except Exception as exc:

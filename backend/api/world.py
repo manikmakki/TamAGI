@@ -20,7 +20,9 @@ logger = logging.getLogger("tamagi.api.world")
 
 router = APIRouter(prefix="/api/world", tags=["world"])
 
-_state_store = WorldStateStore()
+def state_store():
+    agent = get_agent()
+    return agent._world_thread._state_store if getattr(agent,'_world_thread',None) else WorldStateStore(agent.config.world_thread.state_path)
 
 
 class WorldSeedRequest(BaseModel):
@@ -34,7 +36,19 @@ class WorldSeedRequest(BaseModel):
 @router.get("/state")
 async def get_world_state():
     """Return the current world state, or a needs_world_seed flag if none exists yet."""
-    state = _state_store.load()
+    agent = get_agent()
+    runtime = getattr(agent,'runtime',None)
+    if runtime:
+        activity=runtime.activity_state()
+        location=(runtime.world_action('inspect',activity.get('location','home'))
+                  if runtime.household is not None else runtime.store.get('world_object',activity.get('location','home')))
+        return {'needs_world_seed':False,'location':location['data']['name'] if location else 'Home',
+          'mood':activity.get('mood',''),'focus':activity.get('focus',''),'available_actions':['Choose freely','Continue a pursuit','Rest'],
+          'timestamp':runtime.store.get('activity',runtime.actor_id)['updated'],'activity_status':activity['status'],
+          'next_wake_at':activity.get('wake_at'),'wake_event':activity.get('wake_event'),'timezone':runtime.config.timezone,
+          'activity_reason':activity.get('wait_reason'),'activity_detail':activity.get('wait_detail'),'pursuits':runtime.store.list('pursuit',runtime.actor_id),
+          'receipts':[r['id'] for r in runtime.store.receipts(limit=5)]}
+    state = state_store().load()
     if state is None:
         return {"needs_world_seed": True}
     return {
@@ -52,6 +66,10 @@ async def seed_world(req: WorldSeedRequest):
     """Generate and save the first world state from optional onboarding input."""
     agent = get_agent()
 
+    runtime = getattr(agent,'runtime',None)
+    if runtime:
+        runtime.world_action('revise','home',{'description':req.world_setting})
+        return {'status':'ok','location':'Home'}
     identity_ctx = agent.identity.get_system_prompt_context()
 
     seed_input = OnboardingInput(
@@ -81,7 +99,7 @@ async def seed_world(req: WorldSeedRequest):
             raw_state_block=raw,
         )
 
-    _state_store.save(world_state)
+    state_store().save(world_state)
     logger.info("World seed saved: location=%r mood=%r", world_state.location, world_state.mood)
 
     # Inject the seed as the first world thread message so the next tick continues naturally
@@ -102,7 +120,8 @@ async def trigger_tick():
         raise HTTPException(status_code=503, detail="World thread not initialized")
     if not wt._running:
         raise HTTPException(status_code=409, detail="World thread is not running")
-    await agent.flush_unsummarized_conversations()
+    if not getattr(agent, "runtime", None):
+        await agent.flush_unsummarized_conversations()
     result = await wt.tick_now()
     if result is None:
         return {"status": "error", "detail": "Tick produced no valid [New State] — check logs"}

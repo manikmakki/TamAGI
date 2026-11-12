@@ -45,6 +45,7 @@ class OrchestrationSkill(Skill):
             "description": "Clear description of the overall goal to accomplish",
             "required": True,
         },
+        "companion_ids": {"type":"array", "items":{"type":"string"}, "description":"Optional durable companion IDs for the bounded subtasks."},
         "context": {
             "type": "string",
             "description": "Optional additional context, constraints, or requirements",
@@ -67,7 +68,7 @@ class OrchestrationSkill(Skill):
 
         try:
             result = await self._orchestrator.run_workflow(
-                goal=goal, context=context, event_callback=event_callback
+                goal=goal, context=context, event_callback=event_callback, companion_ids=kwargs.get("companion_ids")
             )
             return SkillResult(
                 success=True,

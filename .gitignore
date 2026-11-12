@@ -10,8 +10,9 @@ venv/
 # Data (persisted locally)
 data/
 workspace/
-workspace*
+/workspace*
 docs/*.svg
+docs/*.png
 
 # Config with secrets
 config.yaml
@@ -26,3 +27,21 @@ Thumbs.db
 backend/skills/custom/
 *phase1*
 AI_ENV*
+
+# Runtime build and recovery artifacts
+.platform/
+config.platform.yaml
+*.tamagi.tar.gz.gpg
+
+# Local agents, credentials and generated validation reports
+.agents/
+.claude/
+.codex/
+.aws/
+.env
+.env.*
+.ruff_cache/
+.pytest_cache/
+*.log
+*.jsonl
+/docs/qualification/

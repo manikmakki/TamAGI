@@ -12,7 +12,6 @@ the closest `MemoryType` enum value where possible.
 
 from __future__ import annotations
 
-import time
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
 

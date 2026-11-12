@@ -42,6 +42,9 @@
 
     /* ── Buttons ── */
     .btn-row { display:flex; flex-wrap:wrap; gap:5px; justify-content:center; }
+    .character-picker { width:300px; text-align:center; }
+    .control-label { display:block; color:var(--muted); font-size:10px; margin-bottom:6px; }
+    .character-hint { color:var(--muted); font-size:10px; line-height:1.5; margin-top:7px; }
     button { padding:4px 10px; font-size:10px; font-family:var(--font); background:var(--bg3);
       color:#666; border:1px solid var(--border); border-radius:3px; cursor:pointer;
       letter-spacing:.03em; transition:all .12s; }
@@ -110,6 +113,8 @@
     /* ── Hierarchy ── */
     .hier-pre { margin:0; font-size:9px; line-height:1.6; color:#666; font-family:var(--font); }
   </style>
+<link rel="stylesheet" href="/assets/panel-bridge.css">
+<script src="/assets/panel-bridge.js" defer></script>
 </head>
 <body>
 
@@ -128,6 +133,11 @@
     </div>
 
     <div class="btn-row" id="anim-buttons"></div>
+    <div class="character-picker">
+      <span class="control-label">Character</span>
+      <div class="btn-row" id="avatar-buttons" role="group" aria-label="Character"></div>
+      <p class="character-hint" id="avatar-hint">Choose a character, then adjust its parts or upload your own PNGs.</p>
+    </div>
     <div class="btn-row" id="preset-buttons"></div>
 
     <div class="toggle-row">
@@ -168,7 +178,7 @@
 
     <div class="panel">
       <div class="panel-title"><span>Bone Hierarchy</span></div>
-      <pre class="hier-pre">root (origin)
+      <pre class="hier-pre" id="bone-hierarchy">root (origin)
 ├── body
 │   ├── neck
 │   │   └── head
@@ -185,6 +195,10 @@
   </div>
 </div>
 
+<script src="/assets/avatar-vex.js"></script>
+<script src="/assets/avatar-echo.js"></script>
+<script src="/assets/avatar-ember.js?v=8"></script>
+<script src="/assets/avatar-runtime.js?v=8"></script>
 <script>
 // ══════════════════════════════════════════════════════════════
 //  RIG ENGINE  (ported from scripts/skeleton_rig.jsx)
@@ -282,7 +296,7 @@ const PRESETS = {
   ]},
 };
 
-function buildManifest(bones) {
+function buildDefaultManifest(bones) {
   const defs = {
     body:       { bone:"body",       wRatio:0.9,  hRatio:1.0,  variants:{default:null} },
     head:       { bone:"head",       wRatio:1.3,  hRatio:1.1,  variants:{default:null} },
@@ -306,6 +320,14 @@ function buildManifest(bones) {
     const w = def.wBase || Math.max(8, Math.round(bone.length * (def.wRatio || 0.5)));
     const h = def.hBase || Math.max(8, Math.round(bone.length * (def.hRatio || 1.0)));
     manifest[part] = { bone:def.bone, w, h, ox:0, oy:0, variants:def.variants };
+  }
+  return manifest;
+}
+
+function buildManifest(bones) {
+  const manifest = TamagiAvatarRuntime.manifest(_avatarId, bones, buildDefaultManifest);
+  for (const [part, dimensions] of Object.entries(_spriteDimensions)) {
+    if (manifest[part]) Object.assign(manifest[part], dimensions);
   }
   return manifest;
 }
@@ -444,12 +466,13 @@ function solveWorldTransforms(bones) {
   bones.forEach(b => solve(b)); return world;
 }
 
-function renderFrame(canvas, bones, manifest, activeVariants, showDebug, showLabels) {
+function renderFrame(canvas, bones, manifest, activeVariants, showDebug, showLabels, time = 0) {
   const ctx = canvas.getContext("2d");
+  TamagiAvatarRuntime.style(canvas, _avatarId);
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  ctx.save(); ctx.translate(W/2, H/2+50); const scale = 2.5; ctx.scale(scale, scale);
-  ctx.imageSmoothingEnabled = false;
+  ctx.save(); ctx.translate(W/2, TamagiAvatarRuntime.originY(canvas, _avatarId)); const scale = 2.5; ctx.scale(scale, scale);
+  ctx.imageSmoothingEnabled = !(window.TamagiAvatars[_avatarId]?.pixelated ?? true);
   const wt = solveWorldTransforms(bones);
   const drawOrder = Object.entries(manifest)
     .map(([pn, e]) => ({ pn, e, bone: bones.find(b => b.name === e.bone), z: (bones.find(b => b.name === e.bone)||{}).zOrder||0 }))
@@ -466,7 +489,7 @@ function renderFrame(canvas, bones, manifest, activeVariants, showDebug, showLab
     ctx.save(); ctx.translate(-sw/2 + pox*sw, -sh/2 + poy*sh);
     const imgKey = `${pn}:${variant}`;
     if (_spriteImages[imgKey]) { ctx.drawImage(_spriteImages[imgKey], 0, 0, sw, sh); }
-    else { drawPlaceholder(ctx, pn, variant, sw, sh); }
+    else { TamagiAvatarRuntime.draw(ctx, _avatarId, pn, variant, sw, sh, drawPlaceholder, time); }
     ctx.restore(); ctx.restore();
   }
   if (showDebug) {
@@ -501,7 +524,8 @@ function renderFrame(canvas, bones, manifest, activeVariants, showDebug, showLab
 //  EDITOR STATE
 // ══════════════════════════════════════════════════════════════
 
-let _rigBones     = applyPivotDefaults(PRESETS.default.bones());
+let _avatarId     = 'vex';
+let _rigBones     = TamagiAvatarRuntime.createBones(_avatarId, createBone, () => applyPivotDefaults(PRESETS.default.bones()));
 let _boneMap      = Object.fromEntries(_rigBones.map(b => [b.name, b]));
 let _animName     = 'idle';
 let _startTime    = null;
@@ -511,6 +535,9 @@ let _expandedBone = null;
 let _activePreset = 'default';
 let _showExport   = false;
 let _spriteImages = {}; // key: "part:variant" → loaded HTMLImageElement, drives live canvas
+let _spritePaths  = {}; // Only custom PNG paths; built-in artwork needs no upload.
+let _spriteDimensions = {}; // Unscaled dimensions restored from a saved rig.
+let _spriteGridVersion = 0;
 let _pasteTarget  = null; // { part, variant } — set by pasteSprite(), consumed by document paste handler
 
 const SCALE_PROP   = { key:"displayScale",  label:"Scale",   min:0.25, max:3,    step:0.05, unit:'×' };
@@ -520,19 +547,19 @@ const PIVOT_Y_PROP = { key:"pivotOffsetY",  label:"Pivot Y", min:-0.5, max:0.5, 
 const EDITABLE_BONES = [
   { name:"body",      label:"Body",     props:[{key:"restY",label:"Offset Y",min:-40,max:0}, SCALE_PROP] },
   { name:"neck",      label:"Neck",     props:[{key:"restY",label:"Offset Y",min:-40,max:-5}, SCALE_PROP, PIVOT_Y_PROP] },
-  { name:"head",      label:"Head",     props:[{key:"restY",label:"Offset Y",min:-20,max:0}, SCALE_PROP, PIVOT_Y_PROP] },
+  { name:"head",      label:"Head",     props:[{key:"restY",label:"Offset Y",min:-32,max:0}, SCALE_PROP, PIVOT_Y_PROP] },
   { name:"eye_left",  label:"Eye (L)",  props:[{key:"restX",label:"X",min:-18,max:0},{key:"restY",label:"Y",min:-12,max:8}, SCALE_PROP] },
   { name:"eye_right", label:"Eye (R)",  props:[{key:"restX",label:"X",min:0,max:18},{key:"restY",label:"Y",min:-12,max:8}, SCALE_PROP] },
-  { name:"mouth",     label:"Mouth",    props:[{key:"restY",label:"Y",min:-4,max:14}, SCALE_PROP] },
-  { name:"accessory", label:"Accessory",props:[{key:"restX",label:"X",min:-20,max:20},{key:"restY",label:"Y",min:-30,max:5}, SCALE_PROP] },
+  { name:"mouth",     label:"Mouth",    props:[{key:"restY",label:"Y",min:-8,max:24}, SCALE_PROP] },
+  { name:"accessory", label:"Accessory",props:[{key:"restX",label:"X",min:-40,max:40},{key:"restY",label:"Y",min:-40,max:24}, SCALE_PROP] },
   { name:"arm_left",   label:"Arm (L)",   props:[{key:"restX",label:"X",min:-36,max:-8},{key:"restY",label:"Y",min:-30,max:0}, SCALE_PROP, PIVOT_X_PROP, PIVOT_Y_PROP] },
-  { name:"hand_left",  label:"Hand (L)",  props:[{key:"restX",label:"X",min:-8,max:8},{key:"restY",label:"Y",min:10,max:30}, SCALE_PROP, PIVOT_Y_PROP] },
+  { name:"hand_left",  label:"Hand (L)",  props:[{key:"restX",label:"X",min:-24,max:24},{key:"restY",label:"Y",min:-8,max:36}, SCALE_PROP, PIVOT_Y_PROP] },
   { name:"arm_right",  label:"Arm (R)",   props:[{key:"restX",label:"X",min:8,max:36},{key:"restY",label:"Y",min:-30,max:0}, SCALE_PROP, PIVOT_X_PROP, PIVOT_Y_PROP] },
-  { name:"hand_right", label:"Hand (R)",  props:[{key:"restX",label:"X",min:-8,max:8},{key:"restY",label:"Y",min:10,max:30}, SCALE_PROP, PIVOT_Y_PROP] },
-  { name:"leg_left",   label:"Leg (L)",   props:[{key:"restX",label:"X",min:-16,max:0},{key:"restY",label:"Y",min:4,max:24}, SCALE_PROP, PIVOT_X_PROP, PIVOT_Y_PROP] },
-  { name:"foot_left",  label:"Foot (L)",  props:[{key:"restX",label:"X",min:-10,max:10},{key:"restY",label:"Y",min:8,max:28}, SCALE_PROP, PIVOT_Y_PROP] },
-  { name:"leg_right",  label:"Leg (R)",   props:[{key:"restX",label:"X",min:0,max:16},{key:"restY",label:"Y",min:4,max:24}, SCALE_PROP, PIVOT_X_PROP, PIVOT_Y_PROP] },
-  { name:"foot_right", label:"Foot (R)",  props:[{key:"restX",label:"X",min:-10,max:10},{key:"restY",label:"Y",min:8,max:28}, SCALE_PROP, PIVOT_Y_PROP] },
+  { name:"hand_right", label:"Hand (R)",  props:[{key:"restX",label:"X",min:-24,max:24},{key:"restY",label:"Y",min:-8,max:36}, SCALE_PROP, PIVOT_Y_PROP] },
+  { name:"leg_left",   label:"Leg (L)",   props:[{key:"restX",label:"X",min:-16,max:0},{key:"restY",label:"Y",min:-16,max:24}, SCALE_PROP, PIVOT_X_PROP, PIVOT_Y_PROP] },
+  { name:"foot_left",  label:"Foot (L)",  props:[{key:"restX",label:"X",min:-10,max:10},{key:"restY",label:"Y",min:8,max:36}, SCALE_PROP, PIVOT_Y_PROP] },
+  { name:"leg_right",  label:"Leg (R)",   props:[{key:"restX",label:"X",min:0,max:16},{key:"restY",label:"Y",min:-16,max:24}, SCALE_PROP, PIVOT_X_PROP, PIVOT_Y_PROP] },
+  { name:"foot_right", label:"Foot (R)",  props:[{key:"restX",label:"X",min:-10,max:10},{key:"restY",label:"Y",min:8,max:36}, SCALE_PROP, PIVOT_Y_PROP] },
 ];
 
 const SPRITE_SLOTS = {
@@ -564,10 +591,10 @@ function rigTick(ts) {
     b.translateX = 0; b.translateY = 0; b.opacity = 1;
   }
   const animFn = ANIMATIONS[_animName] || ANIMATIONS.idle;
-  const variants = animFn(_rigBones, t) || {};
+  const variants = TamagiAvatarRuntime.animate(_avatarId, _rigBones, t, _animName, animFn(_rigBones, t) || {});
   const manifest = buildManifest(_rigBones);
   const canvas = document.getElementById('rig-canvas');
-  if (canvas) renderFrame(canvas, _rigBones, manifest, variants, _showDebug, _showLabels);
+  if (canvas) renderFrame(canvas, _rigBones, manifest, variants, _showDebug, _showLabels, t);
   requestAnimationFrame(rigTick);
 }
 
@@ -582,17 +609,59 @@ function setAnim(name) {
 }
 
 function loadPreset(key) {
+  _avatarId = 'custom'; _spriteDimensions = {};
   _activePreset = key; _startTime = null;
   _rigBones = applyPivotDefaults(PRESETS[key].bones());
   _boneMap = Object.fromEntries(_rigBones.map(b => [b.name, b]));
   document.querySelectorAll('#preset-buttons button').forEach(b => b.classList.toggle('active', b.dataset.preset === key));
   buildAccordion();
+  buildSpriteGrid();
+  syncAvatarControls();
+}
+
+function selectAvatar(id) {
+  if (id !== 'custom' && !Object.hasOwn(window.TamagiAvatars, id)) return;
+  _avatarId = id; _activePreset = 'default'; _startTime = null;
+  _spriteDimensions = {};
+  _rigBones = TamagiAvatarRuntime.createBones(id, createBone, () => applyPivotDefaults(PRESETS.default.bones()));
+  _boneMap = Object.fromEntries(_rigBones.map(b => [b.name, b]));
+  buildAccordion();
+  buildSpriteGrid();
+  syncAvatarControls();
+}
+
+function syncAvatarControls() {
+  document.querySelectorAll('#avatar-buttons button').forEach(b => {
+    const selected = b.dataset.avatar === _avatarId;
+    b.classList.toggle('active', selected);
+    b.setAttribute('aria-pressed', String(selected));
+  });
+  document.getElementById('preset-buttons').style.display = _avatarId === 'custom' ? '' : 'none';
+  document.querySelectorAll('#preset-buttons button').forEach(b => b.classList.toggle('active', b.dataset.preset === _activePreset));
+  document.getElementById('avatar-hint').textContent = _avatarId === 'custom'
+    ? 'Use your own artwork with editable body proportions.'
+    : 'Choose a character, then adjust its parts or upload your own PNGs.';
+  TamagiAvatarRuntime.style(document.getElementById('rig-canvas'), _avatarId);
+  // The accessory is Vex’s tail and may have a different parent in a custom rig.
+  const hierarchy = document.getElementById('bone-hierarchy');
+  const lines = [];
+  function branch(parent, prefix) {
+    const children = _rigBones.filter(b => b.parent === parent);
+    children.forEach((b, i) => {
+      const last = i === children.length - 1;
+      lines.push(prefix + (last ? '└── ' : '├── ') + b.name);
+      branch(b.name, prefix + (last ? '    ' : '│   '));
+    });
+  }
+  lines.push('root (origin)'); branch('root', '');
+  hierarchy.textContent = lines.join('\n');
+  if (_showExport) document.getElementById('export-pre').textContent = JSON.stringify(buildExportJSON(), null, 2);
 }
 
 function updateDebug()  { _showDebug  = document.getElementById('show-debug').checked; }
 function updateLabels() { _showLabels = document.getElementById('show-labels').checked; }
 
-function resetBones() { loadPreset(_activePreset); }
+function resetBones() { if (_avatarId === 'custom') loadPreset(_activePreset); else selectAvatar(_avatarId); }
 
 // ══════════════════════════════════════════════════════════════
 //  BONE ACCORDION
@@ -627,9 +696,9 @@ function buildAccordion() {
         const lbl = document.createElement('span');
         lbl.className = 'slider-label'; lbl.textContent = p.label;
         const slider = document.createElement('input');
-        const step = p.step || 1;
+        const step = p.step || 0.1;
         const fmt = (v) => step < 1 ? Number(v).toFixed(2) + (p.unit || '') : String(v);
-        slider.type = 'range'; slider.min = p.min; slider.max = p.max; slider.step = step;
+        slider.type = 'range'; slider.min = Math.min(p.min, bone[p.key]); slider.max = Math.max(p.max, bone[p.key]); slider.step = step;
         slider.value = bone[p.key];
         const val = document.createElement('span');
         val.className = 'slider-val'; val.textContent = fmt(bone[p.key]);
@@ -652,6 +721,7 @@ function buildAccordion() {
 
 function buildSpriteGrid() {
   const grid = document.getElementById('sprite-grid');
+  const gridVersion = ++_spriteGridVersion;
   grid.innerHTML = '';
   for (const [part, variants] of Object.entries(SPRITE_SLOTS)) {
     const row = document.createElement('div');
@@ -668,13 +738,13 @@ function buildSpriteGrid() {
     const layerLbl = document.createElement('span');
     layerLbl.className = 'layer-lbl'; layerLbl.textContent = 'Layer:';
     const layerInput = document.createElement('input');
-    layerInput.type = 'number'; layerInput.min = '0'; layerInput.max = '99'; layerInput.step = '1';
+    layerInput.type = 'number'; layerInput.min = '-99'; layerInput.max = '99'; layerInput.step = '1';
     layerInput.className = 'layer-input'; layerInput.id = `layer-${part}`;
     layerInput.value = partBone ? partBone.zOrder : 0;
-    layerInput.title = 'Render layer: 0 = furthest back, 99 = in front of everything';
+    layerInput.title = 'Lower layers draw behind higher layers';
     layerInput.oninput = (e) => { if (partBone) partBone.zOrder = parseInt(e.target.value) || 0; };
     const layerHint = document.createElement('span');
-    layerHint.className = 'layer-hint'; layerHint.textContent = '0 = back · 99 = front';
+    layerHint.className = 'layer-hint'; layerHint.textContent = 'lower = back · higher = front';
     layerRow.appendChild(layerLbl); layerRow.appendChild(layerInput); layerRow.appendChild(layerHint);
     row.appendChild(layerRow);
 
@@ -719,19 +789,42 @@ function buildSpriteGrid() {
       slot.appendChild(preview); slot.appendChild(vLabel); slot.appendChild(fileInput); slot.appendChild(btnRow);
       varList.appendChild(slot);
 
-      // Probe for existing upload
+      // Retain saved custom URLs and discover uploads made before the first save.
+      const key = `${part}:${variant}`;
+      const path = _spritePaths[key] || `/sprites/${part}_${variant}.png?t=${Date.now()}`;
       const probe = new Image();
-      probe.onload = () => markUploaded(part, variant, probe.src);
-      probe.onerror = () => { preview.textContent = variant[0].toUpperCase(); };
-      probe.src = `/sprites/${part}_${variant}.png?t=${Date.now()}`;
+      probe.onload = () => { if (gridVersion === _spriteGridVersion) markUploaded(part, variant, path, probe); };
+      probe.onerror = () => {};
+      probe.src = path;
     }
 
     row.appendChild(varList);
     grid.appendChild(row);
+    for (const variant of variants) renderSlotPreview(part, variant);
   }
 }
 
-function markUploaded(part, variant, src) {
+function renderSlotPreview(part, variant) {
+  const preview = document.getElementById(`preview-${part}-${variant}`);
+  if (!preview) return;
+  const entry = buildManifest(_rigBones)[part];
+  if (!entry) return;
+  preview.replaceChildren();
+  const canvas = document.createElement('canvas');
+  canvas.width = 88; canvas.height = 88; canvas.style.width = '44px'; canvas.style.height = '44px';
+  canvas.setAttribute('aria-label', `${window.TamagiAvatars[_avatarId]?.label || 'Custom'} ${part} ${variant}`);
+  TamagiAvatarRuntime.style(canvas, _avatarId);
+  const ctx = canvas.getContext('2d');
+  const scale = Math.min(76 / entry.w, 76 / entry.h);
+  ctx.translate((88 - entry.w * scale) / 2, (88 - entry.h * scale) / 2);
+  ctx.scale(scale, scale);
+  TamagiAvatarRuntime.draw(ctx, _avatarId, part, variant, entry.w, entry.h, drawPlaceholder);
+  preview.appendChild(canvas);
+}
+
+function markUploaded(part, variant, src, loadedImage) {
+  const key = `${part}:${variant}`;
+  _spritePaths[key] = src;
   const preview = document.getElementById(`preview-${part}-${variant}`);
   const delBtn  = document.getElementById(`del-${part}-${variant}`);
   if (!preview) return;
@@ -742,9 +835,12 @@ function markUploaded(part, variant, src) {
   preview.appendChild(thumb); preview.classList.add('uploaded');
   if (delBtn) delBtn.style.display = '';
   // Cache for live canvas rendering
-  const img = new Image();
-  img.onload = () => { _spriteImages[`${part}:${variant}`] = img; };
-  img.src = src;
+  if (loadedImage) _spriteImages[key] = loadedImage;
+  else {
+    const img = new Image();
+    img.onload = () => { if (_spritePaths[key] === src) _spriteImages[key] = img; };
+    img.src = src;
+  }
 }
 
 function markRemoved(part, variant) {
@@ -752,9 +848,10 @@ function markRemoved(part, variant) {
   const delBtn  = document.getElementById(`del-${part}-${variant}`);
   if (!preview) return;
   preview.innerHTML = ''; preview.classList.remove('uploaded');
-  preview.textContent = variant[0].toUpperCase();
+  renderSlotPreview(part, variant);
   if (delBtn) delBtn.style.display = 'none';
   delete _spriteImages[`${part}:${variant}`];
+  delete _spritePaths[`${part}:${variant}`];
 }
 
 async function uploadSprite(part, variant, file) {
@@ -805,12 +902,12 @@ function buildExportJSON() {
   for (const [k, v] of Object.entries(m)) {
     const sc = (_boneMap[v.bone] && _boneMap[v.bone].displayScale) || 1;
     sprites[k] = {
-      bone:v.bone, width:Math.round(v.w * sc), height:Math.round(v.h * sc),
+      bone:v.bone, width:v.w * sc, height:v.h * sc,
       offsetX:v.ox, offsetY:v.oy,
-      variants: Object.fromEntries(Object.keys(v.variants).map(vk => [vk, `sprites/${k}_${vk}.png`]))
+      variants: Object.fromEntries(Object.keys(v.variants).map(vk => [vk, _spritePaths[`${k}:${vk}`] || null]))
     };
   }
-  return { skeleton, sprites };
+  return { avatar:_avatarId, skeleton, sprites };
 }
 
 async function saveToTamAGI() {
@@ -850,27 +947,37 @@ function showStatus(msg, type) {
 // ══════════════════════════════════════════════════════════════
 
 async function loadFromTamAGI() {
+  let cfg = null;
   try {
     const res = await fetch('/api/sprites/config');
-    if (!res.ok) return;
-    const cfg = await res.json();
-    if (cfg.skeleton && Array.isArray(cfg.skeleton) && cfg.skeleton.length > 0) {
-      for (const saved of cfg.skeleton) {
-        const bone = _boneMap[saved.name]; if (!bone) continue;
-        bone.restX = saved.restX ?? bone.restX; bone.restY = saved.restY ?? bone.restY;
-        bone.length = saved.length ?? bone.length; bone.zOrder = saved.zOrder ?? bone.zOrder;
-        bone.displayScale = saved.displayScale ?? 1;
-        bone.pivotOffsetX = saved.pivotOffsetX ?? bone.pivotOffsetX;
-        bone.pivotOffsetY = saved.pivotOffsetY ?? bone.pivotOffsetY;
-      }
-      buildAccordion();
-      // Sync layer inputs — built before loadFromTamAGI runs, so update them in-place
-      for (const b of _rigBones) {
-        const inp = document.getElementById(`layer-${b.name}`);
-        if (inp) inp.value = b.zOrder;
+    if (res.ok) cfg = await res.json();
+  } catch (e) { /* Use the built-in default when no config can be loaded. */ }
+  _avatarId = TamagiAvatarRuntime.resolve(cfg);
+  _rigBones = TamagiAvatarRuntime.createBones(_avatarId, createBone, () => applyPivotDefaults(PRESETS.default.bones()));
+  _boneMap = Object.fromEntries(_rigBones.map(b => [b.name, b]));
+  _spriteImages = {}; _spritePaths = {}; _spriteDimensions = {};
+  if (Array.isArray(cfg?.skeleton)) {
+    for (const saved of cfg.skeleton) {
+      const bone = _boneMap[saved.name]; if (!bone) continue;
+      if (saved.parent === null || _boneMap[saved.parent]) bone.parent = saved.parent;
+      for (const key of ['restX','restY','pivotX','pivotY','length','zOrder','displayScale','pivotOffsetX','pivotOffsetY']) {
+        if (Number.isFinite(saved[key])) bone[key] = saved[key];
       }
     }
-  } catch (e) { /* silent — no saved config yet */ }
+  }
+  if (cfg?.sprites) {
+    const manifest = TamagiAvatarRuntime.overlay(buildManifest(_rigBones), _rigBones, cfg.sprites);
+    for (const [part, saved] of Object.entries(cfg.sprites)) {
+      const entry = manifest[part]; if (!entry || !saved) continue;
+      _spriteDimensions[part] = {bone:entry.bone, w:entry.w, h:entry.h, ox:entry.ox, oy:entry.oy};
+      for (const [variant, path] of Object.entries(saved.variants || {})) {
+        if (typeof path === 'string' && path) _spritePaths[`${part}:${variant}`] = path;
+      }
+    }
+  }
+  buildAccordion();
+  buildSpriteGrid();
+  syncAvatarControls();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -888,6 +995,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     animRow.appendChild(btn);
   }
 
+  const avatarRow = document.getElementById('avatar-buttons');
+  for (const [id, label] of [...Object.entries(window.TamagiAvatars).map(([id, avatar]) => [id, avatar.label]), ['custom', 'Custom rig']]) {
+    const btn = document.createElement('button');
+    btn.textContent = label; btn.dataset.avatar = id;
+    btn.onclick = () => selectAvatar(id);
+    avatarRow.appendChild(btn);
+  }
+
   // Build preset buttons
   const presetRow = document.getElementById('preset-buttons');
   for (const [key, p] of Object.entries(PRESETS)) {
@@ -898,11 +1013,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     presetRow.appendChild(btn);
   }
 
-  // Build bone accordion and sprite grid
-  buildAccordion();
-  buildSpriteGrid();
-
-  // Restore any saved skeleton config
+  // Restore the character, skeleton, dimensions, and custom uploads together.
   await loadFromTamAGI();
 
   // Document-level paste handler: fires when user presses Ctrl+V after arming a slot via pasteSprite()

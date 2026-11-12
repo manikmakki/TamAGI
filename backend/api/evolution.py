@@ -109,6 +109,9 @@ async def run_evolution(req: EvolutionRunRequest):
 
 @router.post("/promote")
 async def promote_profile(req: PromoteRequest):
+    from backend.core.runtime import get_runtime
+    if get_runtime():
+        raise HTTPException(409,'Static fixtures are contract evidence. Platform activation requires a matched execution experiment.')
     audit = EvolutionAuditLog(_AUDIT_ROOT)
     run = audit.load_run(req.run_id)
     if run is None:

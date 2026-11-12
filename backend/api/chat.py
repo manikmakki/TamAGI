@@ -10,7 +10,15 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel, Field
 
 from backend.config import get_config
@@ -22,11 +30,13 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 # ── Request/Response Models ───────────────────────────────────
 
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=32000)
     conversation_id: str | None = None
-    image_data: str | None = None        # base64-encoded image
+    image_data: str | None = None  # base64-encoded image
     image_media_type: str = "image/jpeg"
+    request_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class ChatResponse(BaseModel):
@@ -35,6 +45,9 @@ class ChatResponse(BaseModel):
     state: dict[str, Any]
     skills_used: list[str]
     memories_recalled: int
+    turn_status: str = "completed"
+    status_detail: str | None = None
+    quiet_turns: int = 0
 
 
 class KnowledgeRequest(BaseModel):
@@ -65,10 +78,17 @@ def get_agent():
 
 # ── Chat Endpoints ────────────────────────────────────────────
 
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """Send a message to TamAGI and get a response."""
     agent = get_agent()
+    manager = getattr(getattr(agent, "runtime", None), "interactions", None)
+    if manager:
+        work = await admit_chat(request)
+        return ChatResponse(**await manager.wait(work["work_id"]))
+    if not request.message.strip() and not request.image_data:
+        raise HTTPException(400, "Enter a message or attach an image")
     result = await agent.chat(
         user_message=request.message,
         conversation_id=request.conversation_id,
@@ -76,6 +96,155 @@ async def chat(request: ChatRequest):
         image_media_type=request.image_media_type,
     )
     return ChatResponse(**result)
+
+
+def interactions():
+    manager = getattr(getattr(get_agent(), "runtime", None), "interactions", None)
+    if manager is None:
+        raise HTTPException(503, "Durable requests require the home platform")
+    return manager
+
+
+@router.post("/chat/requests", status_code=202)
+async def admit_chat(request: ChatRequest):
+    from backend.core.runtime.interactions import AdmissionError
+
+    try:
+        return await interactions().submit(
+            request.model_dump(exclude={"request_id"}), request.request_id
+        )
+    except AdmissionError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+
+
+@router.get("/chat/requests")
+async def list_requests():
+    manager = interactions()
+    return {"requests": [manager.public(r) for r in manager.records(limit=50)]}
+
+
+@router.get("/chat/requests/{work_id}")
+async def inspect_request(work_id: str, after: int = 0):
+    from backend.core.runtime.interactions import AdmissionError
+
+    try:
+        return interactions().snapshot(work_id, after)
+    except AdmissionError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+
+
+@router.post("/chat/requests/{work_id}/stop")
+async def stop_request(work_id: str):
+    from backend.core.runtime.interactions import AdmissionError
+
+    try:
+        return interactions().stop(work_id)
+    except AdmissionError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+
+
+class ApprovalResponse(BaseModel):
+    approval_id: str
+    approved: bool = False
+    allow_always: bool = False
+
+
+@router.post("/chat/requests/{work_id}/approval")
+async def approve_request(work_id: str, body: ApprovalResponse):
+    from backend.core.runtime.interactions import AdmissionError
+
+    try:
+        return interactions().approve(
+            work_id, body.approval_id, body.approved, body.allow_always
+        )
+    except AdmissionError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+
+
+async def observe_websocket(websocket, manager):
+    """Only this observer is cancelled when its socket goes away."""
+    from backend.core.runtime.interactions import AdmissionError
+
+    notifications = manager.subscribe()
+    subscriptions = {}
+    write_lock = asyncio.Lock()
+
+    async def send(value):
+        async with write_lock:
+            await websocket.send_json(value)
+
+    def notify():
+        if notifications.empty():
+            notifications.put_nowait(True)
+
+    async def receive():
+        while True:
+            try:
+                value = json.loads(await websocket.receive_text())
+                if not isinstance(value, dict):
+                    raise ValueError("Expected an object")
+                if value.get("type") == "subscribe":
+                    work_id = value.get("work_id", "")
+                    manager.get(work_id)
+                    after = value.get("after", 0)
+                    if not isinstance(after, int) or after < 0:
+                        raise ValueError("Invalid event cursor")
+                    subscriptions[work_id] = after
+                    notify()
+                elif value.get("type") == "tool_approval_response":
+                    work_id = value.get("work_id") or next(
+                        (
+                            r["id"]
+                            for r in manager.records(limit=50)
+                            if (r["data"].get("approval") or {}).get("approval_id")
+                            == value.get("approval_id")
+                        ),
+                        "",
+                    )
+                    manager.approve(
+                        work_id,
+                        value.get("approval_id"),
+                        bool(value.get("approved")),
+                        bool(value.get("allow_always")),
+                    )
+                elif value.get("type") == "stop":
+                    manager.stop(value.get("work_id", ""))
+                else:
+                    body = ChatRequest.model_validate(value)
+                    work = await manager.submit(
+                        body.model_dump(exclude={"request_id"}), body.request_id
+                    )
+                    subscriptions[work["work_id"]] = 0
+                    await send({"type": "accepted", **work})
+                    notify()
+            except (AdmissionError, ValueError) as exc:
+                await send({"type": "error", "message": str(exc)[:500]})
+
+    async def transmit():
+        while True:
+            await notifications.get()
+            for work_id, after in list(subscriptions.items()):
+                snapshot = manager.snapshot(work_id, after)
+                if snapshot["reset"]:
+                    await send({"type": "work_resync", "work_id": work_id})
+                for event in snapshot["events"]:
+                    await send(event)
+                await send({"type": "work_snapshot", **snapshot})
+                subscriptions[work_id] = snapshot["cursor"]
+
+    tasks = [asyncio.create_task(receive()), asyncio.create_task(transmit())]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    except asyncio.CancelledError:
+        pass  # ASGI shutdown cancels this observer, never the admitted execution.
+    finally:
+        manager.observers.discard(notifications)
+        for task in tasks:
+            task.cancel()
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            pass
 
 
 @router.post("/upload")
@@ -136,6 +305,7 @@ async def delete_conversation(conv_id: str):
 
 # ── State & Memory ────────────────────────────────────────────
 
+
 @router.get("/state")
 async def get_state():
     """Get TamAGI's current state (mood, energy, level, sprite, etc.)."""
@@ -171,11 +341,32 @@ async def recall_memories(request: MemoryQueryRequest):
 
 # ── WebSocket for streaming ───────────────────────────────────
 
+
 @router.websocket("/ws")
 async def websocket_chat(websocket: WebSocket):
     """WebSocket endpoint for real-time chat."""
+    config = get_config()
+    if config.auth.enabled and not websocket.session.get("authenticated"):
+        await websocket.close(code=1008)
+        return
+    origin = websocket.headers.get("origin")
+    if origin:
+        from urllib.parse import urlsplit
+
+        expected_scheme = "https" if websocket.url.scheme == "wss" else "http"
+        parsed = urlsplit(origin)
+        if (
+            parsed.netloc != websocket.headers.get("host")
+            or parsed.scheme != expected_scheme
+        ):
+            await websocket.close(code=1008)
+            return
     await websocket.accept()
     agent = get_agent()
+    manager = getattr(getattr(agent, "runtime", None), "interactions", None)
+    if manager:
+        await observe_websocket(websocket, manager)
+        return
 
     # Incoming chat messages are queued here; None is the disconnect sentinel.
     message_queue: asyncio.Queue[dict | None] = asyncio.Queue()
@@ -202,6 +393,13 @@ async def websocket_chat(websocket: WebSocket):
                         allow_always=bool(msg.get("allow_always", False)),
                     )
                 else:
+                    runtime = getattr(agent, "runtime", None)
+                    if (
+                        runtime
+                        and isinstance(msg.get("message"), str)
+                        and msg["message"].strip()
+                    ):
+                        msg["_input_epoch"] = runtime.notice_user_input()
                     await message_queue.put(msg)
         except WebSocketDisconnect:
             await message_queue.put(None)
@@ -219,8 +417,11 @@ async def websocket_chat(websocket: WebSocket):
 
             conv_id: str | None = msg.get("conversation_id")
             user_message = msg.get("message", "")
+            request_id = msg.get("request_id")
+            if not isinstance(request_id, str) or len(request_id) > 128:
+                request_id = None
 
-            if not user_message:
+            if not isinstance(user_message, str) or not user_message.strip():
                 await websocket.send_json({"error": "Empty message"})
                 continue
 
@@ -228,7 +429,7 @@ async def websocket_chat(websocket: WebSocket):
             await websocket.send_json({"type": "typing", "status": True})
 
             async def send_event(event: dict) -> None:
-                await websocket.send_json(event)
+                await websocket.send_json({**event, "request_id": request_id})
 
             try:
                 result = await agent.chat(
@@ -237,32 +438,40 @@ async def websocket_chat(websocket: WebSocket):
                     event_callback=send_event,
                     image_data=msg.get("image_data"),
                     image_media_type=msg.get("image_media_type", "image/jpeg"),
+                    _input_epoch=msg.get("_input_epoch"),
                 )
 
                 # Fire a pose_change event immediately so the sprite animates
                 # reactively on the LLM's chosen pose before the full message lands.
                 pose_parts = result.get("state", {}).get("pose_parts")
                 if pose_parts:
-                    await websocket.send_json({"type": "pose_change", "pose_parts": pose_parts})
+                    await websocket.send_json(
+                        {"type": "pose_change", "pose_parts": pose_parts}
+                    )
 
                 last_conv_id = result.get("conversation_id") or last_conv_id
-                await websocket.send_json({
-                    "type": "message",
-                    **result,
-                })
+                await websocket.send_json(
+                    {
+                        "type": "message",
+                        "request_id": request_id,
+                        **result,
+                    }
+                )
 
             except Exception as exc:
                 logger.exception("Unhandled error in chat handler: %s", exc)
                 try:
-                    await websocket.send_json({
-                        "type": "message",
-                        "response": "Something went wrong on my end. Please try again.",
-                        "conversation_id": conv_id or "",
-                        "state": agent.personality.state.to_dict(),
-                        "skills_used": [],
-                        "memories_recalled": 0,
-                        "context_compressed": 0,
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "message",
+                            "response": "Something went wrong on my end. Please try again.",
+                            "conversation_id": conv_id or "",
+                            "state": agent.personality.state.to_dict(),
+                            "skills_used": [],
+                            "memories_recalled": 0,
+                            "context_compressed": 0,
+                        }
+                    )
                 except Exception:
                     pass  # WS may already be closing
 

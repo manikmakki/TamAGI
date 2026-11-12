@@ -1,8 +1,10 @@
 """
 Base Skill — Abstract base class for all TamAGI skills.
 
-All skills must subclass `Skill` and implement `execute()`.
-Skills are auto-discovered from the skills directory and any custom skill paths.
+Registry adapters subclass `Skill` and implement `execute()`. The home platform
+registers built-ins and versioned subprocess tools; resident code is not imported
+into the backend. Directory discovery is retained only for legacy non-platform
+custom skills. See docs/workspace-layout.md for the supported tool lifecycle.
 """
 
 from __future__ import annotations
@@ -43,7 +45,9 @@ class Skill(ABC):
     Subclasses must define:
       - name: str            — Unique skill identifier
       - description: str     — Human-readable description (shown to LLM)
-      - parameters: dict     — JSON Schema-style parameter definitions
+      - parameters: dict     — Mapping of argument names to definitions, with
+                               required: True on each required argument; this
+                               is not a complete top-level JSON Schema
 
     And implement:
       - execute(**kwargs) -> SkillResult
@@ -68,6 +72,11 @@ class Skill(ABC):
                 "type": param_def.get("type", "string"),
                 "description": param_def.get("description", ""),
             }
+            for schema_key in ('items', 'properties', 'additionalProperties'):
+                if schema_key in param_def:
+                    prop[schema_key] = param_def[schema_key]
+            if prop['type'] == 'array' and 'items' not in prop:
+                prop['items'] = {'type':'string'}
             if "enum" in param_def:
                 prop["enum"] = param_def["enum"]
             if "default" in param_def:

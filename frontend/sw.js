@@ -1,9 +1,20 @@
 // TamAGI Service Worker — PWA offline support
-const CACHE_NAME = 'tamagi-v1';
+const CACHE_NAME = 'tamagi-platform-v14';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/assets/avatar-vex.js',
+  '/assets/avatar-echo.js',
+  '/assets/avatar-ember.js?v=8',
+  '/assets/avatar-runtime.js?v=8',
+  '/assets/app-shell.css?v=18',
+  '/assets/app-shell.js?v=20',
+  '/assets/home-views.js?v=22',
+  '/assets/marked.min.js',
+  '/assets/d3.v7.min.js',
+  '/assets/panel-bridge.js',
+  '/assets/panel-bridge.css',
 ];
 
 // Install: cache static assets
@@ -31,8 +42,22 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // API calls: always network
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws')) {
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/r/') || url.pathname.startsWith('/ws')) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  if (['/home','/settings','/login'].includes(url.pathname)) { event.respondWith(fetch(event.request)); return; }
+
+  // Refresh the application shell after a release, with an offline fallback.
+  if (event.request.mode === 'navigate' || ['/', '/index.html'].includes(url.pathname)) {
+    event.respondWith(fetch(event.request).then((response) => {
+      if (response.ok && !response.redirected) {
+        const copy = response.clone();
+        event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)));
+      }
+      return response;
+    }).catch(() => caches.match(event.request)));
     return;
   }
 

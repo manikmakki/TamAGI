@@ -1,0 +1,9 @@
+.embedded-panel .back-link { display: none; }
+.embedded-panel body { background: #0a0a14; }
+.embedded-panel .header .logo { display: none; }
+.embedded-panel .header { min-height: 42px; }
+.embedded-panel body > div[style*="text-align:center"] { display: none; }
+@media (max-width: 700px) {
+  .embedded-panel .main { flex-wrap: wrap; }
+  .embedded-panel .inspector { max-width: 100%; }
+}

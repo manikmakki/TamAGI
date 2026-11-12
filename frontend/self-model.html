@@ -70,6 +70,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg-base);color:var(--text
 .tooltip{position:fixed;background:var(--bg-elevated);border:1px solid var(--border-hover);border-radius:4px;padding:7px 10px;font-family:var(--font-mono);font-size:10px;color:var(--text-main);max-width:260px;pointer-events:none;z-index:100;display:none;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.4)}
 .hint{font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:4px}
 </style>
+<link rel="stylesheet" href="/assets/panel-bridge.css">
+<script src="/assets/panel-bridge.js" defer></script>
 </head>
 <body>
 <div class="app">
@@ -96,7 +98,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg-base);color:var(--text
 </div>
 <div class="tooltip" id="tooltip"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="/assets/d3.v7.min.js"></script>
 <script>
 // ── Node type palette ─────────────────────────────────────────
 const NC={

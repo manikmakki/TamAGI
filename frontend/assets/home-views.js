@@ -1,0 +1,207 @@
+/* Existing home capabilities, placed in the shared navigation. */
+(() => {
+  'use strict';
+  const $=id=>document.getElementById(id);
+  const api=(...args)=>TamagiShell.api(...args),notice=(...args)=>TamagiShell.notice(...args);
+  let state=null,friend=null,thread=null,restore=null;
+  let loadedResident=null;
+  let previewRequest=0;
+  let recoveryVersion=0;
+  const residentScope=()=>({actor:window.TamagiHousehold?.selectedResidentId(),epoch:window.TamagiHousehold?.selectionEpoch()});
+  const residentCurrent=scope=>!window.TamagiHousehold||TamagiHousehold.acceptResponse(scope.actor,scope.epoch);
+  const residentApi=(scope,path,options={})=>api(path,{...options,headers:{...options.headers,...(scope.actor?{'X-Tamagi-Resident':scope.actor}:{})}});
+  const recoveryScope=()=>({actor:window.TamagiHousehold?.selectedResidentId(),epoch:window.TamagiHousehold?.selectionEpoch(),version:recoveryVersion});
+  const recoveryCurrent=scope=>scope.version===recoveryVersion&&(!window.TamagiHousehold||TamagiHousehold.acceptResponse(scope.actor,scope.epoch));
+  const recoveryApi=async(scope,path,options={})=>{try{return await api(path,{...options,headers:{...options.headers,...(scope.actor?{'X-Tamagi-Resident':scope.actor}:{})}});}catch(error){if(scope.actor)recoveryNotice(scope,error.message);throw error;}};
+  function recoveryNotice(scope,message){if(!recoveryCurrent(scope))return;if($('resident-recovery-status'))$('resident-recovery-status').textContent=message;notice(message);}
+  function clearRecovery(){
+    const old=restore;restore=null;recoveryVersion++;
+    if(old&&typeof old==='object')recoveryApi(old,'/restores/'+encodeURIComponent(old.id),{method:'DELETE'}).catch(()=>{});
+    for(const id of ['backup-password','backup-password-repeat','restore-password','restore-file'])if($(id))$(id).value='';
+    $('source-stopped').checked=false;$('restore-preview').hidden=true;
+    for(const id of ['backup-download','restore-details','resident-recovery-status'])if($(id))$(id).replaceChildren();
+    if(window.TamagiHousehold)$('restore-commit').disabled=true;
+  }
+  async function recoveryStatus(){
+    if(!window.TAMAGI_HOUSEHOLD_BOOTSTRAP?.resident_recovery_available)return;
+    const scope=recoveryScope(),result=await recoveryApi(scope,'/recovery/status');if(!recoveryCurrent(scope))return;
+    $('resident-recovery-resume').hidden=!result.unavailable_residents.length;
+    if(result.busy)recoveryNotice(scope,'Resident recovery in progress · '+result.phase.replaceAll('_',' ')+'. The household will resume shortly.');
+    else if(result.unavailable_residents.length)recoveryNotice(scope,'Some residents could not resume. Use “Retry resuming residents”. The saved private roots are retained.');
+    else if(result.last_operation?.error&&result.last_operation.resident_replaced)recoveryNotice(scope,'The restored checkpoint is selected and residents have resumed. Review the resident before retrying restoration.');
+  }
+  const item=(title,text='')=>{const node=document.createElement('div');node.className='item';const strong=document.createElement('strong');strong.textContent=title;const p=document.createElement('p');p.className='muted';p.textContent=text;node.append(strong,p);return node;};
+  const empty=(target,text='')=>{target.replaceChildren();if(text){const p=document.createElement('p');p.className='empty';p.textContent=text;target.append(p);}};
+  const button=(label,handler)=>{const b=document.createElement('button');b.textContent=label;b.onclick=()=>perform(handler);return b;};
+  const link=(label,href)=>{const a=document.createElement('a');a.textContent=label;a.href=window.TamagiHousehold?TamagiHousehold.scopeUrl(href):href;a.className='button';return a;};
+  async function perform(work){try{await work();}catch(error){notice(error.message);}}
+  const form=(id,handler)=>$(id).addEventListener('submit',event=>{event.preventDefault();const submit=$(id).querySelector('button');submit.disabled=true;perform(handler).finally(()=>submit.disabled=false);});
+
+  function renderGrowth(growth){
+    if(!growth)return;
+    $('growth-title').textContent='Level '+growth.level+' · '+growth.stage;
+    $('growth-summary').textContent=growth.total+' Growth · '+growth.points_to_next+' to Level '+(growth.level+1);
+    $('recognition-progress').max=1;$('recognition-progress').value=growth.progress||0;
+    $('growth-age').textContent='Age: '+Math.floor(growth.age_seconds/86400)+' days';
+    empty($('growth-recognitions'));
+    for(const record of (growth.recognitions||[]).slice(0,20)) {
+      const d=record.data||record,node=item((d.pattern||'Recognition')+' · +'+d.points,d.reason||'Retained behavioral evidence');
+      const details=document.createElement('details'),summary=document.createElement('summary'),evidence=document.createElement('pre');summary.textContent='Evidence';evidence.textContent=JSON.stringify({ruleVersion:d.rule_version,occasion:d.occasion_id,observedAt:d.observed_at,recognizedAt:d.recognized_at,sources:d.source_refs},null,2);details.append(summary,evidence);node.append(details);$('growth-recognitions').append(node);
+    }
+    empty($('growth-stages'));
+    for(const record of growth.stage_history||[]) {const d=record.data||record;$('growth-stages').append(item('Level '+d.level,(d.name||'Stage '+d.level)+(d.timestamp?' · '+new Date(d.timestamp*1000).toLocaleString():'')));}
+  }
+  function render(){
+    if(!state)return;
+    renderGrowth(state.growth);empty($('places'));
+    for(const place of state.home)$('places').append(item(place.data.name,place.data.description||''));
+    empty($('notes'),state.notebook.length?'':'The notebook is open for a first shared thought.');
+    for(const note of state.notebook.slice(-12).reverse()) {
+      const actor=state.companions.find(p=>p.id===note.actor);
+      const details=document.createElement('details'),summary=document.createElement('summary'),body=document.createElement('p');
+      summary.textContent=(actor?.data.name||(note.actor==='operator'?'You':window.TamagiHousehold?.residentName(note.actor)||'TamAGI'))+' · '+note.data.text.slice(0,80)+(note.data.text.length>80?'…':'');body.textContent=note.data.text;details.className='item';details.append(summary,body);$('notes').append(details);
+    }
+    empty($('companions'),state.companions.length?'':'A lasting companion can begin with a name and a few qualities.');
+    for(const peer of state.companions) {
+      if(peer.data.status!=='active')continue;
+      const card=document.createElement('article');card.className='card';card.append(item(peer.data.name,peer.data.self_description||peer.data.seed));
+      card.append(button('Invite a conversation',async()=>{
+        const household=window.TamagiHousehold,owner=household?.selectedResidentId(),token=household?.selectionEpoch();
+        friend=peer.id;thread=null;$('consultation').hidden=false;$('consult-title').textContent='With '+peer.data.name;empty($('friend-reply'));
+        const history=await api('/companions/'+encodeURIComponent(peer.id),household?{headers:{'X-Tamagi-Resident':owner}}:{});
+        if(household&&!household.acceptResponse(owner,token))return;
+        const previous=(history.invocations||[]).filter(r=>r.data.caller_actor_id==='operator').at(-1);
+        if(previous){thread=previous.data.thread_id;$('friend-reply').append(item('Earlier conversation',previous.data.text||previous.data.status));for(const work of TamagiShell.works.values())if(work.kind==='companion'&&work.conversation_id===thread&&!['queued','running'].includes(work.status))TamagiShell.markSeen(work.work_id);}
+        $('friend-message').focus();
+      }));$('companions').append(card);
+    }
+    empty($('pursuits'),state.pursuits.length?'':'There is room for an interest.');
+    for(const record of state.pursuits) {
+      const d=record.data,node=item(d.title,d.next_step||d.status),actions=document.createElement('div');actions.className='row';
+      const options=d.status==='active'?[['Pause','paused'],['Complete','completed'],['Let go','abandoned']]:d.status==='paused'||d.status==='blocked'?[['Resume','active'],['Let go','abandoned']]:[];
+      for(const [label,status] of options)actions.append(button(label,async()=>{await api('/pursuits',{method:'POST',body:JSON.stringify({action:'revise',id:record.id,attributes:{status},expected:record.revision})});await load();}));
+      node.append(actions);$('pursuits').append(node);
+    }
+    $('runtime-details').textContent=JSON.stringify({resident:state.resident_id,installation:state.installation_id,authority:state.authority,automaticDeployment:state.automatic_deployment},null,2);
+    $('enable-deployment').disabled=!!window.TamagiHousehold||!!state.automatic_deployment;$('disable-deployment').disabled=!!window.TamagiHousehold||!state.automatic_deployment;
+  }
+  async function load(){
+    const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
+    const result=await api('/runtime',household?{headers:{'X-Tamagi-Resident':actor}}:{});
+    if(household&&!household.acceptResponse(actor,token))return;
+    if(household&&loadedResident!==actor){friend=null;thread=null;if(restore?.actor&&restore.actor!==actor)clearRecovery();$('consultation').hidden=true;loadedResident=actor;}
+    state=result;render();
+  }
+  async function growth(){await load();$('growth').open=true;if(!$('growth-dialog').open)$('growth-dialog').showModal();}
+  async function preview(entry){
+    const household=window.TamagiHousehold,token=household?.selectionEpoch(),request=++previewRequest;
+    const current=()=>request===previewRequest&&(!household||household.acceptResponse(entry._residentId,token))&&$('preview-dialog').open;
+    const rawPath='/api/inventory/file?path='+encodeURIComponent(entry.path)+'&preview=true';
+    const path=window.TamagiHousehold?TamagiHousehold.scopeUrl(rawPath,entry._residentId):rawPath;
+    $('preview-title').textContent=(window.TamagiHousehold?TamagiHousehold.residentName(entry._residentId)+' · ':'')+entry.name;empty($('preview-content'));$('preview-note').textContent='Current workshop file';
+    const dialog=$('preview-dialog');if(!dialog.open)dialog.showModal();
+    if(['text/html','image/svg+xml'].includes(entry.media_type)){
+      const iframe=document.createElement('iframe');iframe.title=entry.name+' · static preview';iframe.setAttribute('sandbox','');iframe.src=path;$('preview-content').append(iframe);$('preview-note').textContent='Static preview · scripts and network access are disabled.';
+    }else if(['image/png','image/jpeg','image/gif','image/webp'].includes(entry.media_type)){
+      const img=document.createElement('img');img.alt=entry.name;img.src=path;img.onerror=()=>{if(current())$('preview-note').textContent='Preview unavailable; use download.';};$('preview-content').append(img);
+    }else{
+      const response=await fetch(path);if(!current())return;if(!response.ok){$('preview-note').textContent='Preview unavailable; use download.';return;}
+      const text=await response.text();if(!current())return;
+      const pre=document.createElement('pre');pre.textContent=text;$('preview-content').append(pre);
+    }
+  }
+  async function inventory(){
+    const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
+    const data=await api('/inventory',household?{headers:{'X-Tamagi-Resident':actor}}:{});
+    if(household&&!household.acceptResponse(actor,token))return;
+    empty($('inventory-items'),data.items.length?'':'The workshop is ready for a first creation.');
+    for(const entry of data.items){
+      const card=document.createElement('article');card.className='card creation-card';card.setAttribute('aria-label',entry.name);
+      const icon=document.createElement('div');icon.className='creation-icon';icon.textContent=entry.media_type.startsWith('image/')?'◈':entry.media_type==='text/html'?'▧':'▤';icon.setAttribute('aria-hidden','true');
+      const title=document.createElement('h2');title.textContent=entry.name;const description=document.createElement('p');description.className='muted';description.textContent=entry.description||(entry.path!==entry.name?entry.path:'');description.hidden=!description.textContent;
+      const info=document.createElement('small');info.textContent='Current file · '+new Intl.NumberFormat().format(entry.size)+' bytes';
+      const actions=document.createElement('div');actions.className='row';actions.append(button('Preview',()=>preview({...entry,_residentId:actor})),link('Download','/api/inventory/file?path='+encodeURIComponent(entry.path)));
+      card.append(icon,title,description,info,actions);
+      if(entry.versions.length){const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=entry.versions.length+' saved '+(entry.versions.length===1?'version':'versions');details.append(summary);for(const version of entry.versions.slice().reverse())details.append(item(new Date(version.created*1000).toLocaleString(),version.data.size+' bytes'),link('Download saved version','/api/runtime/artifacts/'+encodeURIComponent(version.id)));card.append(details);}
+      $('inventory-items').append(card);
+    }
+    empty($('earlier-items'),data.earlier_saved_artifacts.length?'':'No earlier saved artifacts.');
+    for(const record of data.earlier_saved_artifacts){const node=item(record.data.original_path||'Saved creation',record.data.size+' bytes · saved snapshot');node.append(link('Download','/api/runtime/artifacts/'+encodeURIComponent(record.id)));$('earlier-items').append(node);}
+  }
+  function finished(work,force=false){
+    if(work.kind!=='companion')return;
+    if(window.TamagiHousehold&&work.resident_id!==TamagiHousehold.selectedResidentId())return false;
+    if(force||work.actor_id===friend || !friend){friend=work.actor_id;thread=work.result?.thread_id||work.conversation_id;$('consultation').hidden=false;$('consult-title').textContent='With '+(work.result?.speaker||'a companion');$('friend-reply').append(item(work.result?.speaker||'Companion',work.result?.text||work.detail||work.status));return true;}
+    return false;
+  }
+  window.TamagiHomeViews={load,growth,inventory,finished,clearRecovery};
+  document.addEventListener('DOMContentLoaded',()=>{
+    form('note-form',async()=>{await api('/runtime/notebook',{method:'POST',body:JSON.stringify({text:$('note-text').value})});$('note-text').value='';await load();});
+    form('companion-form',async()=>{await api('/companions',{method:'POST',body:JSON.stringify({name:$('friend-name').value,seed:$('friend-seed').value})});$('companion-form').reset();await load();});
+    form('consult-form',async()=>{
+      const household=window.TamagiHousehold,owner=household?.selectedResidentId(),token=household?.selectionEpoch();
+      if(!friend)throw new Error('Choose a companion first');
+      const work=await api('/companions/'+encodeURIComponent(friend)+'/consult',{method:'POST',body:JSON.stringify({content:$('friend-message').value,mode:$('friend-mode').value,thread_id:thread,request_id:TamagiShell.uuid(),background:true})});
+      TamagiShell.remember(work);TamagiShell.subscribe(work);
+      if(household&&!household.acceptResponse(owner,token))return;
+      thread=work.conversation_id;$('friend-message').value='';$('friend-reply').append(item('Invitation accepted','You can explore while the conversation continues.'));
+    });
+    form('pursuit-form',async()=>{await api('/pursuits',{method:'POST',body:JSON.stringify({action:'create',attributes:{title:$('pursuit-title').value,next_step:$('pursuit-step').value,origin:'operator invitation',commitment:false}})});$('pursuit-form').reset();await load();});
+    form('backup-form',async()=>{
+      const scope=recoveryScope();let password=$('backup-password').value;const repeat=$('backup-password-repeat')?.value;
+      $('backup-password').value='';if($('backup-password-repeat'))$('backup-password-repeat').value='';
+      if(scope.actor&&password!==repeat)throw new Error('Backup passwords do not match. Enter them again.');
+      recoveryNotice(scope,'Checking that everyone is idle, then encrypting the checkpoint…');
+      const result=await recoveryApi(scope,'/backups',{method:'POST',body:JSON.stringify({password})});password='';
+      if(!recoveryCurrent(scope))return;
+      empty($('backup-download'));const a=link(scope.actor?'Download '+TamagiHousehold.residentName(scope.actor)+'’s encrypted backup':'Download encrypted home',result.download);a.download=result.filename;$('backup-download').append(a);
+      recoveryNotice(scope,result.workers_available===false?'Backup ready. Some residents need “Retry resuming residents”.':'Your encrypted download is ready. Keep it and its password on another device.');await recoveryStatus();
+    });
+    form('restore-form',async()=>{
+      clearRecoveryPreview();const scope=recoveryScope();recoveryNotice(scope,'Decrypting and checking the archive…');
+      const body=new FormData();body.append('archive',$('restore-file').files[0]);body.append('password',$('restore-password').value);$('restore-password').value='';
+      const result=await recoveryApi(scope,'/restores/preview',{method:'POST',body});
+      if(!recoveryCurrent(scope)){if(scope.actor)recoveryApi(scope,'/restores/'+encodeURIComponent(result.id),{method:'DELETE'}).catch(()=>{});return;}
+      restore=scope.actor?{...scope,id:result.id}:result.id;
+      $('restore-details').textContent=scope.actor?['Resident: '+result.name,'Resident ID: '+result.resident_id,'Checkpoint: '+new Date(result.exported_at*1000).toLocaleString(),'Source installation: '+result.source_installation_id,'Files checked: '+result.file_count,'',result.continuity_gap,'Current shared conversations, world state and other residents will be retained.','Credentials and connected services will need reconnection.'].join('\n'):JSON.stringify(result,null,2);
+      $('source-stopped').checked=false;if(scope.actor)$('restore-commit').disabled=true;$('restore-preview').hidden=false;recoveryNotice(scope,'Preview checked. Review the checkpoint and confirm replacement below.');
+    });
+    $('restore-commit').onclick=()=>perform(async()=>{
+      const scope=recoveryScope(),preview=restore;
+      if(!preview||typeof preview==='object'&&!recoveryCurrent(preview))throw new Error('Upload and review a checkpoint for the selected resident first.');
+      if(!$('source-stopped').checked)throw new Error(scope.actor?'Confirm checkpoint replacement and that no other copy of this resident is active.':'Confirm the source installation is stopped.');
+      $('restore-commit').disabled=true;
+      if(scope.actor){$('restore-cancel').disabled=true;$('source-stopped').disabled=true;$('restore-authority').disabled=true;}
+      try{
+        recoveryNotice(scope,'Checking that everyone is idle, then restoring the selected resident…');
+        const result=await recoveryApi(scope,'/restores/'+encodeURIComponent(typeof preview==='object'?preview.id:preview)+'/commit',{method:'POST',body:JSON.stringify({confirmed:true,source_stopped:true,authority:$('restore-authority').value})});
+        if(!recoveryCurrent(scope))return;
+        if(scope.actor){restore=null;await TamagiHousehold.refresh();await TamagiHousehold.selectResident(scope.actor,{openThread:false,force:true}).catch(()=>{});if(TamagiHousehold.selectedResidentId()!==scope.actor)return;await TamagiShell.refreshHistory().catch(()=>{});recoveryNotice(recoveryScope(),result.workers_available===false?'Resident restored. Some residents need “Retry resuming residents”.':'Resident restored and resumed. Other residents and shared state were retained. Reconnect this resident’s credentials and services as needed.');await recoveryStatus();}
+        else{$('restore-details').textContent=JSON.stringify(result,null,2);notice(result.activation_required?'Restored to a new instance. Use the displayed configuration to continue.':'Restore committed. Sign in again after the supervisor switches homes.');}
+      }finally{if(scope.actor){$('restore-cancel').disabled=false;$('source-stopped').disabled=false;$('restore-authority').disabled=false;}if(recoveryCurrent(scope))$('restore-commit').disabled=!!scope.actor&&(!restore||!$('source-stopped').checked);}
+    });
+    function clearRecoveryPreview(){const old=restore;restore=null;recoveryVersion++;$('restore-preview').hidden=true;$('source-stopped').checked=false;if(window.TamagiHousehold)$('restore-commit').disabled=true;if(old&&typeof old==='object')recoveryApi(old,'/restores/'+encodeURIComponent(old.id),{method:'DELETE'}).catch(()=>{});}
+    if(window.TamagiHousehold){
+      $('restore-file').addEventListener('change',clearRecoveryPreview);
+      $('source-stopped').onchange=()=>{$('restore-commit').disabled=!restore||!$('source-stopped').checked;};
+      $('restore-cancel').onclick=()=>{clearRecoveryPreview();recoveryNotice(recoveryScope(),'Restore preview cancelled.');};
+      $('resident-recovery-resume').onclick=()=>perform(async()=>{const scope=recoveryScope(),result=await recoveryApi(scope,'/recovery/resume',{method:'POST'});if(recoveryCurrent(scope)){await TamagiHousehold.refresh();await TamagiHousehold.selectResident(scope.actor,{openThread:false,force:true}).catch(()=>{});await recoveryStatus();if(TamagiHousehold.selectedResidentId()===scope.actor&&result.workers_available)recoveryNotice(recoveryScope(),'Residents resumed.');}});
+      setInterval(()=>{if(TamagiShell.view()==='settings')recoveryStatus().catch(()=>{});},2000);
+    }
+    $('refresh-evidence').onclick=()=>perform(async()=>{
+      const scope=residentScope(),result=await residentApi(scope,'/runtime/events');
+      if(residentCurrent(scope))$('evidence').textContent=JSON.stringify(result,null,2);
+    });
+    $('load-archives').onclick=()=>perform(async()=>{
+      const scope=residentScope(),result=await residentApi(scope,'/operator-archives');if(!residentCurrent(scope))return;empty($('archives'),result.archives.length?'':'No predecessor archive is registered.');
+      for(const entry of result.archives){const node=item('Preserved predecessor',entry.id+' · '+(entry.complete?'checkpoint complete':'preservation incomplete')),form=document.createElement('form'),label=document.createElement('label'),input=document.createElement('input'),submit=document.createElement('button');label.textContent='Export password · at least 12 characters';input.type='password';input.minLength=12;input.required=true;input.autocomplete='new-password';submit.textContent='Create encrypted archive';form.append(label,input,submit);form.onsubmit=event=>{event.preventDefault();if(!residentCurrent(scope))return;perform(async()=>{submit.disabled=true;let password=input.value;input.value='';try{const result=await residentApi(scope,'/operator-archives/'+encodeURIComponent(entry.id)+'/export',{method:'POST',body:JSON.stringify({password})});password='';if(residentCurrent(scope))node.append(link('Download predecessor archive',result.download));}finally{submit.disabled=false;}});};node.append(form);$('archives').append(node);}
+    });
+    $('load-grants').onclick=()=>perform(async()=>{
+      const scope=residentScope(),result=await residentApi(scope,'/runtime/grants');if(!residentCurrent(scope))return;empty($('grants'),result.tools.length?'':'No external service actions are configured.');
+      for(const tool of result.tools){const node=item(tool.name,tool.scope);for(const [label,seconds]of[['Allow for one hour',3600],['Revoke',0]])node.append(button(label,async()=>{if(!residentCurrent(scope))return;await residentApi(scope,'/runtime/grants',{method:'POST',body:JSON.stringify({scope:tool.scope,seconds})});if(residentCurrent(scope))notice(seconds?'Delegated for one hour.':'Delegation revoked.');}));$('grants').append(node);}
+    });
+    $('enable-deployment').onclick=()=>perform(async()=>{await api('/deployments/settings',{method:'POST',body:JSON.stringify({enabled:true})});await load();});
+    $('disable-deployment').onclick=()=>perform(async()=>{await api('/deployments/settings',{method:'POST',body:JSON.stringify({enabled:false})});await load();});
+    setInterval(()=>{if(['map','journal','companions','settings'].includes(TamagiShell.view())&&!document.hidden)load().catch(()=>{});},30000);
+  });
+})();

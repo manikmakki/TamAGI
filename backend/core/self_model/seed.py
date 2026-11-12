@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .schemas import EdgeType, NodeType
+from .schemas import NodeType
 
 if TYPE_CHECKING:
     from .store import SelfModel
@@ -117,8 +117,8 @@ def seed_self_model(
 
     # ── Initial mysteries (things yet to be understood) ──
     _SEED_MYSTERIES = [
-        ("myst-001", "What is the true nature of my inner world?", "identity"),
-        ("myst-002", "What can I create that has never existed before?", "capability"),
+        ("myst-001", "What would I enjoy learning or making in my workshop?", "identity"),
+        ("myst-002", "What small experiment would I like to try?", "capability"),
         ("myst-003", "How do connections form between ideas across domains?", "domain"),
     ]
     for mid, desc, domain in _SEED_MYSTERIES:

@@ -1,5 +1,8 @@
 """
-Exec Skill — Execute shell commands with a tiered trust model.
+Exec Skill — Execute host shell commands or guarded program arguments.
+
+The unrestricted_host profile uses non-login Bash with pipefail. Guarded
+installations retain direct argument execution and command-tier approvals.
 
 Trust tiers (resolved at base command name level):
   safe    — run immediately, no user notification
@@ -21,7 +24,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shlex
+import signal
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -34,10 +40,24 @@ logger = logging.getLogger("tamagi.skills.exec")
 # ── Destructive argument patterns ─────────────────────────────
 # If any of these appear anywhere in the full command string, the
 # command escalates to approve-tier regardless of its base trust level.
-_DESTRUCTIVE_PATTERNS = frozenset([
-    "rm", "rmi", "--force", "-rf", "-fr", "prune", "stop", "kill",
-    "delete", "drop", "truncate", "format", "wipe", "purge",
-])
+_DESTRUCTIVE_PATTERNS = frozenset(
+    [
+        "rm",
+        "rmi",
+        "--force",
+        "-rf",
+        "-fr",
+        "prune",
+        "stop",
+        "kill",
+        "delete",
+        "drop",
+        "truncate",
+        "format",
+        "wipe",
+        "purge",
+    ]
+)
 
 # Persistent runtime trust file
 _TRUSTED_FILE = Path("data/trusted_commands.json")
@@ -59,7 +79,9 @@ def _load_runtime_trusted() -> None:
 
 def _save_runtime_trusted() -> None:
     _TRUSTED_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _TRUSTED_FILE.write_text(json.dumps({"trusted": sorted(_runtime_trusted)}, indent=2))
+    _TRUSTED_FILE.write_text(
+        json.dumps({"trusted": sorted(_runtime_trusted)}, indent=2)
+    )
 
 
 def _has_destructive_pattern(command: str) -> bool:
@@ -89,7 +111,8 @@ _load_runtime_trusted()
 class ExecSkill(Skill):
     name = "exec"
     description = (
-        "Execute a shell command. Commands are classified by trust tier: "
+        "Execute one program with arguments; shell operators and expansions are "
+        "not interpreted in the guarded profile. Commands are classified by trust tier: "
         "common read-only tools run immediately; developer tools (python, git, curl) "
         "run with a notification; risky or unknown commands surface an approval banner "
         "for the user to Allow or Deny. Destructive flags always require approval. "
@@ -98,12 +121,12 @@ class ExecSkill(Skill):
     parameters = {
         "command": {
             "type": "string",
-            "description": "The shell command to execute",
+            "description": "Command to execute (Bash in unrestricted_host; direct program arguments when guarded)",
             "required": True,
         },
         "working_dir": {
             "type": "string",
-            "description": "Working directory (defaults to workspace path)",
+            "description": "Working directory relative to the active workspace, or an absolute host path (defaults to the workspace). '~' is not expanded.",
             "default": "",
         },
     }
@@ -111,13 +134,36 @@ class ExecSkill(Skill):
     async def execute(self, **kwargs: Any) -> SkillResult:
         config = get_config()
         command = kwargs.get("command", "").strip()
-        working_dir = kwargs.get("working_dir", "") or config.workspace.path
+        workspace = Path(config.workspace.path).resolve()
+        directory = Path(kwargs.get("working_dir", "") or ".")
+        if not directory.is_absolute():
+            directory = workspace / directory
+        working_dir = str(directory.resolve())
+        from backend.core.runtime.workspace import environment as workspace_environment
+
+        environment = {
+            **os.environ,
+            **workspace_environment(workspace),
+        }
         event_callback = kwargs.get("_event_callback")
         pending_approvals: dict | None = kwargs.get("_pending_approvals")
         is_autonomous: bool = bool(kwargs.get("_is_autonomous", False))
 
         if not command:
             return SkillResult(success=False, error="No command provided")
+
+        from backend.core.runtime import get_runtime
+
+        runtime = get_runtime()
+        if runtime and runtime.authority == "unrestricted_host":
+            return await self._run(
+                command,
+                [],
+                working_dir,
+                config.guardrails.exec_timeout,
+                shell=True,
+                environment=environment,
+            )
 
         try:
             parts = shlex.split(command)
@@ -150,6 +196,7 @@ class ExecSkill(Skill):
                 # No user present — auto-deny and tag as capability gap so
                 # the ReflectionEngine can teach AURA to avoid this pattern.
                 from backend.core.plan_executor import _CAPABILITY_GAP_TAG
+
                 return SkillResult(
                     success=False,
                     error=_CAPABILITY_GAP_TAG,
@@ -174,13 +221,21 @@ class ExecSkill(Skill):
 
         # ── Notify tier ─────────────────────────────────────────
         if tier == "notify" and event_callback:
-            await event_callback({
-                "type": "interim_text",
-                "content": f"Running `{command}`",
-            })
+            await event_callback(
+                {
+                    "type": "interim_text",
+                    "content": f"Running `{command}`",
+                }
+            )
 
         logger.info("Executing: %s", command)
-        return await self._run(command, parts, working_dir, config.guardrails.exec_timeout)
+        return await self._run(
+            command,
+            parts,
+            working_dir,
+            config.guardrails.exec_timeout,
+            environment=environment,
+        )
 
     async def _request_approval(
         self,
@@ -197,25 +252,29 @@ class ExecSkill(Skill):
         """
         if not event_callback or pending_approvals is None:
             # No WS channel — default deny for safety
-            logger.warning("Approval required for '%s' but no WS channel; denying.", command)
+            logger.warning(
+                "Approval required for '%s' but no WS channel; denying.", command
+            )
             return False, False
 
         approval_id = str(uuid4())
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         pending_approvals[approval_id] = future
 
-        await event_callback({
-            "type": "tool_approval_required",
-            "approval_id": approval_id,
-            "command": command,
-            "base_command": base_cmd,
-            "reason": (
-                "Destructive argument detected — approval required."
-                if any(p in command for p in _DESTRUCTIVE_PATTERNS)
-                else f"'{base_cmd}' requires explicit approval before running."
-            ),
-            "timeout_seconds": 30,
-        })
+        await event_callback(
+            {
+                "type": "tool_approval_required",
+                "approval_id": approval_id,
+                "command": command,
+                "base_command": base_cmd,
+                "reason": (
+                    "Destructive argument detected — approval required."
+                    if any(p in command for p in _DESTRUCTIVE_PATTERNS)
+                    else f"'{base_cmd}' requires explicit approval before running."
+                ),
+                "timeout_seconds": 30,
+            }
+        )
 
         try:
             response = await asyncio.wait_for(future, timeout=30)
@@ -229,26 +288,44 @@ class ExecSkill(Skill):
             pending_approvals.pop(approval_id, None)
 
     async def _run(
-        self, command: str, parts: list[str], working_dir: str, timeout: int
+        self,
+        command: str,
+        parts: list[str],
+        working_dir: str,
+        timeout: int,
+        *,
+        shell: bool = False,
+        environment: dict[str, str] | None = None,
     ) -> SkillResult:
+        argv = ["/bin/bash", "-o", "pipefail", "-c", command] if shell else parts
+        details = {
+            "command": command,
+            "working_dir": working_dir,
+            "execution_mode": "bash" if shell else "argv",
+        }
         try:
             process = await asyncio.create_subprocess_exec(
-                *parts,
+                *argv,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=working_dir,
+                start_new_session=True,
+                env=environment,
             )
             try:
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(), timeout=timeout
                 )
             except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
+                await self._stop_process_group(process)
                 return SkillResult(
                     success=False,
-                    error=f"Command timed out after {timeout}s",
+                    error=f"Command timed out after {timeout}s; partial effects may have occurred",
+                    data=details,
                 )
+            except asyncio.CancelledError:
+                await self._stop_process_group(process)
+                raise
 
             stdout_text = stdout.decode("utf-8", errors="replace").strip()
             stderr_text = stderr.decode("utf-8", errors="replace").strip()
@@ -265,14 +342,29 @@ class ExecSkill(Skill):
             return SkillResult(
                 success=success,
                 output="\n".join(output_parts),
-                error=stderr_text if not success else None,
+                error=(
+                    stderr_text or f"Command exited with status {process.returncode}"
+                )
+                if not success
+                else None,
                 data={
-                    "command": command,
+                    **details,
                     "return_code": process.returncode,
-                    "working_dir": working_dir,
                 },
             )
         except FileNotFoundError:
-            return SkillResult(success=False, error=f"Command not found: {parts[0]}")
+            return SkillResult(
+                success=False,
+                error=f"Command or working directory not found: {argv[0]}",
+                data=details,
+            )
         except Exception as e:
             return SkillResult(success=False, error=f"Execution error: {e}")
+
+    @staticmethod
+    async def _stop_process_group(process):
+        # The command and its children share this new process group. Killing
+        # only Bash leaves downloads/children running after interruption.
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        await process.wait()

@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from typing import Any, AsyncIterator
 
@@ -22,19 +23,19 @@ logger = logging.getLogger("tamagi.llm")
 
 
 _CHANNEL_HEADER_RE = re.compile(
-    r'(?im)(^|\n)[ \t]*(?:\*+)?[ \t]*<\|channel>[ \t]*'
-    r'(?P<name>[a-zA-Z_-]+)[ \t]*(?:\|>)?[ \t]*(?:\*+)?[ \t]*'
-    r'(?:<channel\|>[ \t]*|'
-    r'(?:\r?\n)[ \t]*(?:\*+)?[ \t]*<channel\|>[ \t]*(?:(?:\*+)?[ \t]*(?=\r?\n|$))?)?'
+    r"(?im)(^|\n)[ \t]*(?:\*+)?[ \t]*<\|channel>[ \t]*"
+    r"(?P<name>[a-zA-Z_-]+)[ \t]*(?:\|>)?[ \t]*(?:\*+)?[ \t]*"
+    r"(?:<channel\|>[ \t]*|"
+    r"(?:\r?\n)[ \t]*(?:\*+)?[ \t]*<channel\|>[ \t]*(?:(?:\*+)?[ \t]*(?=\r?\n|$))?)?"
 )
 _CHANNEL_MARKER_RE = re.compile(
-    r'(?im)^[ \t]*(?:\*+)?[ \t]*(?:<\|channel>[ \t]*[a-zA-Z_-]+[ \t]*(?:\|>)?|<channel\|>)'
-    r'[ \t]*(?:\*+)?[ \t]*$'
+    r"(?im)^[ \t]*(?:\*+)?[ \t]*(?:<\|channel>[ \t]*[a-zA-Z_-]+[ \t]*(?:\|>)?|<channel\|>)"
+    r"[ \t]*(?:\*+)?[ \t]*$"
 )
-_THINK_BLOCK_RE = re.compile(r'(?is)<think>\s*(.*?)\s*</think>')
+_THINK_BLOCK_RE = re.compile(r"(?is)<think>\s*(.*?)\s*</think>")
 _TEXT_TOOL_CALL_RE = re.compile(
-    r'(?is)(?:\*+)?[ \t]*<\|tool_call>[ \t]*call:'
-    r'(?P<name>[a-zA-Z_][\w-]*)[ \t]*\{(?P<args>.*?)\}[ \t]*(?:\*+)?'
+    r"(?is)(?:\*+)?[ \t]*<\|tool_call>[ \t]*call:"
+    r"(?P<name>[a-zA-Z_][\w-]*)[ \t]*\{(?P<args>.*?)\}[ \t]*(?:\*+)?"
 )
 _REASONING_CHANNELS = {"thought", "thinking", "reasoning", "analysis"}
 _VISIBLE_CHANNELS = {"final", "answer", "response", "assistant"}
@@ -54,8 +55,12 @@ def _clean_channel_markers(text: str) -> str:
 def _strip_wrapping_emphasis(text: str) -> str:
     stripped = text.strip()
     for marker in ("***", "**", "*"):
-        if stripped.startswith(marker) and stripped.endswith(marker) and len(stripped) > len(marker) * 2:
-            return stripped[len(marker):-len(marker)].strip()
+        if (
+            stripped.startswith(marker)
+            and stripped.endswith(marker)
+            and len(stripped) > len(marker) * 2
+        ):
+            return stripped[len(marker) : -len(marker)].strip()
     return stripped
 
 
@@ -68,7 +73,7 @@ def _extract_text_reasoning(text: str | None) -> tuple[str | None, str | None]:
     if matches:
         visible_parts: list[str] = []
         thinking_parts: list[str] = []
-        leading = text[:matches[0].start()].strip()
+        leading = text[: matches[0].start()].strip()
         if leading:
             visible_parts.append(leading)
 
@@ -115,21 +120,27 @@ def _parse_text_tool_args(raw: str) -> dict[str, Any]:
             if ":" not in part:
                 continue
             key, value = part.split(":", 1)
-            key = key.strip().strip('"\'')
-            value = value.strip().strip('"\'')
+            key = key.strip().strip("\"'")
+            value = value.strip().strip("\"'")
             if key:
                 args[key] = value
         return args
 
 
-def _extract_text_tool_calls(text: str | None) -> tuple[str | None, list[tuple[str, dict[str, Any]]]]:
+def _extract_text_tool_calls(
+    text: str | None,
+) -> tuple[str | None, list[tuple[str, dict[str, Any]]]]:
     """Remove DiffusionGemma/vLLM text tool-call markers and return parsed calls."""
     if not isinstance(text, str) or not text:
         return text, []
 
     stripped = text.strip()
     wrapping_marker = next(
-        (marker for marker in ("***", "**", "*") if stripped.startswith(marker) and stripped.endswith(marker)),
+        (
+            marker
+            for marker in ("***", "**", "*")
+            if stripped.startswith(marker) and stripped.endswith(marker)
+        ),
         "",
     )
     calls: list[tuple[str, dict[str, Any]]] = []
@@ -140,8 +151,10 @@ def _extract_text_tool_calls(text: str | None) -> tuple[str | None, list[tuple[s
 
     cleaned = _TEXT_TOOL_CALL_RE.sub(_pull_call, text)
     if calls and wrapping_marker and cleaned.strip().endswith(wrapping_marker):
-        cleaned = cleaned.strip()[:-len(wrapping_marker)].strip()
-    elif calls and cleaned.strip().endswith("*") and not cleaned.strip().startswith("*"):
+        cleaned = cleaned.strip()[: -len(wrapping_marker)].strip()
+    elif (
+        calls and cleaned.strip().endswith("*") and not cleaned.strip().startswith("*")
+    ):
         cleaned = cleaned.strip().rstrip("*").strip()
     return _strip_wrapping_emphasis(cleaned) or None, calls
 
@@ -226,6 +239,7 @@ class LLMClient:
     def __init__(self, config: LLMConfig):
         self.config = config
         self.base_url = config.base_url.rstrip("/")
+        self._tokenizer_retry_at = 0.0
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(config.timeout, connect=10.0),
             headers=self._build_headers(),
@@ -239,6 +253,47 @@ class LLMClient:
         if self.config.api_key and self.config.api_key.lower() != "ollama":
             headers["Authorization"] = f"Bearer {self.config.api_key}"
         return headers
+
+    async def count_context_tokens(self, messages, tools=None):
+        """Use a compatible server tokenizer; this requests no model generation.
+
+        Unsupported/unavailable endpoints back off rather than adding a failed
+        probe to every completion. The runtime then uses a conservative view.
+        """
+        if time.monotonic() < self._tokenizer_retry_at:
+            return None
+        payload = {
+            "model": self.config.model,
+            "messages": [message.to_dict() for message in messages],
+            "add_generation_prompt": True,
+            "return_token_strs": False,
+        }
+        if tools:
+            payload["tools"] = tools
+        try:
+            response = await self._client.post(
+                self.base_url.removesuffix("/v1") + "/tokenize",
+                json=payload,
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            result = response.json()
+            if not isinstance(result, dict):
+                raise ValueError("Tokenizer response is not an object")
+            if (
+                type(result.get("count")) is not int
+                or result["count"] < 0
+                or type(result.get("max_model_len")) is not int
+                or result["max_model_len"] < 1
+            ):
+                raise ValueError("Tokenizer response lacks count or model capacity")
+            return {"count": result["count"], "max_model_len": result["max_model_len"]}
+        except (httpx.HTTPError, ValueError, TypeError):
+            self._tokenizer_retry_at = time.monotonic() + 300
+            logger.info(
+                "Server tokenizer unavailable; using conservative context views for five minutes"
+            )
+            return None
 
     def _build_payload(
         self,
@@ -278,14 +333,21 @@ class LLMClient:
         url = f"{self.base_url}/chat/completions"
         payload = self._build_payload(messages, tools=tools, **kwargs)
 
-        logger.info("LLM request → %s  model=%s  messages=%d", url, self.config.model, len(messages))
+        logger.info(
+            "LLM request → %s  model=%s  messages=%d",
+            url,
+            self.config.model,
+            len(messages),
+        )
 
         try:
             resp = await self._client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
         except httpx.HTTPStatusError as e:
-            logger.error(f"LLM HTTP error: {e.response.status_code} — {e.response.text}")
+            logger.error(
+                f"LLM HTTP error: {e.response.status_code} — {e.response.text}"
+            )
             raise
         except httpx.RequestError as e:
             logger.error(f"LLM request error: {e}")
@@ -309,7 +371,9 @@ class LLMClient:
             except (httpx.RemoteProtocolError, httpx.ConnectError) as e:
                 last_exc = e
                 if i < attempts:
-                    logger.warning(f"LLM disconnected, retrying ({i + 1}/{attempts}): {e}")
+                    logger.warning(
+                        f"LLM disconnected, retrying ({i + 1}/{attempts}): {e}"
+                    )
                     await asyncio.sleep(delay)
         raise last_exc  # type: ignore[misc]
 
@@ -362,11 +426,13 @@ class LLMClient:
                     args = {}
             else:
                 args = {}
-            tool_calls.append(ToolCall(
-                id=tc.get("id") or f"call_{uuid.uuid4().hex[:8]}",
-                name=func.get("name", ""),
-                arguments=args,
-            ))
+            tool_calls.append(
+                ToolCall(
+                    id=tc.get("id") or f"call_{uuid.uuid4().hex[:8]}",
+                    name=func.get("name", ""),
+                    arguments=args,
+                )
+            )
 
         # Extract thinking/reasoning content.
         # Format 1: reasoning_content field (DeepSeek R1, LiteLLM proxy for Anthropic).
@@ -381,7 +447,9 @@ class LLMClient:
             for block in raw_content:
                 btype = block.get("type")
                 if btype == "thinking":
-                    thinking_parts.append(block.get("thinking") or block.get("text") or "")
+                    thinking_parts.append(
+                        block.get("thinking") or block.get("text") or ""
+                    )
                 elif btype == "text":
                     text_parts.append(block.get("text") or "")
             if thinking_parts:
@@ -408,11 +476,13 @@ class LLMClient:
             thinking = None
             content_is_tool_call_tail = True
         for name, args in [*text_tool_calls, *thinking_tool_calls]:
-            tool_calls.append(ToolCall(
-                id=f"call_{uuid.uuid4().hex[:8]}",
-                name=name,
-                arguments=args,
-            ))
+            tool_calls.append(
+                ToolCall(
+                    id=f"call_{uuid.uuid4().hex[:8]}",
+                    name=name,
+                    arguments=args,
+                )
+            )
 
         return LLMResponse(
             content=text_content,

@@ -8,8 +8,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/manifest.json">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/15.0.7/marked.min.js"></script>
+  <script src="/assets/marked.min.js"></script>
   <title>TamAGI</title>
+  <link rel="stylesheet" href="/assets/app-shell.css?v=18">
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap');
@@ -245,6 +246,11 @@
     .pill.lv .val { color: var(--accent-tertiary); }
     .pill.mood .val { color: var(--accent-secondary); }
     .pill.xp .val { color: var(--accent); }
+    .growth-detail { margin-top: 6px; color: var(--text-muted); font-size: 9px; }
+    .growth-detail progress { display: block; width: 100%; height: 5px; margin: 5px 0; accent-color: var(--accent); }
+    .growth-meta { display: flex; gap: 12px; justify-content: space-between; }
+    .growth-meta a { color: var(--accent-tertiary); text-decoration: none; }
+    .growth-meta a:hover { text-decoration: underline; }
 
     .btn-icon {
       position: relative;
@@ -554,6 +560,10 @@
 
     /* ═══ MIND PANEL ═══ */
     .mind-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 6px; }
+    .mind-activity { margin: 8px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-surface); font-size: 11px; line-height: 1.5; }
+    .mind-activity strong { display: block; color: var(--text-primary); }
+    .mind-activity-detail { color: var(--text-secondary); margin-top: 3px; }
+    .mind-wake { color: var(--accent-tertiary); font-size: 10px; margin-top: 4px; }
     .mind-status { font-size: 9px; color: var(--text-muted); flex: 1; }
     .mind-body { position: relative; flex: 1; min-height: 0; overflow: hidden; }
     .mind-entries { position: absolute; inset: 0; overflow-y: auto; padding: 6px 8px; }
@@ -569,6 +579,7 @@
     .mind-source-badge[data-source="autonomous"] { background: rgba(255,107,157,0.12); color: var(--accent-secondary); }
     .mind-time { margin-left: auto; font-size: 8px; color: var(--text-muted); white-space: nowrap; }
     .mind-title { font-size: 10px; color: var(--text-primary); line-height: 1.4; margin-bottom: 3px; font-weight: 500; }
+    .mind-resident { font-size: 11px; color: var(--text-primary); font-weight: 600; margin-bottom: 5px; overflow-wrap: anywhere; }
     .mind-content { font-size: 9px; color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
     .mind-type-label { font-size: 8px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
     /* flyout */
@@ -825,30 +836,17 @@
 
 <!-- DRAWER -->
 <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
-<aside class="drawer" id="drawer">
-  <div class="drawer-header">
-    <h3 id="drawer-title">Conversations</h3>
-    <button class="drawer-close" onclick="closeDrawer()">&times;</button>
-  </div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="App drawer" inert><div class="drawer-header"><h3 id="drawer-title">Explore</h3><button class="drawer-close" onclick="closeDrawer()" aria-label="Close app drawer">&times;</button></div><nav class="app-menu" aria-label="Main navigation"><a class="app-menu-item" data-view="chat" href="/"><span aria-hidden="true">◇</span><span>Chat</span><span class="menu-unread" data-unread="chat" hidden></span></a><a class="app-menu-item" data-view="map" href="/map"><span aria-hidden="true">⌘</span><span>Map</span><span class="menu-unread" data-unread="map" hidden></span></a><a class="app-menu-item" data-view="journal" href="/journal"><span aria-hidden="true">▤</span><span>Journal</span><span class="menu-unread" data-unread="journal" hidden></span></a><a class="app-menu-item" data-view="inventory" href="/inventory"><span aria-hidden="true">▧</span><span>Inventory</span><span class="menu-unread" data-unread="inventory" hidden></span></a><a class="app-menu-item" data-view="companions" href="/companions"><span aria-hidden="true">♧</span><span>Companions</span><span class="menu-unread" data-unread="companions" hidden></span></a><a class="app-menu-item" data-view="archive" href="/archive"><span aria-hidden="true">▥</span><span>Archive</span><span class="menu-unread" data-unread="archive" hidden></span></a><a class="app-menu-item" data-view="settings" href="/settings"><span aria-hidden="true">⚙</span><span>Settings</span><span class="menu-unread" data-unread="settings" hidden></span></a></nav><div class="drawer-foot">A little world to discover.</div></aside>
 
-  <div class="drawer-tabs">
-    <button class="drawer-tab active" id="tab-chats"     onclick="switchTab('chats')">Chats</button>
-    <button class="drawer-tab"        id="tab-mind"      onclick="switchTab('mind')">Mind</button>
-    <button class="drawer-tab"        id="tab-memories"  onclick="switchTab('memories')">Memories</button>
-  </div>
-
-  <!-- Chats panel (existing behavior) -->
-  <div class="drawer-panel" id="panel-chats">
-    <div class="new-chat-btn" onclick="newConversation()">+ New Conversation</div>
-    <div class="conv-list" id="conv-list"></div>
-  </div>
-
-  <!-- Mind panel — TamAGI's inner monologue: goals, actions, reflections -->
-  <div class="drawer-panel hidden" id="panel-mind">
+<header id="shell-bar"><button class="btn-icon" id="shell-menu" onclick="openDrawer()" aria-label="Open app drawer" aria-controls="drawer" aria-expanded="false">&#9776;</button><a href="/" class="shell-brand">TAMAGI</a><span id="shell-view-title">Chat</span><div id="shell-work" role="status" aria-live="polite"><span id="shell-work-label">Ready</span><button id="shell-stop" hidden>Stop</button><button id="shell-return" hidden>Open chat</button></div></header><div id="shell-notice" role="status" aria-live="polite" hidden></div>
+<main id="shell-pages" hidden>
+<section class="shell-page" id="view-map" hidden><div class="page-heading"><span class="eyebrow">Places &amp; connections</span><h1>Map</h1><p>Explore the world taking shape.</p></div><iframe class="view-frame map-frame" title="World map" data-src="/panels/map"></iframe><details class="card"><summary>Places &amp; ongoing pursuits</summary><div id="places"></div><article class="card"><h2>Ongoing pursuits</h2><div id="pursuits"></div><form id="pursuit-form"><label for="pursuit-title">Something to explore together</label><input id="pursuit-title" required><label for="pursuit-step">A possible next step</label><input id="pursuit-step"><button>Start a pursuit</button></form></article></details></section>
+<section class="shell-page" id="view-journal" hidden><div class="page-heading"><span class="eyebrow">Life between conversations</span><h1>Journal</h1><p>Thoughts, discoveries, and time to rest.</p></div><div class="journal-columns"><div><div class="drawer-panel hidden" id="panel-mind">
     <div class="mind-panel-header">
       <div class="mind-status" id="mind-status-row"></div>
       <button class="dream-trigger-btn" id="dream-trigger-btn" onclick="triggerDream()">&#x25B6; Tick Now</button>
     </div>
+    <div class="mind-activity" id="mind-activity" hidden role="status" aria-live="polite"><strong id="mind-activity-title"></strong><div class="mind-activity-detail" id="mind-activity-detail"></div><div class="mind-activity-detail" id="mind-activity-note"></div></div>
     <div class="mind-body">
       <div class="mind-entries" id="mind-entries">
         <div class="drawer-empty">No inner monologue yet.</div>
@@ -864,10 +862,13 @@
         <div id="flyout-body"></div>
       </div>
     </div>
-  </div>
-
-  <!-- Memories panel (new) -->
-  <div class="drawer-panel hidden" id="panel-memories">
+  </div></div><aside><article class="card"><h2>Household notebook</h2><div id="notes" class="list"></div><form id="note-form"><label for="note-text">Leave a shared note</label><textarea id="note-text" required maxlength="16000"></textarea><button>Place on the shelf</button></form></article></aside></div></section>
+<section class="shell-page" id="view-inventory" hidden><div class="page-heading"><span class="eyebrow">Things made here</span><h1>Inventory</h1><p>Creations from the workshop, finished or still taking shape.</p></div><div id="inventory-items" class="creation-grid"></div><details class="card" id="earlier-artifacts"><summary>Earlier saved artifacts</summary><div id="earlier-items"></div></details></section>
+<section class="shell-page" id="view-companions" hidden><div class="page-heading"><span class="eyebrow">Familiar voices</span><h1>Companions</h1></div><p class="sub">Each companion keeps their own memories. Conversations and chosen notes become shared history.</p><div id="companions" class="grid"></div><details class="card"><summary>Introduce a companion</summary><form id="companion-form"><label for="friend-name">Name</label><input id="friend-name" required maxlength="100"><label for="friend-seed">Starting disposition</label><textarea id="friend-seed" required maxlength="2000" placeholder="A few qualities or interests to begin with"></textarea><button>Introduce</button></form></details><article class="card" id="consultation" hidden><h2 id="consult-title">Conversation</h2><div id="friend-reply" aria-live="polite"></div><form id="consult-form"><label for="friend-message">Your invitation</label><textarea id="friend-message" required maxlength="16000"></textarea><select id="friend-mode" aria-label="Invitation type"><option value="conversation">Conversation</option><option value="task">A bounded task</option></select><button>Send invitation</button></form></article></section>
+<section class="shell-page" id="view-archive" hidden><div class="page-heading"><span class="eyebrow">Our shared history</span><h1>Archive</h1></div><div class="shell-tabs" role="tablist" aria-label="Archive"><button class="drawer-tab active" id="tab-chats" role="tab" aria-selected="true" onclick="switchTab('chats')">Conversations</button><button class="drawer-tab" id="tab-memories" role="tab" aria-selected="false" onclick="switchTab('memories')">Memories</button></div><div class="drawer-panel" id="panel-chats">
+    <div class="new-chat-btn" onclick="newConversation()">+ New Conversation</div>
+    <div class="conv-list" id="conv-list"></div>
+  </div><div class="drawer-panel hidden" id="panel-memories">
     <div class="mem-search-bar">
       <input class="mem-search-input" id="mem-search" type="text"
              placeholder="Search memories..." oninput="debouncedSearch(this.value)" />
@@ -884,28 +885,25 @@
     <div class="mem-entries" id="mem-entries">
       <div class="drawer-empty">Search your memories...</div>
     </div>
-  </div>
-
-  <div class="drawer-nav">
-    <a href="/rig-editor" onclick="closeDrawer()" class="drawer-nav-link">▦ Rig Editor</a>
-    <a href="/self-model" onclick="closeDrawer()" class="drawer-nav-link">&#x25C8; World Model</a>
-    <a href="/settings"   onclick="closeDrawer()" class="drawer-nav-link">⚙ Settings</a>
-  </div>
-</aside>
-
+  </div></section>
+<section class="shell-page" id="view-settings" hidden><div class="page-heading"><span class="eyebrow">Make yourself at home</span><h1>Settings</h1></div><div class="shell-tabs" role="tablist" aria-label="Settings"><a href="/settings" data-setting="operator">Home &amp; recovery</a><a href="/settings/connections" data-setting="connections">Connections</a><a href="/settings/appearance" data-setting="appearance">Appearance</a></div><div id="settings-operator"><div class="grid"><article class="card"><h2>Save a portable backup</h2><p class="muted">Save identities, memories, companions, and creations in an encrypted download. Keep a copy on another device for independent recovery. Credentials and model weights are excluded; text and artifacts may contain information you have placed in them.</p><form id="backup-form"><label for="backup-password">Backup password · at least 12 characters</label><input type="password" id="backup-password" minlength="12" required autocomplete="new-password"><button>Create encrypted download</button></form><div id="backup-download"></div></article><article class="card"><h2>Continue from a backup</h2><p class="muted">Preview a saved home before restoring. You will reconnect credentials and choose this computer’s permissions.</p><form id="restore-form"><label for="restore-file">Encrypted TamAGI archive</label><input type="file" id="restore-file" required accept=".gpg"><label for="restore-password">Archive password</label><input type="password" id="restore-password" required autocomplete="off"><button>Preview archive</button></form><div id="restore-preview" hidden><pre id="restore-details"></pre><label for="restore-authority">Authority on this computer</label><select id="restore-authority"><option value="guarded">Guarded workspace</option><option value="unrestricted_host">Unrestricted host root · dedicated computer</option></select><p><label><input type="checkbox" id="source-stopped">The source installation is stopped. This continues the same resident.</label></p><button id="restore-commit">Restore this home</button></div></article></div><details class="card"><summary>The predecessor’s archive</summary><p class="muted">The previous instance is preserved for you. Its memories are excluded from this resident’s life. Export it separately for safekeeping.</p><button id="load-archives">Show preserved archives</button><div id="archives"></div></details>
+<details class="card"><summary>External service permissions</summary><p class="muted">Delegate a configured service action for an hour, or revoke its allowance.</p><button id="load-grants">Show configured actions</button><div id="grants"></div></details>
+<details class="card"><summary>Automatic application deployment</summary><p class="muted">After recovery qualification, TamAGI can activate its own tested releases. A portable backup kept elsewhere provides a separate way back.</p><button id="enable-deployment">Enable qualified automatic deployment</button> <button id="disable-deployment">Pause automatic deployment</button></details>
+<details class="card"><summary>Runtime, changes, and recovery evidence</summary><p class="muted">Host-root controls are cooperative operating practices. A portable backup does not recreate the operating system or every external service.</p><pre id="runtime-details"></pre><div class="row"><button id="refresh-evidence">Refresh evidence</button><a href="/settings/connections">Connections &amp; credentials</a></div><pre id="evidence"></pre></details></div><iframe class="view-frame settings-frame" title="Connections and credentials" data-src="/panels/settings" id="settings-connections" hidden></iframe><iframe class="view-frame settings-frame" title="Avatar appearance editor" data-src="/panels/appearance" id="settings-appearance" hidden></iframe></section>
+</main><dialog id="growth-dialog" class="shell-dialog"><button class="dialog-close" aria-label="Close growth details">×</button><details class="card" id="growth"><summary>Why this level?</summary><h2 id="growth-title">Growing here</h2><p id="growth-summary" class="muted"></p><progress id="recognition-progress" max="1" value="0" aria-label="Growth toward the next level" style="width:100%;accent-color:var(--accent)"></progress><p id="growth-age" class="muted"></p><p class="muted">Growth recognizes sustained conversation, continuity, and adaptation. Age is shown separately.</p><h3>Recent recognition</h3><div id="growth-recognitions"></div><details><summary>Stage history</summary><div id="growth-stages"></div></details></details></dialog><dialog id="preview-dialog" class="shell-dialog"><button class="dialog-close" aria-label="Close preview">×</button><h2 id="preview-title">Creation</h2><p id="preview-note"></p><div id="preview-content"></div></dialog><dialog id="work-approval-dialog" class="shell-dialog"><h2>Approval needed</h2><div id="work-approval-content"></div></dialog>
 <!-- APP -->
 <div id="app">
   <!-- AVATAR — TOP 1/3 -->
   <div class="avatar-panel">
     <div class="top-bar">
       <div style="display:flex;align-items:center;gap:7px">
-        <button class="btn-icon" onclick="openDrawer()" title="Conversations">&#9776;</button>
+        <button class="btn-icon chat-menu" onclick="openDrawer()" title="Open app drawer" aria-label="Open app drawer" aria-controls="drawer" aria-expanded="false">&#9776;</button>
         <div class="logo-small">TAMAGI<span>v0.1</span></div>
       </div>
       <div class="top-pills">
         <div class="pill lv"><span>LV</span> <span class="val" id="p-lv">1</span></div>
         <div class="pill mood"><span id="p-mood-dot">&#9679;</span> <span class="val" id="p-mood">...</span></div>
-        <div class="pill xp"><span>XP</span> <span class="val" id="p-xp">0</span></div>
+        <div class="pill xp" title="Growth from sustained behavior"><span>Growth</span> <span class="val" id="p-xp">0</span></div>
         <button class="layout-toggle" id="layout-toggle" onclick="toggleLayout()" title="Toggle layout">&#x25EB;</button>
         <div class="dot" id="conn-dot" title="Disconnected"></div>
         <button id="logout-btn" onclick="logout()" title="Sign out" style="display:none;background:none;border:none;color:var(--text-muted);font-family:var(--font-mono);font-size:9px;letter-spacing:1px;cursor:pointer;padding:2px 5px;border-radius:3px;transition:color 0.15s;" onmouseover="this.style.color='var(--error)'" onmouseout="this.style.color='var(--text-muted)'">OUT</button>
@@ -921,9 +919,14 @@
         <div class="avatar-name-block">
           <div class="avatar-name" id="a-name">Tama</div>
           <div class="avatar-subtitle" id="a-subtitle">EGG &mdash; Level 1</div>
+          <div class="growth-detail" id="growth-detail" hidden>
+            <span id="growth-next"></span>
+            <progress id="growth-progress" max="1" value="0" aria-label="Growth toward the next level"></progress>
+            <div class="growth-meta"><span id="resident-age"></span><a href="/growth">Why this level?</a></div>
+          </div>
         </div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Vitality <span class="stat-help">&#9432;</span></span><span id="s-vitality-v">80</span></div><div class="stat-bar"><div class="stat-fill vitality" id="s-vitality-f" style="width:80%"></div></div><div class="stat-tip">Activation and drive. Drifts toward a time-of-day baseline — high midday, low at night. Costs a little per conversation turn and skill use.</div></div>
-        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F52D; Curiosity <span class="stat-help">&#9432;</span></span><span id="s-curiosity-v">60</span></div><div class="stat-bar"><div class="stat-fill curiosity" id="s-curiosity-f" style="width:60%"></div></div><div class="stat-tip">Intellectual hunger — builds when unstimulated, satisfied by using tools, exploring, and interesting conversations. High curiosity steers the world thread toward discovery.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#9889; Vitality <span class="stat-help">&#9432;</span></span><span id="s-vitality-v">80</span></div><div class="stat-bar"><div class="stat-fill vitality" id="s-vitality-f" style="width:80%"></div></div><div class="stat-tip">A playful illustration of daily rhythm. Drifts toward a time-of-day baseline — high midday, low at night.</div></div>
+        <div class="stat-item" onclick="toggleTip(this)"><div class="stat-label"><span>&#x1F52D; Curiosity <span class="stat-help">&#9432;</span></span><span id="s-curiosity-v">60</span></div><div class="stat-bar"><div class="stat-fill curiosity" id="s-curiosity-f" style="width:60%"></div></div><div class="stat-tip">A playful illustration of curiosity. An illustrative character stat; it does not measure wellbeing or determine available computation.</div></div>
         <div class="world-context" id="world-context" style="display:none">
           <div class="wc-row"><span class="wc-label">&#x1F4CD;</span><span class="wc-val" id="wc-location">—</span></div>
           <div class="wc-row"><span class="wc-label">&#x25CB;</span><span class="wc-val" id="wc-mood">—</span></div>
@@ -954,10 +957,15 @@
   </div>
 </div>
 
+<script src="/assets/avatar-vex.js"></script>
+<script src="/assets/avatar-echo.js"></script>
+<script src="/assets/avatar-ember.js?v=8"></script>
+<script src="/assets/avatar-runtime.js?v=8"></script>
+<script src="/assets/household-ui.js?v=6"></script>
 <script>
 const API=window.location.origin;
 const WS_URL=API.replace(/^http/,'ws')+'/api/ws';
-let convId=null,loading=false;
+let convId=null,loading=false,quietActive=false,activeRequestId=null;
 let ws=null,wsReady=false;
 let liveToolOutputs={};
 let currentInterimGroup=null;
@@ -976,7 +984,17 @@ function connectWS(){
   ws.onerror=()=>{wsReady=false};
   ws.onmessage=(e)=>handleWsEvent(JSON.parse(e.data));
 }
+function addTurnStatus(status){
+  const labels={completed:'Finished quietly.',resting:'Resting.',waiting:'Waiting.',blocked:'Work is blocked.',declined:'Work declined.',interrupted:'Quiet continuation stopped for your message.',budget_exhausted:'This turn reached its limit; completed actions are saved.',failed:'Work stopped after an error.',quiet:'Continuing quietly…'};
+  const entry=document.createElement('div');entry.className='msg-status';entry.setAttribute('role','status');entry.textContent=labels[status]||'Turn ended.';
+  document.getElementById('chat-messages').appendChild(entry);
+}
 function handleWsEvent(ev){
+  if(ev.request_id&&activeRequestId&&ev.request_id!==activeRequestId)return;
+  if(ev.type==='quiet_turn'){
+    quietActive=true;if(ev.conversation_id)convId=ev.conversation_id;
+    document.getElementById('send-btn').disabled=false;addTurnStatus('quiet');return;
+  }
   if(ev.type==='tool_start'){
     const lt=document.getElementById('live-tags');
     const span=document.createElement('span');
@@ -997,28 +1015,18 @@ function handleWsEvent(ev){
     convId=ev.conversation_id;updateState(ev.state);
     const skills=(ev.skills_used||[]).map(name=>({name,output:(liveToolOutputs[name]||[]).join('\n')}));
     liveToolOutputs={};
-    addMsg('assistant',ev.response,skills,null,ev.context_compressed||0,ev.sm_mutations||[]);
+    if(ev.response?.trim())addMsg('assistant',ev.response,skills,null,ev.context_compressed||0,ev.sm_mutations||[]);else addTurnStatus(ev.turn_status||'completed');
+    quietActive=false;
     if(ev.clarification_question){const msgs=document.getElementById('chat-messages');const last=msgs.querySelector('.msg.assistant:last-child');if(last){last.classList.add('clarification-msg');const badge=document.createElement('div');badge.className='clarification-badge';badge.textContent='Clarifying';last.querySelector('.bubble').prepend(badge);}}
     loadConversations();loading=false;document.getElementById('send-btn').disabled=false;
   }else if(ev.type==='thinking_text'||ev.type==='interim_text'){
     const isThinking=ev.type==='thinking_text';
     if(!currentInterimGroup){
-      const wrapper=document.createElement('div');
-      wrapper.className='msg assistant';
-      const label=isThinking?'Thinking':'Reasoning';
-      wrapper.innerHTML='<div class="interim-group" data-has-thinking="'+(isThinking?'1':'0')+'" data-count="0"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">'+label+'</span> · <span class="interim-count">0 steps</span></span></button><div class="interim-body"></div></div>';
+      const wrapper=makeInterimGroup();
       document.getElementById('chat-messages').appendChild(wrapper);
       currentInterimGroup=wrapper.querySelector('.interim-group');
-    } else if(isThinking&&currentInterimGroup.dataset.hasThinking==='0'){
-      currentInterimGroup.dataset.hasThinking='1';
-      currentInterimGroup.querySelector('.interim-kind').textContent='Thinking';
     }
-    const entry=document.createElement('div');
-    entry.className=isThinking?'thinking-entry':'interim-entry';
-    entry.innerHTML=renderMd(ev.content);
-    currentInterimGroup.querySelector('.interim-body').appendChild(entry);
-    const count=currentInterimGroup.querySelectorAll('.thinking-entry,.interim-entry').length;
-    currentInterimGroup.querySelector('.interim-count').textContent=count+(count===1?' step':' steps');
+    appendInterimEntry(currentInterimGroup,isThinking,ev.content);
     document.getElementById('chat-messages').scrollTop=99999;
   }else if(ev.type==='pose_change'){
     setPose(ev.pose_parts);
@@ -1033,6 +1041,23 @@ function handleWsEvent(ev){
 }
 function clearLiveTags(){document.getElementById('live-tags').innerHTML=''}
 function toggleInterim(btn){btn.closest('.interim-group').classList.toggle('collapsed');}
+function makeInterimGroup({thinking=[],interim=[],collapsed=false,metadata={}}={}){
+  const wrapper=document.createElement('div');wrapper.className='msg assistant';
+  wrapper.innerHTML='<div class="interim-group'+(collapsed?' collapsed':'')+'" data-has-thinking="0" data-count="0"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">Reasoning</span> · <span class="interim-count">0 steps</span></span></button><div class="interim-body"></div></div>';
+  const group=wrapper.querySelector('.interim-group');
+  for(const text of thinking)appendInterimEntry(group,true,text);
+  for(const text of interim)appendInterimEntry(group,false,text);
+  window.TamagiHousehold?.decorateProgress(wrapper,metadata);
+  return wrapper;
+}
+function appendInterimEntry(group,isThinking,text){
+  if(isThinking){group.dataset.hasThinking='1';group.querySelector('.interim-kind').textContent='Thinking';}
+  const entry=document.createElement('div');entry.className=isThinking?'thinking-entry':'interim-entry';
+  entry.innerHTML=window.TamagiHousehold?TamagiHousehold.safeMarkdown(text):renderMd(text);
+  group.querySelector('.interim-body').appendChild(entry);
+  const count=group.querySelectorAll('.thinking-entry,.interim-entry').length;
+  group.dataset.count=String(count);group.querySelector('.interim-count').textContent=count+(count===1?' step':' steps');
+}
 function showApprovalBanner(ev){
   const msgs=document.getElementById('chat-messages');
   const banner=document.createElement('div');
@@ -1326,15 +1351,16 @@ function solveWorldTransforms(bones){
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
-function renderFrame(canvas,bones,manifest,activeVariants){
+function renderFrame(canvas,bones,manifest,activeVariants,time=0,avatarId=_avatarId,images=_spriteImages){
   const ctx=canvas.getContext('2d');
+  TamagiAvatarRuntime.style(canvas,avatarId);
   const W=canvas.width,H=canvas.height;
   ctx.clearRect(0,0,W,H);
   ctx.save();
-  ctx.translate(W/2,H/2+50);
+  ctx.translate(W/2,TamagiAvatarRuntime.originY(canvas,avatarId));
   const scale=2.5;
   ctx.scale(scale,scale);
-  ctx.imageSmoothingEnabled=false;
+  ctx.imageSmoothingEnabled=!(window.TamagiAvatars[avatarId]?.pixelated??true);
   const wt=solveWorldTransforms(bones);
   const drawOrder=Object.entries(manifest)
     .map(([pn,e])=>({pn,e,bone:bones.find(b=>b.name===e.bone),z:(bones.find(b=>b.name===e.bone)||{}).zOrder||0}))
@@ -1351,10 +1377,10 @@ function renderFrame(canvas,bones,manifest,activeVariants){
     const pox=bone.pivotOffsetX||0,poy=bone.pivotOffsetY||0;
     const imgKey=`${pn}:${variant}`;
     ctx.save();ctx.translate(-sw/2+pox*sw,-sh/2+poy*sh);
-    if(_spriteImages[imgKey]){
-      ctx.drawImage(_spriteImages[imgKey],0,0,sw,sh);
+    if(images[imgKey]){
+      ctx.drawImage(images[imgKey],0,0,sw,sh);
     }else{
-      drawPlaceholder(ctx,pn,variant,sw,sh);
+      TamagiAvatarRuntime.draw(ctx,avatarId,pn,variant,sw,sh,drawPlaceholder,time);
     }
     ctx.restore();
     ctx.restore();
@@ -1367,16 +1393,22 @@ function renderFrame(canvas,bones,manifest,activeVariants){
 // Values: HTMLImageElement (only present when the image loaded successfully)
 let _spriteImages={};
 let _spriteConfig=null;
+let _avatarId='vex';
 
 async function loadSpriteConfig(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),selectionToken=household?.selectionEpoch();
   try{
-    const cfg=await api('/sprites/config');
-    if(!cfg||(cfg.skeleton==null&&cfg.sprites==null))return;
-    _spriteConfig=cfg;
+    const cfg=await api('/sprites/config',household?{headers:{'X-Tamagi-Resident':actor}}:{});
+    if(household&&!household.acceptResponse(actor,selectionToken))return;
+    _avatarId=TamagiAvatarRuntime.resolve(cfg);
+    _rigBones=TamagiAvatarRuntime.createBones(_avatarId,createBone,()=>applyPivotDefaults(PRESETS.default.bones()));
+    _spriteConfig=cfg||null;
+    _spriteImages={};
+    const selectedImages={};
 
     // If the config carries a skeleton, replace the rig bones with it.
     // This lets the rig editor's exported proportions drive the avatar directly.
-    if(cfg.skeleton&&cfg.skeleton.length){
+    if(Array.isArray(cfg?.skeleton)&&cfg.skeleton.length){
       _rigBones=cfg.skeleton.map(b=>Object.assign(
         createBone(b.name,b.parent,b.restX,b.restY,b.pivotX||0,b.pivotY||0,b.length,b.zOrder||0),
         {restX:b.restX,restY:b.restY,pivotX:b.pivotX||0,pivotY:b.pivotY||0,length:b.length,zOrder:b.zOrder||0,
@@ -1387,22 +1419,23 @@ async function loadSpriteConfig(){
     }
 
     // Preload every PNG referenced in the sprite manifest.
-    if(cfg.sprites){
+    if(cfg?.sprites){
       const loads=[];
       for(const[part,def]of Object.entries(cfg.sprites)){
         for(const[variant,path]of Object.entries(def.variants||{})){
           if(!path)continue;
           const key=`${part}:${variant}`;
           const img=new Image();
-          img.src=path;
           loads.push(new Promise(resolve=>{
-            img.onload=()=>{_spriteImages[key]=img;resolve();};
-            img.onerror=resolve; // missing PNG → silently falls back to placeholder
+            img.onload=()=>{selectedImages[key]=img;resolve();};
+            img.onerror=resolve; // Missing PNG falls back to the selected character.
+            img.src=household?household.scopeUrl(path,actor):path;
           }));
         }
       }
       await Promise.all(loads);
     }
+    if(!household||household.acceptResponse(actor,selectionToken))_spriteImages=selectedImages;
   }catch(_){}
 }
 
@@ -1410,22 +1443,8 @@ async function loadSpriteConfig(){
 // buildActiveManifest overlays any explicit dimensions from the sprite config,
 // so user-provided PNGs can be a different size than the auto-computed slots.
 function buildActiveManifest(bones){
-  const manifest=buildManifest(bones);
-  if(_spriteConfig&&_spriteConfig.sprites){
-    const boneMap={};bones.forEach(b=>boneMap[b.name]=b);
-    for(const[part,cfg]of Object.entries(_spriteConfig.sprites)){
-      if(!manifest[part])continue;
-      // Saved width/height have displayScale baked in (from buildExportJSON).
-      // renderFrame also multiplies by displayScale, so we divide it back out here
-      // to avoid double-scaling.
-      const ds=(boneMap[manifest[part].bone]?.displayScale)||1;
-      if(cfg.width)  manifest[part].w=cfg.width/ds;
-      if(cfg.height) manifest[part].h=cfg.height/ds;
-      if(cfg.offsetX!=null) manifest[part].ox=cfg.offsetX;
-      if(cfg.offsetY!=null) manifest[part].oy=cfg.offsetY;
-    }
-  }
-  return manifest;
+  const manifest=TamagiAvatarRuntime.manifest(_avatarId,bones,buildManifest);
+  return TamagiAvatarRuntime.overlay(manifest,bones,_spriteConfig?.sprites);
 }
 
 // ── Animation loop ────────────────────────────────────────────────────────────
@@ -1438,10 +1457,10 @@ function _rigTick(ts){
   const t=(ts-_rigStartTime)/1000;
   for(const b of _rigBones){b.rotation=0;b.scaleX=1;b.scaleY=1;b.translateX=0;b.translateY=0;b.opacity=1;}
   const animFn=ANIMATIONS[_rigAnimName]||ANIMATIONS.idle;
-  const variants=animFn(_rigBones,t)||{};
+  const variants=TamagiAvatarRuntime.animate(_avatarId,_rigBones,t,_rigAnimName,animFn(_rigBones,t)||{});
   const manifest=buildActiveManifest(_rigBones);
   const canvas=document.getElementById('sprite-box');
-  if(canvas)renderFrame(canvas,_rigBones,manifest,variants);
+  if(canvas)renderFrame(canvas,_rigBones,manifest,variants,t);
   requestAnimationFrame(_rigTick);
 }
 
@@ -1457,8 +1476,24 @@ function setPose(parts){
 }
 
 function firstSentence(s){if(!s)return'';const m=s.match(/^(.+?)(?:\.\s|\.$|\n)/);if(m&&m[1].length<=100)return m[1].trim();return s.length>80?s.slice(0,80).trim()+'\u2026':s.trim()}
-function updateState(s){if(!s)return;setText('p-lv',s.level||1);setText('p-xp',s.experience||0);if(s.pose_parts)setPose(s.pose_parts);setText('a-name',s.name||'Tama');setText('a-subtitle',`${(s.stage||'egg').toUpperCase()} \u2014 Level ${s.level||1}`);setBar('s-vitality',s.vitality??s.energy??80);setBar('s-curiosity',s.curiosity??50)}
-function updateWorldContext(ws){if(!ws||ws.needs_world_seed)return;const loc=firstSentence(ws.location||'');const mood=firstSentence(ws.mood||'');const focus=firstSentence(ws.focus||'');const md=document.getElementById('p-mood-dot');const mp=document.getElementById('p-mood');if(mp)mp.textContent=mood.toUpperCase()||'...';if(md)md.style.color='var(--accent-secondary)';const wc=document.getElementById('world-context');if(wc&&(loc||mood||focus)){wc.style.display='flex';setText('wc-location',loc||'\u2014');setText('wc-mood',mood||'\u2014');setText('wc-focus',focus||'\u2014')}}
+function residentAge(seconds){const hours=Math.floor(Math.max(0,Number(seconds)||0)/3600),days=Math.floor(hours/24);return days?`${days}d ${hours%24}h old`:`${hours}h old`;}
+function updateState(s){
+  if(!s)return;
+  if(window.TamagiHousehold&&s.resident_id&&s.resident_id!==TamagiHousehold.selectedResidentId())return;
+  const growth=s.growth,level=growth?.level??s.level??1,stage=growth?.stage??s.stage??'egg';
+  setText('p-lv',level);setText('p-xp',growth?.total??s.experience??0);
+  if(s.pose_parts)setPose(s.pose_parts);
+  setText('a-name',s.name||'Tama');setText('a-subtitle',`${String(stage).toUpperCase()} \u2014 Level ${level}`);
+  setBar('s-vitality',s.vitality??s.energy??80);setBar('s-curiosity',s.curiosity??50);
+  const detail=document.getElementById('growth-detail');detail.hidden=!growth;
+  if(growth){
+    setText('growth-next',`${growth.points_to_next} Growth to Level ${level+1}`);
+    setText('resident-age',residentAge(growth.age_seconds));
+    const progress=document.getElementById('growth-progress');progress.value=Math.max(0,Math.min(1,Number(growth.progress)||0));
+    progress.setAttribute('aria-valuetext',`${growth.total} Growth; ${growth.points_to_next} to Level ${level+1}`);
+  }
+}
+function updateWorldContext(ws){updateMindActivity(ws);if(!ws||ws.needs_world_seed)return;const loc=firstSentence(ws.location||'');const mood=firstSentence(ws.mood||'');const focus=firstSentence(ws.focus||'');const md=document.getElementById('p-mood-dot');const mp=document.getElementById('p-mood');if(mp)mp.textContent=mood.toUpperCase()||'...';if(md)md.style.color='var(--accent-secondary)';const wc=document.getElementById('world-context');if(wc&&(loc||mood||focus)){wc.style.display='flex';setText('wc-location',loc||'\u2014');setText('wc-mood',mood||'\u2014');setText('wc-focus',focus||'\u2014')}}
 // Previous stat values — null on first load so the initial updateState() call
 // establishes a baseline without spawning spurious indicators.
 const _prevStat={};
@@ -1514,7 +1549,8 @@ function toBase64(file){return new Promise((res,rej)=>{const r=new FileReader();
 
 async function sendMessage(){
   const el=document.getElementById('input');const msg=el.value.trim();
-  if(!msg&&!pendingFile||loading)return;
+  if(!msg&&!pendingFile||(loading&&!quietActive))return;
+  if(quietActive){addTurnStatus('interrupted');quietActive=false;clearLiveTags();if(currentInterimGroup){currentInterimGroup.classList.add('collapsed');currentInterimGroup=null;}}
   const w=document.getElementById('welcome');if(w)w.remove();
   const displayMsg=msg+(pendingFile?` [📎 ${pendingFile.name}]`:'');
   addMsg('user',displayMsg||pendingFile.name);
@@ -1522,7 +1558,8 @@ async function sendMessage(){
   document.getElementById('send-btn').disabled=true;setTyping(true);
   const file=pendingFile;clearAttachment();
   try{
-    const body={message:msg||`Attached: ${file?.name}`,conversation_id:convId};
+    const body={message:msg||`Attached: ${file?.name}`,conversation_id:convId,request_id:globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2)};
+    activeRequestId=body.request_id;
     if(file){
       if(file.type.startsWith('image/')){
         body.image_data=await toBase64(file);
@@ -1540,7 +1577,7 @@ async function sendMessage(){
   }catch(e){setTyping(false);addMsg('assistant',`\u26A0 Error: ${e.message}. Is the backend running?`);loading=false;document.getElementById('send-btn').disabled=false;}
 }
 
-function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[]){
+function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[],metadata={}){
   const area=document.getElementById('chat-messages');
   const d=document.createElement('div');d.className=`msg ${role}`;
   // Use the stored unix timestamp when replaying history, current time for live messages
@@ -1564,8 +1601,9 @@ function addMsg(role,content,skills=[],ts=null,compressed=0,smMuts=[]){
     if(m.op==='milestone'){return`<span class="sm-tag update" title="${esc(m.description||m.id)}">\u2605 mastery</span>`;}
     return'';
   }).join('');
-  const rendered=role==='assistant'?renderMd(content):esc(content);
+  const rendered=role==='assistant'?(window.TamagiHousehold?TamagiHousehold.safeMarkdown(content):renderMd(content)):esc(content);
   d.innerHTML=`<div class="bubble">${rendered}</div><div class="time">${t}${sk}${cmpTag}${smTags}</div>`;
+  window.TamagiHousehold?.decorateMessage(d,role,metadata);
   area.appendChild(d);area.scrollTop=area.scrollHeight
 }
 function setTyping(v){document.getElementById('typing').classList.toggle('on',v)}
@@ -1578,7 +1616,7 @@ function debounce(fn,ms){let t;return function(...a){clearTimeout(t);t=setTimeou
 function relativeTime(ts){if(!ts)return'';const d=typeof ts==='number'?new Date(ts*1000):new Date(ts);const diff=Math.floor((Date.now()-d)/1000);if(diff<60)return diff+'s ago';if(diff<3600)return Math.floor(diff/60)+'m ago';if(diff<86400)return Math.floor(diff/3600)+'h ago';return Math.floor(diff/86400)+'d ago'}
 
 async function loadConversations(){try{const d=await api('/conversations');const list=document.getElementById('conv-list');list.innerHTML='';(d.conversations||[]).forEach(c=>{const el=document.createElement('div');el.className=`conv-item${c.id===convId?' active':''}`;el.onclick=()=>openConversation(c.id);const dt=new Date(c.updated_at*1000).toLocaleDateString([],{month:'short',day:'numeric'});el.innerHTML=`<div class="ci-title">${esc(c.title)}</div><div class="ci-meta">${c.message_count} msgs \u00b7 ${dt}</div>`;list.appendChild(el)})}catch{}}
-async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>{const thinking=m.metadata?.thinking_blocks||[];const interim=m.metadata?.interim_messages||[];if(m.role==='assistant'&&(thinking.length||interim.length)){const hasThinking=thinking.length>0;const label=hasThinking?'Thinking':'Reasoning';const totalSteps=thinking.length+interim.length;const wrapper=document.createElement('div');wrapper.className='msg assistant';wrapper.innerHTML='<div class="interim-group collapsed" data-has-thinking="'+(hasThinking?'1':'0')+'" data-count="'+totalSteps+'"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">'+label+'</span> · <span class="interim-count">'+totalSteps+(totalSteps===1?' step':' steps')+'</span></span></button><div class="interim-body">'+thinking.map(s=>'<div class="thinking-entry">'+renderMd(s)+'</div>').join('')+interim.map(s=>'<div class="interim-entry">'+renderMd(s)+'</div>').join('')+'</div></div>';area.appendChild(wrapper);}addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp,m.metadata?.context_compressed||0,m.metadata?.sm_mutations||[]);});loadConversations();closeDrawer()}catch(e){console.error(e)}}
+async function openConversation(id){try{const d=await api(`/conversations/${id}`);convId=id;const area=document.getElementById('chat-messages');area.innerHTML='';(d.messages||[]).forEach(m=>{const thinking=m.metadata?.thinking_blocks||[];const interim=m.metadata?.interim_messages||[];if(m.role==='assistant'&&(thinking.length||interim.length)){const hasThinking=thinking.length>0;const label=hasThinking?'Thinking':'Reasoning';const totalSteps=thinking.length+interim.length;const wrapper=document.createElement('div');wrapper.className='msg assistant';wrapper.innerHTML='<div class="interim-group collapsed" data-has-thinking="'+(hasThinking?'1':'0')+'" data-count="'+totalSteps+'"><button class="interim-toggle" onclick="toggleInterim(this)"><span class="interim-chevron">▶</span><span class="interim-label"><span class="interim-kind">'+label+'</span> · <span class="interim-count">'+totalSteps+(totalSteps===1?' step':' steps')+'</span></span></button><div class="interim-body">'+thinking.map(s=>'<div class="thinking-entry">'+renderMd(s)+'</div>').join('')+interim.map(s=>'<div class="interim-entry">'+renderMd(s)+'</div>').join('')+'</div></div>';area.appendChild(wrapper);}if(m.role==='assistant'&&!m.content?.trim())addTurnStatus(m.metadata?.turn_status||'completed');else addMsg(m.role,m.content,m.metadata?.skills_used,m.timestamp,m.metadata?.context_compressed||0,m.metadata?.sm_mutations||[]);});loadConversations();closeDrawer()}catch(e){console.error(e)}}
 function newConversation(){convId=null;document.getElementById('chat-messages').innerHTML=`<div class="welcome-msg" id="welcome"><strong>New conversation!</strong><br>What shall we explore?</div>`;loadConversations();closeDrawer();document.getElementById('input').focus()}
 
 function openDrawer(){document.getElementById('drawer').classList.add('open');document.getElementById('drawer-overlay').classList.add('open');switchTab('chats');loadConversations()}
@@ -1599,25 +1637,75 @@ const MIND_ICONS={
   evolution_promoted:'&#x2191;',
   evolution_rolled_back:'&#x21A9;',
 };
+function formatWakeTime(timestamp,timezone){
+  const options={weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'};
+  if(timezone)options.timeZone=timezone;
+  try{return new Intl.DateTimeFormat(undefined,options).format(new Date(timestamp*1000));}
+  catch{return new Date(timestamp*1000).toLocaleString();}
+}
+function mindActivityPresentation(state,now=Date.now()){
+  if(!state||state.needs_world_seed||!['resting','waiting'].includes(state.activity_status))return null;
+  const resting=state.activity_status==='resting',wake=Number(state.next_wake_at)||0;
+  const future=wake*1000>now;
+  let title=resting?'Resting':'Waiting';
+  if(future)title+=' until '+formatWakeTime(wake,state.timezone);
+  else if(wake)title=resting?'Rest complete — waiting for the next opportunity':'Wait time reached — awaiting the next opportunity';
+  if(!resting&&state.wake_event)title='Waiting for '+state.wake_event.replaceAll('_',' ');
+  const details=[];
+  if(state.location)details.push(state.location);
+  if(future){const minutes=Math.ceil((wake*1000-now)/60000);details.push((minutes>=60?Math.floor(minutes/60)+'h ':'')+(minutes%60||minutes<60?minutes%60+'m ':'')+'remaining');}
+  if(!resting&&state.wake_event&&future)details.push('Fallback wake: '+formatWakeTime(wake,state.timezone));
+  if(state.activity_detail)details.push(state.activity_detail);
+  return {title,detail:details.join(' · '),note:resting?'Autonomous activity is paused for chosen rest. Chat is still available.':(state.activity_reason==='chosen_wait'?'Autonomous activity is waiting for its wake condition. Chat is still available.':'Autonomous activity is paused. Chat is still available.')};
+}
+function updateMindActivity(state){
+  const panel=document.getElementById('mind-activity');if(!panel)return;
+  const view=mindActivityPresentation(state);panel.hidden=!view;
+  if(!view)return;
+  document.getElementById('mind-activity-title').textContent=view.title;
+  document.getElementById('mind-activity-detail').textContent=view.detail;
+  document.getElementById('mind-activity-note').textContent=view.note;
+}
+function historicalWakeDescription(meta){
+  if(meta.next_wake_at)return 'Scheduled wake: '+formatWakeTime(meta.next_wake_at,meta.timezone);
+  if(meta.wake_event)return 'Waiting for '+meta.wake_event.replaceAll('_',' ');
+  return '';
+}
+
 // Cache of full event objects keyed by id — populated in loadMindPanel
 const _mindEvents={};
+let _mindResidentId;
 
 async function loadMindPanel(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
+  const scoped=household?{headers:{'X-Tamagi-Resident':actor}}:{};
   const statusRow=document.getElementById('mind-status-row');
   const entries=document.getElementById('mind-entries');
   try{
-    const data=await api('/monologue/log?limit=80');
+    const [data]=await Promise.all([api('/monologue/log?limit=80',scoped),api('/world/state',scoped).then(state=>{if(!household||household.acceptResponse(actor,token))updateMindActivity(state);}).catch(()=>{})]);
+    if(household&&!household.acceptResponse(actor,token))return;
+    const residentName=household?.residentName(actor);
+    if(household){
+      document.querySelector('#view-journal .page-heading h1').textContent=residentName+'’s Journal';
+      if(_mindResidentId!==actor){
+        closeMindFlyout();
+        for(const id of Object.keys(_mindEvents))delete _mindEvents[id];
+        _mindResidentId=actor;
+      }
+    }
     const total=data.total||0;
     statusRow.textContent=total?total+' event'+(total===1?'':'s')+' recorded':'';
-    const events=(data.events||[]).slice().reverse();
+    const events=(data.events||[]).map(ev=>({...ev,journalResidentId:actor,journalResidentName:residentName})).reverse();
     if(!events.length){entries.innerHTML='<div class="drawer-empty">No inner monologue yet.</div>';return;}
     // Store full event data for flyout
     events.forEach(ev=>{ _mindEvents[ev.id]=ev; });
     entries.innerHTML=events.map(ev=>{
       const icon=MIND_ICONS[ev.type]||'&#x25CB;';
       const src=ev.source||'autonomous';
-      const snippet=(ev.content||'').substring(0,140).trimEnd();
-      return`<div class="mind-card" onclick="openMindFlyout('${esc(ev.id)}')">
+      const snippet=(ev.content||ev.metadata?.activity_summary||'').substring(0,140).trimEnd();
+      const wake=historicalWakeDescription(ev.metadata||{});
+      return`<div class="mind-card" ${ev.journalResidentId?`data-resident-id="${esc(ev.journalResidentId)}"`:''} onclick="openMindFlyout('${esc(ev.id)}')">
+        ${ev.journalResidentName?`<div class="mind-resident">${esc(ev.journalResidentName)}</div>`:''}
         <div class="mind-card-header">
           <span class="mind-type-icon">${icon}</span>
           <span class="mind-source-badge" data-source="${esc(src)}">${esc(src)}</span>
@@ -1625,6 +1713,8 @@ async function loadMindPanel(){
           <span class="mind-time">${relativeTime(ev.timestamp)}</span>
         </div>
         <div class="mind-title">${esc(ev.title||'')}</div>
+        ${wake?`<div class="mind-wake">${esc(wake)}</div>`:''}
+        ${!ev.content&&ev.metadata?.activity_summary?'<div class="mind-type-label">Recorded activity</div>':''}
         ${snippet?`<div class="mind-content">${esc(snippet)}&hellip;</div>`:''}
       </div>`;
     }).join('');
@@ -1670,6 +1760,9 @@ function openMindFlyout(evId){
   // Meta block
   const metaEl=document.getElementById('flyout-meta');
   const metaRows=[];
+  if(ev.journalResidentName)metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">◉</span><span class="flyout-meta-val">Resident: ${esc(ev.journalResidentName)}</span></div>`);
+  const wake=historicalWakeDescription(meta);
+  if(wake)metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">◷</span><span class="flyout-meta-val">${esc(wake)}</span></div>`);
   if(meta.location) metaRows.push(`<div class="flyout-meta-row"><span class="flyout-meta-icon">📍</span><span class="flyout-meta-val">${esc(meta.location)}</span></div>`);
   if(meta.mood){
     // first sentence only
@@ -1693,7 +1786,7 @@ function openMindFlyout(evId){
     <div class="flyout-section">
       ${s.label?`<div class="flyout-section-label ${_flyoutSectionClass(s.label)}">${esc(s.label)}</div>`:''}
       <div class="flyout-section-text">${esc(s.text)}</div>
-    </div>`).join('');
+    </div>`).join('')+(meta.activity_summary?`<div class="flyout-section"><div class="flyout-section-label">Recorded activity</div><div class="flyout-section-text">${esc(meta.activity_summary)}</div></div>`:'');
 
   // Show flyout, hide list
   document.getElementById('mind-flyout').classList.remove('hidden');
@@ -1709,10 +1802,15 @@ async function triggerDream(){
   btn.textContent='\u23F3 Ticking...';btn.disabled=true;
   try{
     const r=await api('/world/tick',{method:'POST'});
-    if(r&&r.location)addMsg('assistant',`\u{1F30D} *World tick complete*\n\nNow at: ${r.location}${r.mood?`\nMood: ${r.mood}`:''}`);
-    else if(r&&r.detail)addMsg('assistant',`\u26A0 World tick: ${r.detail}`);
+    if(r){
+      const wake=r.next_wake_at?` Next opportunity: ${new Date(r.next_wake_at*1000).toLocaleString()}.`:'';
+      if(r.activation_started===false)addMsg('assistant',`World Thread: ${r.detail||r.status}.${wake}`.replace('..','.'));
+      else if(r.status==='resting'||r.status==='waiting')addMsg('assistant',`World Thread: ${r.status==='resting'?'chose to rest':'waiting'}.${r.detail?' '+r.detail:''}${wake}`);
+      else if(r.status==='completed'||r.status==='ok')addMsg('assistant',`\u{1F30D} *World tick complete*${r.location?`\n\nNow at: ${r.location}`:''}${r.mood?`\nMood: ${r.mood}`:''}`);
+      else addMsg('assistant',`World Thread: ${(r.status||'unknown').replaceAll('_',' ')}.${r.detail?' '+r.detail:''}`);
+    }
     await loadMindPanel();await loadState();
-  }catch(e){console.error(e);}
+  }catch(e){console.error(e);addMsg('assistant',`World Thread request failed: ${e.message}`);}
   btn.textContent='\u25B6 Tick Now';btn.disabled=false;
 }
 
@@ -1730,8 +1828,10 @@ function switchTab(name){
 
 
 async function loadMemTotalCount(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch();
   try{
-    const d=await api('/state');
+    const d=await api('/state',household?{headers:{'X-Tamagi-Resident':actor}}:{});
+    if(household&&!household.acceptResponse(actor,token))return;
     if(d?.memory?.total_memories!=null){
       const n=d.memory.total_memories;
       document.getElementById('mem-count').textContent=n+' memor'+(n===1?'y':'ies');
@@ -1746,24 +1846,33 @@ function setMemFilter(btn,type){
   searchMemories(document.getElementById('mem-search').value.trim());
 }
 
+let _memSearchRequest=0;
 async function searchMemories(query){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),token=household?.selectionEpoch(),request=++_memSearchRequest,filter=activeMemFilter;
+  const current=()=>request===_memSearchRequest&&(!household||household.acceptResponse(actor,token));
   const entries=document.getElementById('mem-entries');
-  if(!query&&activeMemFilter==='all'){entries.innerHTML='<div class="drawer-empty">Search your memories...</div>';return}
-  const effectiveQuery=query||activeMemFilter;
+  if(!query&&filter==='all'){entries.innerHTML='<div class="drawer-empty">Search your memories...</div>';return}
+  const effectiveQuery=query||filter;
   try{
-    const d=await api('/memory/recall',{method:'POST',body:JSON.stringify({query:effectiveQuery,limit:20})});
+    const d=await api('/memory/recall',{method:'POST',body:JSON.stringify({query:effectiveQuery,limit:20}),...(household?{headers:{'X-Tamagi-Resident':actor}}:{})});
+    if(!current())return;
     let memories=d.memories||[];
-    if(activeMemFilter!=='all')memories=memories.filter(m=>m.memory_type===activeMemFilter);
+    if(filter!=='all')memories=memories.filter(m=>m.memory_type===filter);
     if(!memories.length){entries.innerHTML='<div class="drawer-empty">No memories found.</div>';return}
     entries.innerHTML=memories.map(m=>{
       const preview=(m.content||'').substring(0,150)+((m.content||'').length>150?'\u2026':'');
       const type=m.memory_type||'fact';
       return`<div class="mem-card"><div class="mem-card-header"><span class="mem-type-badge" data-type="${esc(type)}">${esc(type)}</span><span class="mem-time">${relativeTime(m.timestamp)}</span></div><div class="mem-content">${esc(preview)}</div></div>`;
     }).join('');
-  }catch(err){console.error('searchMemories',err);entries.innerHTML='<div class="drawer-empty">Search failed.</div>'}
+  }catch(err){if(!current())return;console.error('searchMemories',err);entries.innerHTML='<div class="drawer-empty">Search failed.</div>'}
 }
 
-const debouncedSearch=debounce(searchMemories,400);
+const _debouncedMemSearch=debounce((query,actor,token)=>{
+  if(!window.TamagiHousehold||TamagiHousehold.acceptResponse(actor,token))searchMemories(query);
+},400);
+function debouncedSearch(query){
+  _debouncedMemSearch(query,window.TamagiHousehold?.selectedResidentId(),window.TamagiHousehold?.selectionEpoch());
+}
 
 // ═══ ONBOARDING ═══
 let obSteps=[],obStep=0,obR={};
@@ -1925,14 +2034,17 @@ function initResize(){
 document.addEventListener('DOMContentLoaded',async()=>{initLayout();initResize();const inp=document.getElementById('input');inp.addEventListener('input',()=>autoResize(inp));inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
 // Start skeleton rig — load custom sprite config first (may override bones/dims),
 // then begin the animation loop so frame 1 already uses the right data.
-_rigBones=applyPivotDefaults(PRESETS.default.bones());
+_rigBones=TamagiAvatarRuntime.createBones(_avatarId,createBone,()=>applyPivotDefaults(PRESETS.default.bones()));
 await loadSpriteConfig();
 requestAnimationFrame(_rigTick);
 connectWS();await loadState();loadConversations();const needsOb=await checkOnboarding();if(!needsOb)await checkWorldSeed();setInterval(loadState,30000)});
 async function loadState(){
+  const household=window.TamagiHousehold,actor=household?.selectedResidentId(),selectionToken=household?.selectionEpoch();
+  const scoped=household?{headers:{'X-Tamagi-Resident':actor}}:{};
   try{
-    const d=await api('/state');
+    const d=await api('/state',scoped);
     if(!d)return; // redirected to /login
+    if(household&&!household.acceptResponse(actor,selectionToken))return;
     updateState(d.state);setConnected(true);
     // Show logout button when auth is enabled
     try{
@@ -1940,10 +2052,12 @@ async function loadState(){
       document.getElementById('logout-btn').style.display=a.enabled?'inline':'none';
     }catch{}
     // Pull world context separately and update mood pill + location/focus display
-    try{const ws=await api('/world/state');updateWorldContext(ws)}catch{}
+    try{const ws=await api('/world/state',scoped);if(!household||household.acceptResponse(actor,selectionToken))updateWorldContext(ws)}catch{}
   }catch{setConnected(false)}
 }
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
+<script src="/assets/app-shell.js?v=20"></script>
+<script src="/assets/home-views.js?v=22"></script>
 </body>
 </html>

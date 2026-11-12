@@ -1,0 +1,50 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gnupg
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.lock
+          .venv/bin/python -m pip install --no-deps -e .
+          .venv/bin/python -m pip install ruff==0.17.3
+      - name: Check repository
+        run: .venv/bin/python scripts/check_repository.py
+      - name: Check Python
+        run: |
+          .venv/bin/python -m pip check
+          .venv/bin/ruff check backend tests scripts --select F
+          .venv/bin/python -m compileall -q backend scripts tests
+      - name: Test
+        run: .venv/bin/python -m unittest discover -s tests -q
+      - name: Check frontend syntax
+        run: |
+          node --check frontend/sw.js
+          .venv/bin/python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          for name in ('frontend/index.html', 'frontend/home.html'):
+              for block in Path(name).read_text().split('<script>')[1:]:
+                  result = subprocess.run(['node', '--check'], input=block.split('</script>')[0], text=True)
+                  result.check_returncode()
+          PY

@@ -9,7 +9,6 @@ Guardrails:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -122,6 +121,10 @@ class ReadSkill(Skill):
         return p.resolve()
 
     def _is_allowed(self, resolved: Path, allowed_paths: list[str]) -> bool:
+        from backend.core.runtime import get_runtime
+        runtime = get_runtime()
+        if runtime and runtime.authority == 'unrestricted_host':
+            return True
         """Check if a resolved path falls under any allowed directory."""
         for allowed in allowed_paths:
             allowed_resolved = Path(allowed).resolve()

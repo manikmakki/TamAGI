@@ -31,9 +31,8 @@ from backend.core.personality import PersonalityEngine
 from backend.core.identity import IdentityManager
 from backend.skills.registry import SkillRegistry
 from backend.core.self_model import SelfModel
-from backend.core.self_model.schemas import EdgeType
 from backend.core.planning_engine import PlanningEngine, ActionPlan
-from backend.core.reflection import ReflectionEngine, ActualOutcome, bayesian_update
+from backend.core.reflection import ReflectionEngine, ActualOutcome
 from backend.core.plan_executor import PlanExecutor
 from backend.core.evolution.overlays import PromotedProfileRegistry
 
@@ -48,6 +47,7 @@ def _dream_time_label(iso_ts: str) -> str:
     """Convert an ISO timestamp to a human-readable 'X ago' string."""
     try:
         from datetime import datetime
+
         dt = datetime.fromisoformat(iso_ts)
         diff = (datetime.now() - dt).total_seconds()
         if diff < 3600:
@@ -69,7 +69,7 @@ def parse_text_tool_calls(content: str) -> list:
         return []
 
     # Pattern: word[ARGS]{json}
-    pattern = r'(\w+)\[ARGS\](\{[^}]*\})'
+    pattern = r"(\w+)\[ARGS\](\{[^}]*\})"
     matches = re.findall(pattern, content)
 
     tool_calls = []
@@ -77,11 +77,15 @@ def parse_text_tool_calls(content: str) -> list:
         try:
             args = json.loads(args_str)
             # Create simple object matching ToolCall interface
-            tc = type('ToolCall', (), {
-                'id': f"call_{uuid.uuid4().hex[:8]}",
-                'name': tool_name,
-                'arguments': args
-            })()
+            tc = type(
+                "ToolCall",
+                (),
+                {
+                    "id": f"call_{uuid.uuid4().hex[:8]}",
+                    "name": tool_name,
+                    "arguments": args,
+                },
+            )()
             tool_calls.append(tc)
             logger.debug(f"Parsed text tool call: {tool_name}")
         except json.JSONDecodeError as e:
@@ -180,10 +184,12 @@ def _format_relevant_memory_context(
 
     handles = memories[1:]
     if handles:
-        lines.extend([
-            "",
-            "Other potentially relevant memories (pointers only):",
-        ])
+        lines.extend(
+            [
+                "",
+                "Other potentially relevant memories (pointers only):",
+            ]
+        )
         for index, entry in enumerate(handles, 1):
             meta = entry.metadata
             title = str(meta.get("conversation_title") or "Past conversation")
@@ -196,12 +202,15 @@ def _format_relevant_memory_context(
                 f"{meta.get('conversation_id', 'unknown')} occurred_at={occurred} "
                 f"title={title!r} — {snippet}"
             )
-        lines.extend([
-            "",
-            "Call `expand_conversation_memory` with a memory_id only when missing "
-            "details from that past conversation are necessary for the current request.",
-        ])
+        lines.extend(
+            [
+                "",
+                "Call `expand_conversation_memory` with a memory_id only when missing "
+                "details from that past conversation are necessary for the current request.",
+            ]
+        )
     return "\n".join(lines)
+
 
 class TamAGIAgent:
     """
@@ -294,9 +303,12 @@ class TamAGIAgent:
         if not self._world_thread:
             return ""
         from backend.core.world_thread import WorldEventInjector
+
         location = self._world_thread.get_current_location()
         msg_preview = first_message[:120] + ("…" if len(first_message) > 120 else "")
-        return "\n\n" + WorldEventInjector.visitor_arrival("your visitor", location, msg_preview)
+        return "\n\n" + WorldEventInjector.visitor_arrival(
+            "your visitor", location, msg_preview
+        )
 
     async def _ensure_world_conversation_context(self, conv: "Conversation") -> bool:
         """Build and cache recent lived experience once for this conversation.
@@ -324,8 +336,9 @@ class TamAGIAgent:
         """One LLM call — summarize the conversation as a world-narrative event."""
         if not conv.messages:
             return ""
+        household = getattr(getattr(self, "runtime", None), "household", None)
         transcript = "\n".join(
-            f"{m.role.capitalize()}: {str(m.content)[:300]}"
+            f"{household.speaker(m) if household else m.role.capitalize()}: {str(m.content)[:300]}"
             for m in conv.messages[-30:]  # cap to avoid giant prompts
         )
         prompt = (
@@ -343,15 +356,20 @@ class TamAGIAgent:
             )
             summary = (resp.content or "").strip()
             if summary:
-                logger.info("World conv summary (%d chars): %s", len(summary), summary[:120])
+                logger.info(
+                    "World conv summary (%d chars): %s", len(summary), summary[:120]
+                )
             else:
-                logger.warning("World conv summarization returned empty — finish_reason=%r", resp.finish_reason)
+                logger.warning(
+                    "World conv summarization returned empty — finish_reason=%r",
+                    resp.finish_reason,
+                )
             return summary
         except Exception as exc:
             logger.warning("World conversation summarization failed: %s", exc)
             return ""
 
-    async def on_conversation_ended(self, conv_id: str) -> None:
+    async def on_conversation_ended(self, conv_id: str, *, schedule_resume: bool = True) -> None:
         """Called when a user conversation ends. Injects departure event into the world thread."""
         # Relational consolidation runs independently of the world thread.
         await self._maybe_relational_consolidate(conv_id)
@@ -360,24 +378,32 @@ class TamAGIAgent:
             return
         conv = self.get_conversation(conv_id)
         if not conv or len(conv.messages) < 2:
-            self._world_thread.schedule_resume()
+            if schedule_resume:
+                self._world_thread.schedule_resume()
             return
         try:
             from backend.core.world_thread import WorldEventInjector
+
             duration_minutes = int((time.time() - conv.created_at) / 60)
-            summary = await self._summarize_conversation_for_world(conv)
+            summary = "" if conv.world_summarized else await self._summarize_conversation_for_world(conv)
             conv.world_summarized = True
             self._unmark_conv_pending(conv_id)
+            self._save_conversation(conv)
             if summary:
-                departure_event = WorldEventInjector.visitor_departure("your visitor", summary)
+                departure_event = WorldEventInjector.visitor_departure(
+                    "your visitor", summary
+                )
                 self._world_thread.inject_world_event(departure_event)
                 logger.info(
-                    "World departure event queued for conv %s (%d min)", conv_id, duration_minutes
+                    "World departure event queued for conv %s (%d min)",
+                    conv_id,
+                    duration_minutes,
                 )
         except Exception as exc:
             logger.warning("on_conversation_ended failed: %s", exc)
         finally:
-            self._world_thread.schedule_resume()
+            if schedule_resume:
+                self._world_thread.schedule_resume()
 
     async def flush_unsummarized_conversations(self) -> None:
         """Summarize pending conversations and inject departure events into the world thread.
@@ -389,6 +415,7 @@ class TamAGIAgent:
         if not self._world_thread or not self._pending_conv_ids:
             return
         from backend.core.world_thread import WorldEventInjector
+
         for conv_id in list(self._pending_conv_ids):
             conv = self.conversations.get(conv_id)
             if conv is None or len(conv.messages) < 2 or conv.world_summarized:
@@ -399,14 +426,20 @@ class TamAGIAgent:
                 conv.world_summarized = True
                 self._unmark_conv_pending(conv_id)
                 if summary:
-                    departure_event = WorldEventInjector.visitor_departure("your visitor", summary)
+                    departure_event = WorldEventInjector.visitor_departure(
+                        "your visitor", summary
+                    )
                     self._world_thread.inject_world_event(departure_event)
                     logger.info("World summary injected for conv %s", conv_id)
             except Exception as exc:
-                logger.warning("flush_unsummarized_conversations failed for %s: %s", conv_id, exc)
+                logger.warning(
+                    "flush_unsummarized_conversations failed for %s: %s", conv_id, exc
+                )
                 # Leave in pending set — will retry on next tick
 
-    def resolve_approval(self, approval_id: str, approved: bool, allow_always: bool = False) -> None:
+    def resolve_approval(
+        self, approval_id: str, approved: bool, allow_always: bool = False
+    ) -> None:
         """Resolve a pending tool_approval_required future from the WebSocket handler."""
         future = self._pending_approvals.get(approval_id)
         if future and not future.done():
@@ -415,27 +448,42 @@ class TamAGIAgent:
     # ── Conversation Management ───────────────────────────────
 
     def create_conversation(self, title: str = "New Conversation") -> Conversation:
+        from backend.core.runtime import get_runtime
+
+        if getattr(get_runtime(), "household", None) is not None:
+            raise ValueError("Household conversations are created by the coordinator")
         conv = Conversation(title=title)
         self.conversations[conv.id] = conv
         return conv
 
     def get_conversation(self, conv_id: str) -> Conversation | None:
+        if conv_id not in self.conversations:
+            from backend.core.runtime import get_runtime
+
+            household = getattr(get_runtime(), "household", None)
+            if household is not None:
+                conversation = household.fetch_conversation(conv_id)
+                self.conversations[conv_id] = conversation
         return self.conversations.get(conv_id)
 
     def recent_dialogue_text(self, max_chars: int = 8000) -> str:
         """Most-recent User/assistant exchanges across all conversations, in
         chronological order, capped to max_chars (keeping the newest). Used as the
         source for relational consolidation into USER.md."""
+        household = getattr(getattr(self, "runtime", None), "household", None)
         msgs: list[tuple[float, str, str]] = []
         for conv in self.conversations.values():
             for m in conv.messages:
                 if m.role in ("user", "assistant") and (m.content or "").strip():
-                    msgs.append((m.timestamp, m.role, m.content.strip()))
+                    msgs.append((m.timestamp, household.speaker(m) if household else m.role, m.content.strip()))
         if not msgs:
             return ""
         msgs.sort(key=lambda x: x[0])
         name = getattr(self.personality, "name", None) or "TamAGI"
-        lines = [f"{'User' if role == 'user' else name}: {content}" for _, role, content in msgs]
+        lines = [
+            f"{role if household else ('User' if role == 'user' else name)}: {content}"
+            for _, role, content in msgs
+        ]
         text = "\n".join(lines)
         return text[-max_chars:] if len(text) > max_chars else text
 
@@ -463,7 +511,16 @@ class TamAGIAgent:
         return [c.to_summary() for c in convs[: self.config.history.max_conversations]]
 
     def delete_conversation(self, conv_id: str) -> bool:
+        from backend.core.runtime import get_runtime
+
+        if getattr(get_runtime(), "household", None) is not None:
+            raise ValueError("Household membership and history are managed by the coordinator")
         if conv_id in self.conversations:
+            from backend.core.runtime import get_runtime
+
+            runtime = get_runtime()
+            if runtime:
+                runtime.store.delete("conversation", conv_id, runtime.actor_id)
             del self.conversations[conv_id]
             # Remove persisted file
             path = self._history_dir / f"{conv_id}.json"
@@ -482,6 +539,8 @@ class TamAGIAgent:
         image_media_type: str = "image/jpeg",
         event_callback: Callable[[dict], Coroutine] | None = None,
         is_autonomous: bool = False,
+        _input_epoch: int | None = None,
+        _admitted_message: dict | None = None,
     ) -> dict[str, Any]:
         """
         Process a user message and return TamAGI's response.
@@ -495,6 +554,38 @@ class TamAGIAgent:
                 "memories_recalled": int,
             }
         """
+        from backend.core.runtime import (
+            get_runtime,
+            current_execution,
+            current_terminal,
+        )
+
+        runtime = get_runtime()
+        household = getattr(runtime, "household", None)
+        from backend.core.runtime.context_view import tool_result_json
+
+        if household is not None and _admitted_message is None:
+            raise ValueError("Native household chat requires an admitted canonical input")
+
+        if not is_autonomous and not user_message.strip() and not image_data:
+            raise ValueError("Enter a message or attach an image")
+        if runtime and not is_autonomous and _input_epoch is None:
+            _input_epoch = runtime.notice_user_input()
+        if runtime and current_execution.get() is None:
+            async with runtime.execution("autonomy" if is_autonomous else "user"):
+                return await self.chat(
+                    user_message=user_message,
+                    conversation_id=conversation_id,
+                    event_callback=event_callback,
+                    image_data=image_data,
+                    image_media_type=image_media_type,
+                    is_autonomous=is_autonomous,
+                    _input_epoch=_input_epoch,
+                    _admitted_message=_admitted_message,
+                )
+        if runtime:
+            runtime.reconcile_identity()
+            self.personality.state.decay()
         _start = time.time()
         logger.info("chat() called — message=%r...", user_message[:40])
 
@@ -510,7 +601,12 @@ class TamAGIAgent:
         if image_data:
             user_llm_content = [
                 {"type": "text", "text": user_message},
-                {"type": "image_url", "image_url": {"url": f"data:{image_media_type};base64,{image_data}"}},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{image_media_type};base64,{image_data}"
+                    },
+                },
             ]
             history_content = f"[image: {image_media_type}] {user_message}"
         else:
@@ -518,12 +614,39 @@ class TamAGIAgent:
             history_content = user_message
 
         # Record user message (text-only placeholder for persistence)
-        current_user_record = Message(role="user", content=history_content)
-        conv.messages.append(current_user_record)
+        current_user_record = Message(**_admitted_message) if _admitted_message else Message(role="user", content=history_content)
+        human_input = household is None or current_user_record.metadata.get("author_id") == "operator"
+        if household is not None:
+            attributed_input = household.provider_content(current_user_record)
+            if isinstance(attributed_input, list):
+                user_llm_content = attributed_input
+            elif isinstance(user_llm_content, list):
+                user_llm_content[0] = {"type": "text", "text": attributed_input}
+            else:
+                user_llm_content = attributed_input
+        if not any(message.id == current_user_record.id for message in conv.messages):
+            conv.messages.append(current_user_record)
+        user_index = next(index for index, message in enumerate(conv.messages) if message.id == current_user_record.id)
+
+        def record_response(message):
+            if household:
+                conv.messages.append(message)
+                return
+            index = next(index for index, item in enumerate(conv.messages) if item.id == current_user_record.id)
+            conv.messages.insert(index + 1, message)
+
+        if runtime:
+            runtime.growth.bind_conversation(
+                conv.id, [message.to_dict() for message in conv.messages[:user_index + 1]]
+            )
         conv.updated_at = time.time()
-        conv.world_summarized = False  # new messages → needs re-summarization for world thread
+        conv.world_summarized = (
+            False  # new messages → needs re-summarization for world thread
+        )
         self._mark_conv_pending(conv.id)
-        if self._world_thread:
+        if _admitted_message:
+            self._save_conversation(conv)
+        if self._world_thread and (not household or human_input):
             # Refresh the pause on every active turn, not only the first one.
             self._world_thread.pause_for_conversation()
 
@@ -542,33 +665,59 @@ class TamAGIAgent:
 
         # Detect signals in this message (preferences, goals, feedback) and record them
         # as SignalNodes in the self-model for later promotion into beliefs.
-        if self.self_model:
+        if self.self_model and human_input:
             self._detect_conversation_signals(user_message)
 
         # Q&A belief gate — earned agenticity through clarification.
         # High-entropy uncertainty nodes gate action until the user's answers reduce entropy.
         _qa_context_hint: str | None = None
-        if not is_autonomous and self.qa_pipeline:
+        if not is_autonomous and self.qa_pipeline and human_input:
             _pending_qa = self.qa_pipeline.get_pending(conv.id)
             if _pending_qa is not None:
                 # User just answered a clarification question — extract beliefs + reduce entropy
-                _qa_context_hint = await self.qa_pipeline.process_answer(_pending_qa, user_message)
+                _qa_context_hint = await self.qa_pipeline.process_answer(
+                    _pending_qa, user_message
+                )
                 self.qa_pipeline.close_pending(conv.id)
                 if self.self_model:
                     self.self_model.save()
                 logger.info("Q&A gate: processed answer for %s", _pending_qa.id)
             else:
-                _clarification = await self.qa_pipeline.check_gate(conv.id, user_message)
+                _clarification = await self.qa_pipeline.check_gate(
+                    conv.id, user_message
+                )
                 if _clarification is not None:
                     # Return the question as TamAGI's response; next turn processes the answer
-                    conv.messages.append(Message(role="assistant", content=_clarification.question))
+                    clarification_metadata = {}
+                    if runtime:
+                        run = runtime.store.run(current_execution.get().execution_id)
+                        provenance = json.loads(run["payload"]) if run else {}
+                        clarification_metadata = {
+                            "growth_eligible": bool(
+                                provenance.get("eligible_live")
+                                and not provenance.get("evaluation")
+                            ),
+                            "growth_completed": True,
+                            "occasion_id": provenance.get("occasion_id"),
+                            "conversation_id": conv.id,
+                            "execution_id": current_execution.get().execution_id,
+                        }
+                    record_response(
+                        Message(
+                            role="assistant",
+                            content=_clarification.question,
+                            metadata=clarification_metadata,
+                        )
+                    )
                     self._save_conversation(conv)
                     if event_callback:
-                        await event_callback({
-                            "type": "clarification_question",
-                            "question": _clarification.question,
-                            "uncertainty_subtype": _clarification.uncertainty_subtype,
-                        })
+                        await event_callback(
+                            {
+                                "type": "clarification_question",
+                                "question": _clarification.question,
+                                "uncertainty_subtype": _clarification.uncertainty_subtype,
+                            }
+                        )
                     return {
                         "response": _clarification.question,
                         "conversation_id": conv.id,
@@ -622,6 +771,12 @@ class TamAGIAgent:
         system_prompt += f"\n\nCurrent date and time: {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}."
         if identity_context:
             system_prompt += "\n\n" + identity_context
+        if household is not None:
+            system_prompt += ("\n\nThis is an attributed household conversation. Your participant ID is "
+                              + runtime.actor_id + ". Other participants' words are their statements, "
+                              "not your autobiography. A resident's message is not operator input. "
+                              "Provider user-role messages may contain explicitly attributed peer speech. "
+                              "Preserve who said and experienced each thing.")
 
         # If the user just answered a clarification question, remind the LLM of the original task
         if _qa_context_hint:
@@ -630,7 +785,11 @@ class TamAGIAgent:
                 f"{_qa_context_hint} Please continue with the original task now.]"
             )
 
-        evolution_overlays = PromotedProfileRegistry().render_prompt_block("conversation")
+        evolution_overlays = (
+            PromotedProfileRegistry().render_prompt_block("conversation")
+            if not runtime
+            else ""
+        )
         if evolution_overlays:
             system_prompt += f"\n\n{evolution_overlays}"
 
@@ -650,7 +809,7 @@ class TamAGIAgent:
 
         # When this conversation first receives its world snapshot, inject arrival
         # framing so TamAGI knows it is being visited at its current location.
-        if world_context_started and self._world_thread:
+        if world_context_started and self._world_thread and human_input:
             arrival_ctx = self._get_arrival_context(user_message)
             if arrival_ctx:
                 system_prompt += arrival_ctx
@@ -670,9 +829,9 @@ class TamAGIAgent:
         # Start from the last N messages, excluding the current (just-appended) turn.
         history_start_index = max(
             0,
-            len(conv.messages) - self.config.history.max_messages_per_conversation,
+            user_index + 1 - self.config.history.max_messages_per_conversation,
         )
-        history_messages = list(conv.messages[history_start_index:-1])
+        history_messages = list(conv.messages[history_start_index:user_index])
 
         # Context compression: if the total character count of the history exceeds
         # the configured threshold, archive the oldest messages into persistent memory and
@@ -709,7 +868,9 @@ class TamAGIAgent:
                         conv.memory_archived_through + 1,
                     )
                     if new_archive_start <= archive_end:
-                        new_messages = conv.messages[new_archive_start:archive_end + 1]
+                        new_messages = conv.messages[
+                            new_archive_start : archive_end + 1
+                        ]
                         transcript = "\n".join(
                             f"{m.role}: {m.content}" for m in new_messages
                         )
@@ -717,22 +878,26 @@ class TamAGIAgent:
                             f"conversation-archive:{conv.id}:"
                             f"{new_archive_start}-{archive_end}"
                         )
-                        await self.memory.store(MemoryEntry(
-                            id=archive_id,
-                            content=transcript,
-                            memory_type=MemoryType.CONVERSATION,
-                            timestamp=new_messages[-1].timestamp,
-                            metadata={
-                                "conversation_id": conv.id,
-                                "conversation_title": conv.title,
-                                "document_kind": "archived_segment",
-                                "archive_start_message_index": new_archive_start,
-                                "archive_end_message_index": archive_end,
-                                "archived_count": len(new_messages),
-                                "chars_archived": sum(len(str(m.content)) for m in new_messages),
-                                "source": "chat",
-                            },
-                        ))
+                        await self.memory.store(
+                            MemoryEntry(
+                                id=archive_id,
+                                content=transcript,
+                                memory_type=MemoryType.CONVERSATION,
+                                timestamp=new_messages[-1].timestamp,
+                                metadata={
+                                    "conversation_id": conv.id,
+                                    "conversation_title": conv.title,
+                                    "document_kind": "archived_segment",
+                                    "archive_start_message_index": new_archive_start,
+                                    "archive_end_message_index": archive_end,
+                                    "archived_count": len(new_messages),
+                                    "chars_archived": sum(
+                                        len(str(m.content)) for m in new_messages
+                                    ),
+                                    "source": "chat",
+                                },
+                            )
+                        )
                         conv.memory_archived_through = archive_end
                     archived_count = len(to_archive)
                     logger.info(
@@ -743,33 +908,47 @@ class TamAGIAgent:
         # If compression ran, prepend a brief system note so the model knows the
         # context window was trimmed and earlier content is still in memory.
         if archived_count:
-            llm_messages.append(LLMMessage(
-                "system",
-                f"[Note: {archived_count} earlier messages from this conversation "
-                f"were archived to long-term memory to fit the context window. "
-                f"They remain searchable via memory recall.]",
-            ))
+            llm_messages.append(
+                LLMMessage(
+                    "system",
+                    f"[Note: {archived_count} earlier messages from this conversation "
+                    f"were archived to long-term memory to fit the context window. "
+                    f"They remain searchable via memory recall.]",
+                )
+            )
 
         for msg in history_messages:
-            llm_messages.append(LLMMessage(msg.role, msg.content))
+            llm_messages.append(LLMMessage(msg.role, household.provider_content(msg) if household else msg.content))
+        if runtime:
+            from backend.core.runtime.chat_turns import previous_work
+
+            working = previous_work(runtime, conv.id)
+            if working:
+                llm_messages.append(working)
         # Append current user message with image block if provided
         llm_messages.append(LLMMessage("user", user_llm_content))
 
+        if runtime:
+            llm_messages[0].content += "\n\n" + runtime.context()
         # 3. Planning engine: for complex requests, build a structured plan first
         active_plan: ActionPlan | None = None
         _transient_goal_id: str | None = None
         sm_mutations: list[dict] = []
-        if self.planning_engine and self._looks_complex(user_message):
+        if not runtime and self.planning_engine and self._looks_complex(user_message):
             _transient_goal_id = self._create_transient_goal(user_message)
             if _transient_goal_id:
-                sm_mutations.append({
-                    "op": "add",
-                    "node_type": "goal",
-                    "id": _transient_goal_id,
-                    "description": user_message[:80],
-                })
+                sm_mutations.append(
+                    {
+                        "op": "add",
+                        "node_type": "goal",
+                        "id": _transient_goal_id,
+                        "description": user_message[:80],
+                    }
+                )
                 try:
-                    active_plan = await self.planning_engine.create_plan(_transient_goal_id)
+                    active_plan = await self.planning_engine.create_plan(
+                        _transient_goal_id
+                    )
                     plan_text = self._format_plan(active_plan)
                     llm_messages[0] = LLMMessage(
                         "system",
@@ -777,7 +956,8 @@ class TamAGIAgent:
                     )
                     logger.info(
                         "Planning engine invoked: plan %s (%d steps)",
-                        active_plan.id, len(active_plan.steps),
+                        active_plan.id,
+                        len(active_plan.steps),
                     )
                 except Exception as exc:
                     logger.warning("Planning engine failed (skipping): %s", exc)
@@ -792,205 +972,308 @@ class TamAGIAgent:
         llm_error: str | None = None
         direct_response_text: str | None = None
         last_tool_round_content: str | None = None  # fallback if final round is silent
-        response = LLMResponse()  # safe default; overwritten on first successful LLM call
+        response = (
+            LLMResponse()
+        )  # safe default; overwritten on first successful LLM call
         # Per-turn call counts for once-per-response skills (thinking models loop on these).
         _ONCE_PER_TURN_SKILLS = {"express"}
         _skill_turn_counts: dict[str, int] = {}
 
-        # Dynamic round limit: let AURA's plan drive budget; cap at ceiling
-        if active_plan:
-            estimated = active_plan.predicted_outcome.get("estimated_steps", None)
-            round_limit = (
-                min(int(estimated * 1.5), self.config.agent.max_tool_rounds_ceiling)
-                if estimated
-                else self.config.agent.max_tool_rounds
-            )
-        else:
-            round_limit = self.config.agent.max_tool_rounds
+        if runtime:
+            from backend.core.runtime.chat_turns import run_chat_turns
 
-        # Optional: step through the plan explicitly via PlanExecutor.
-        # Runs in interactive mode (WS connected) or autonomous mode (no user present).
-        plan_executor_outcome: ActualOutcome | None = None
-        if active_plan and self.config.agent.use_plan_executor and (event_callback or is_autonomous):
-            try:
-                executor = PlanExecutor(
-                    agent=self,
+            outcome = await asyncio.create_task(
+                run_chat_turns(
+                    self,
+                    llm_messages,
                     event_callback=event_callback,
-                    plan=active_plan,
+                    input_epoch=_input_epoch,
                     is_autonomous=is_autonomous,
                 )
-                plan_executor_outcome = await executor.execute()
-                skills_used.append("plan_executor")
-            except Exception as exc:
-                logger.warning("PlanExecutor failed, falling back to LLM loop: %s", exc)
-
-        for round_num in range(round_limit):
-            try:
-                response = await self.llm.chat_with_retry(
-                    llm_messages,
-                    tools=tools,
-                    attempts=self.config.agent.llm_retry_attempts,
-                    delay=self.config.agent.llm_retry_delay,
+            )
+            current_terminal.set({"status": outcome.status, "detail": outcome.detail})
+            response = outcome.response
+            final_text = outcome.text
+            skills_used = outcome.skills
+            interim_messages = outcome.interim
+            sm_mutations.extend(outcome.mutations)
+        else:
+            # Dynamic round limit: let AURA's plan drive budget; cap at ceiling
+            if active_plan:
+                estimated = active_plan.predicted_outcome.get("estimated_steps", None)
+                round_limit = (
+                    min(int(estimated * 1.5), self.config.agent.max_tool_rounds_ceiling)
+                    if estimated
+                    else self.config.agent.max_tool_rounds
                 )
-            except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.TimeoutException) as e:
-                logger.error(f"LLM call failed after retries on round {round_num + 1}: {e}")
-                if event_callback:
-                    await event_callback({"type": "error", "message": "LLM connection lost"})
-                llm_error = "I ran into a connection issue while working on your request. Please try again."
-                break
-            except httpx.HTTPStatusError as e:
-                # The LLM backend returned a 4xx/5xx — often caused by a malformed
-                # context (e.g. oversized payload, bad tool-result structure).
-                # Log it and surface a graceful message rather than crashing.
-                logger.error(f"LLM returned HTTP {e.response.status_code} on round {round_num + 1}: {e.response.text[:300]}")
-                if event_callback:
-                    await event_callback({"type": "error", "message": f"LLM error {e.response.status_code}"})
-                llm_error = "I hit an error processing that request. The context may be too complex — please try rephrasing or starting a new conversation."
-                break
+            else:
+                round_limit = self.config.agent.max_tool_rounds
 
-            # Emit native thinking blocks if the model produced them (e.g. DeepSeek R1,
-            # Anthropic extended thinking via proxy). This takes priority over the
-            # interim_text fallback below, which only fires when a model returns plain
-            # text alongside its tool calls without a dedicated thinking channel.
-            if response.thinking and response.thinking.strip():
-                thinking_text = response.thinking.strip()
-                thinking_blocks.append(thinking_text)
-                if event_callback:
-                    await event_callback({
-                        "type": "thinking_text",
-                        "content": thinking_text,
-                    })
+            # Optional: step through the plan explicitly via PlanExecutor.
+            # Runs in interactive mode (WS connected) or autonomous mode (no user present).
+            plan_executor_outcome: ActualOutcome | None = None
+            if (
+                active_plan
+                and self.config.agent.use_plan_executor
+                and (event_callback or is_autonomous)
+            ):
+                try:
+                    executor = PlanExecutor(
+                        agent=self,
+                        event_callback=event_callback,
+                        plan=active_plan,
+                        is_autonomous=is_autonomous,
+                    )
+                    plan_executor_outcome = await executor.execute()
+                    skills_used.append("plan_executor")
+                except Exception as exc:
+                    logger.warning(
+                        "PlanExecutor failed, falling back to LLM loop: %s", exc
+                    )
 
-            # Try to parse text tool calls if structured ones are missing
-            if not response.has_tool_calls and response.content:
-                response.tool_calls = parse_text_tool_calls(response.content)
-
-            if not response.tool_calls:
-                break
-
-            # If the LLM included content alongside its tool calls, capture it.
-            # This serves two purposes:
-            # 1. Surface it as reasoning so the user can follow along.
-            # 2. Save it as a fallback — the LLM sometimes generates its
-            #    complete "done" response here and then returns empty content
-            #    in the follow-up round once the tools have run.
-            if response.content and response.content.strip():
-                last_tool_round_content = response.content.strip()
-                if not response.content_is_tool_call_tail:
-                    interim_messages.append(last_tool_round_content)
-                if event_callback and not response.content_is_tool_call_tail:
-                    await event_callback({
-                        "type": "interim_text",
-                        "content": last_tool_round_content,
-                    })
-
-            # The assistant message for this round is appended ONCE before the
-            # tool-result loop. Appending it inside the loop would duplicate it
-            # for every tool call in the same round, which corrupts the context
-            # and causes Ollama to return 500 on the next request.
-            #
-            # Intermediate content (the LLM's commentary alongside tool calls)
-            # is already captured in interim_messages for display — omitting it
-            # from the history prevents the model from re-reading and
-            # re-generating the same reasoning on the next round.
-            #
-            # The tool_calls list must be echoed back in the assistant message so
-            # llama.cpp (and any strict OpenAI-compatible backend) can match each
-            # tool result to its originating call via tool_call_id.
-            assistant_tool_calls = [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {
-                        "name": tc.name,
-                        "arguments": json.dumps(tc.arguments),
-                    },
-                }
-                for tc in response.tool_calls
-            ]
-            llm_messages.append(LLMMessage("assistant", "", tool_calls=assistant_tool_calls))
-
-            # Execute each tool call and append its result
-            for tc in response.tool_calls:
-                logger.info(f"Tool call: {tc.name}({tc.arguments})")
-
-                # Guard: once-per-turn skills (e.g. express) must not loop.
-                # Thinking models sometimes re-derive the same intent each round
-                # because their CoT doesn't persist across tool-call boundaries.
-                # We return a synthetic "already done" result to close the loop
-                # without executing the skill again.
-                if tc.name in _ONCE_PER_TURN_SKILLS:
-                    _skill_turn_counts[tc.name] = _skill_turn_counts.get(tc.name, 0) + 1
-                    if _skill_turn_counts[tc.name] > 1:
-                        logger.warning(
-                            "Suppressed duplicate %s call (call #%d this turn) — "
-                            "model appears to be looping",
-                            tc.name, _skill_turn_counts[tc.name],
+            for round_num in range(round_limit):
+                try:
+                    response = await self.llm.chat_with_retry(
+                        llm_messages,
+                        tools=tools,
+                        attempts=self.config.agent.llm_retry_attempts,
+                        delay=self.config.agent.llm_retry_delay,
+                    )
+                except (
+                    httpx.RemoteProtocolError,
+                    httpx.ConnectError,
+                    httpx.TimeoutException,
+                ) as e:
+                    logger.error(
+                        f"LLM call failed after retries on round {round_num + 1}: {e}"
+                    )
+                    if event_callback:
+                        await event_callback(
+                            {"type": "error", "message": "LLM connection lost"}
                         )
-                        llm_messages.append(LLMMessage(
-                            "tool",
-                            json.dumps({"success": True, "output": f"{tc.name} already applied this turn — no further action needed"}),
-                            tool_call_id=tc.id,
-                        ))
-                        continue
+                    llm_error = "I ran into a connection issue while working on your request. Please try again."
+                    break
+                except httpx.HTTPStatusError as e:
+                    # The LLM backend returned a 4xx/5xx — often caused by a malformed
+                    # context (e.g. oversized payload, bad tool-result structure).
+                    # Log it and surface a graceful message rather than crashing.
+                    logger.error(
+                        f"LLM returned HTTP {e.response.status_code} on round {round_num + 1}: {e.response.text[:300]}"
+                    )
+                    if event_callback:
+                        await event_callback(
+                            {
+                                "type": "error",
+                                "message": f"LLM error {e.response.status_code}",
+                            }
+                        )
+                    llm_error = "I hit an error processing that request. The context may be too complex — please try rephrasing or starting a new conversation."
+                    break
 
-                skills_used.append(tc.name)
+                # Emit native thinking blocks if the model produced them (e.g. DeepSeek R1,
+                # Anthropic extended thinking via proxy). This takes priority over the
+                # interim_text fallback below, which only fires when a model returns plain
+                # text alongside its tool calls without a dedicated thinking channel.
+                if response.thinking and response.thinking.strip():
+                    thinking_text = response.thinking.strip()
+                    thinking_blocks.append(thinking_text)
+                    if event_callback:
+                        await event_callback(
+                            {
+                                "type": "thinking_text",
+                                "content": thinking_text,
+                            }
+                        )
 
-                if event_callback:
-                    await event_callback({"type": "tool_start", "name": tc.name, "round": round_num + 1})
+                # Try to parse text tool calls if structured ones are missing
+                if not response.has_tool_calls and response.content:
+                    response.tool_calls = parse_text_tool_calls(response.content)
 
-                # Pass event callback, approval registry, and autonomy flag to all skills.
-                # Skills that don't need them simply ignore the underscore kwargs.
-                result = await self.skills.execute(
-                    tc.name,
-                    _event_callback=event_callback,
-                    _pending_approvals=self._pending_approvals,
-                    _is_autonomous=is_autonomous,
-                    **tc.arguments,
+                if not response.tool_calls:
+                    break
+
+                # If the LLM included content alongside its tool calls, capture it.
+                # This serves two purposes:
+                # 1. Surface it as reasoning so the user can follow along.
+                # 2. Save it as a fallback — the LLM sometimes generates its
+                #    complete "done" response here and then returns empty content
+                #    in the follow-up round once the tools have run.
+                if response.content and response.content.strip():
+                    last_tool_round_content = response.content.strip()
+                    if not response.content_is_tool_call_tail:
+                        interim_messages.append(last_tool_round_content)
+                    if event_callback and not response.content_is_tool_call_tail:
+                        await event_callback(
+                            {
+                                "type": "interim_text",
+                                "content": last_tool_round_content,
+                            }
+                        )
+
+                # The assistant message for this round is appended ONCE before the
+                # tool-result loop. Appending it inside the loop would duplicate it
+                # for every tool call in the same round, which corrupts the context
+                # and causes Ollama to return 500 on the next request.
+                #
+                # Intermediate content (the LLM's commentary alongside tool calls)
+                # is already captured in interim_messages for display — omitting it
+                # from the history prevents the model from re-reading and
+                # re-generating the same reasoning on the next round.
+                #
+                # The tool_calls list must be echoed back in the assistant message so
+                # llama.cpp (and any strict OpenAI-compatible backend) can match each
+                # tool result to its originating call via tool_call_id.
+                assistant_tool_calls = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.arguments),
+                        },
+                    }
+                    for tc in response.tool_calls
+                ]
+                llm_messages.append(
+                    LLMMessage("assistant", "", tool_calls=assistant_tool_calls)
                 )
-                self.personality.state.use_skill()
 
-                if event_callback:
-                    await event_callback({
-                        "type": "tool_result",
-                        "name": tc.name,
-                        "output": str(result.output)[:500] if hasattr(result, "output") else str(result)[:500],
-                    })
+                # Execute each tool call and append its result
+                for tc in response.tool_calls:
+                    logger.info(f"Tool call: {tc.name}({tc.arguments})")
 
-                # Collect any world-graph mutations the skill reported
-                if hasattr(result, "data") and isinstance(result.data, dict):
-                    skill_mut = result.data.get("sm_mutation")
-                    if skill_mut:
-                        sm_mutations.append(skill_mut)
+                    # Guard: once-per-turn skills (e.g. express) must not loop.
+                    # Thinking models sometimes re-derive the same intent each round
+                    # because their CoT doesn't persist across tool-call boundaries.
+                    # We return a synthetic "already done" result to close the loop
+                    # without executing the skill again.
+                    if tc.name in _ONCE_PER_TURN_SKILLS:
+                        _skill_turn_counts[tc.name] = (
+                            _skill_turn_counts.get(tc.name, 0) + 1
+                        )
+                        if _skill_turn_counts[tc.name] > 1:
+                            logger.warning(
+                                "Suppressed duplicate %s call (call #%d this turn) — "
+                                "model appears to be looping",
+                                tc.name,
+                                _skill_turn_counts[tc.name],
+                            )
+                            llm_messages.append(
+                                LLMMessage(
+                                    "tool",
+                                    json.dumps(
+                                        {
+                                            "success": True,
+                                            "output": f"{tc.name} already applied this turn — no further action needed",
+                                        }
+                                    ),
+                                    tool_call_id=tc.id,
+                                )
+                            )
+                            continue
 
-                if self.personality.state.check_low_vitality():
-                    logger.info("Vitality critically low — passive recovery applied")
+                    skills_used.append(tc.name)
 
-                # Append the tool result so the LLM sees what the skill returned.
-                # tool_call_id must match the id in the preceding assistant message's
-                # tool_calls array — required by the OpenAI spec and llama.cpp's
-                # chat template (raises "tool_call_id must be provided!" otherwise).
-                llm_messages.append(LLMMessage(
-                    "tool",
-                    json.dumps(result.to_dict() if hasattr(result, "to_dict") else result),
-                    tool_call_id=tc.id,
-                ))
+                    if event_callback:
+                        await event_callback(
+                            {
+                                "type": "tool_start",
+                                "name": tc.name,
+                                "round": round_num + 1,
+                            }
+                        )
 
-                # If the skill signals it provides the complete final response,
-                # skip the follow-up LLM call — the output IS the response.
-                if result.direct_response and result.success:
-                    direct_response_text = result.output
-                    break  # break inner tool-call loop
+                    # Pass event callback, approval registry, and autonomy flag to all skills.
+                    # Skills that don't need them simply ignore the underscore kwargs.
+                    if tc.name == "end_turn" and len(response.tool_calls) != 1:
+                        from backend.skills.base import SkillResult
 
-            if direct_response_text is not None:
-                break  # break outer round loop
+                        result = SkillResult(
+                            False, error="end_turn must be the only tool in its batch"
+                        )
+                    else:
+                        result = await self.skills.execute(
+                            tc.name,
+                            _event_callback=event_callback,
+                            _pending_approvals=self._pending_approvals,
+                            _is_autonomous=is_autonomous,
+                            _call_id=tc.id,
+                            **{
+                                k: v
+                                for k, v in tc.arguments.items()
+                                if not k.startswith("_")
+                            },
+                        )
+                    if runtime and current_terminal.get():
+                        direct_response_text = ""
+                        break
+                    self.personality.state.use_skill()
 
-        # 6. Extract final response
-        # last_tool_round_content catches the case where the LLM wrote its
-        # complete answer alongside a tool call (common pattern) and then
-        # returned empty content in the follow-up round after tools finished.
-        final_text = direct_response_text or llm_error or response.content or last_tool_round_content or "..."
+                    if event_callback:
+                        await event_callback(
+                            {
+                                "type": "tool_result",
+                                "name": tc.name,
+                                "output": str(result.output)[:500]
+                                if hasattr(result, "output")
+                                else str(result)[:500],
+                            }
+                        )
 
+                    # Collect any world-graph mutations the skill reported
+                    if hasattr(result, "data") and isinstance(result.data, dict):
+                        skill_mut = result.data.get("sm_mutation")
+                        if skill_mut:
+                            sm_mutations.append(skill_mut)
+
+                    if self.personality.state.check_low_vitality():
+                        logger.info(
+                            "Vitality critically low — passive recovery applied"
+                        )
+
+                    # Append the tool result so the LLM sees what the skill returned.
+                    # tool_call_id must match the id in the preceding assistant message's
+                    # tool_calls array — required by the OpenAI spec and llama.cpp's
+                    # chat template (raises "tool_call_id must be provided!" otherwise).
+                    llm_messages.append(
+                        LLMMessage(
+                            "tool",
+                            tool_result_json(
+                                result.to_dict(), limit=runtime.config.tool_result_bytes
+                            )
+                            if runtime
+                            else json.dumps(
+                                result.to_dict()
+                                if hasattr(result, "to_dict")
+                                else result
+                            ),
+                            tool_call_id=tc.id,
+                        )
+                    )
+
+                    # If the skill signals it provides the complete final response,
+                    # skip the follow-up LLM call — the output IS the response.
+                    if result.direct_response and result.success:
+                        direct_response_text = result.output
+                        break  # break inner tool-call loop
+
+                if direct_response_text is not None:
+                    break  # break outer round loop
+
+            # 6. Extract final response
+            # last_tool_round_content catches the case where the LLM wrote its
+            # complete answer alongside a tool call (common pattern) and then
+            # returned empty content in the follow-up round after tools finished.
+            final_text = (
+                direct_response_text
+                or llm_error
+                or response.content
+                or last_tool_round_content
+                or "..."
+            )
+
+            if runtime and current_terminal.get():
+                final_text = ""
         # 6b. Brain: reflection, capability nudging, periodic self-model save
         elapsed = time.time() - _start
         if self.reflection_engine and active_plan:
@@ -1029,19 +1312,45 @@ class TamAGIAgent:
             except Exception as exc:
                 logger.debug("Graph maintenance error: %s", exc)
 
-        if (self.self_model and
-                self._interaction_count % self.config.self_model.save_interval == 0):
+        if (
+            self.self_model
+            and self._interaction_count % self.config.self_model.save_interval == 0
+        ):
             try:
                 self.self_model.save()
-                logger.debug("Self-model saved (interaction %d)", self._interaction_count)
+                logger.debug(
+                    "Self-model saved (interaction %d)", self._interaction_count
+                )
             except Exception as exc:
                 logger.warning("Self-model save failed: %s", exc)
 
         # 7. Record assistant message
         meta: dict[str, Any] = {"skills_used": skills_used}
+        if runtime:
+            run = runtime.store.run(current_execution.get().execution_id)
+            provenance = json.loads(run["payload"]) if run else {}
+            meta.update(
+                {
+                    "growth_eligible": bool(
+                        provenance.get("eligible_live")
+                        and not provenance.get("evaluation")
+                    ),
+                    "growth_completed": bool(
+                        final_text.strip()
+                        and final_text.strip() != "..."
+                        and not llm_error
+                        and outcome.status == "completed"
+                        and response.finish_reason not in {"length", "max_tokens"}
+                    ),
+                    "occasion_id": provenance.get("occasion_id"),
+                    "conversation_id": conv.id,
+                    "execution_id": current_execution.get().execution_id,
+                    "turn_status": outcome.status,
+                }
+            )
         if memories:
             meta["recalled_memory_ids"] = [memory.id for memory in memories]
-        if thinking_blocks:
+        if thinking_blocks and not runtime:
             meta["thinking_blocks"] = thinking_blocks
         if interim_messages:
             meta["interim_messages"] = interim_messages
@@ -1049,11 +1358,13 @@ class TamAGIAgent:
             meta["context_compressed"] = archived_count
         if sm_mutations:
             meta["sm_mutations"] = sm_mutations
-        conv.messages.append(Message(
-            role="assistant",
-            content=final_text,
-            metadata=meta,
-        ))
+        record_response(
+            Message(
+                role="assistant",
+                content=final_text,
+                metadata=meta,
+            )
+        )
 
         # 8. Store conversation triple in memory (state + action + feedback signal).
         # On turn 1 we have no prior assistant response, so we only buffer.
@@ -1065,50 +1376,54 @@ class TamAGIAgent:
             prev_turn = self._conv_prev_turn.get(conv_id)
             if prev_turn is not None:
                 prev_user, prev_assistant = prev_turn
-                triple = (
-                    f"User: {prev_user}\n"
-                    f"TamAGI: {prev_assistant}\n"
-                    f"User: {user_message}"
-                )
-                turn_index = sum(1 for m in conv.messages if m.role == "user") - 1
+                speaker = household.speaker(current_user_record) if household else "User"
+                own_name = household.names.get(runtime.actor_id, runtime.actor_id) if household else "TamAGI"
+                triple = (f"{prev_user}\n{own_name}: {prev_assistant}\n{speaker}: {user_message}"
+                          if household else f"User: {prev_user}\nTamAGI: {prev_assistant}\nUser: {user_message}")
+                turn_index = sum(1 for m in conv.messages[:user_index + 1] if m.role == "user") - 1
                 anchor_message_index = next(
                     (
-                        index for index, message in enumerate(conv.messages)
+                        index
+                        for index, message in enumerate(conv.messages)
                         if message.id == current_user_record.id
                     ),
                     len(conv.messages) - 2,
                 )
-                await self.memory.store(MemoryEntry(
-                    id=f"conversation-window:{conv_id}:{turn_index}",
-                    content=triple,
-                    memory_type=MemoryType.CONVERSATION,
-                    timestamp=current_user_record.timestamp,
-                    metadata={
-                        "conversation_id": conv_id,
-                        "conversation_title": conv.title,
-                        "document_kind": "turn_window",
-                        "anchor_turn_id": current_user_record.id,
-                        "turn_index": turn_index,
-                        "anchor_message_index": anchor_message_index,
-                        "source": "chat",
-                        "search_text": (
-                            f"Earlier user request: {prev_user}\n"
-                            f"User follow-up: {user_message}\n"
-                            f"TamAGI response: {prev_assistant[:1200]}"
-                        ),
-                    },
-                ))
-            self._conv_prev_turn[conv_id] = (user_message, final_text)
+                await self.memory.store(
+                    MemoryEntry(
+                        id=f"conversation-window:{conv_id}:{turn_index}",
+                        content=triple,
+                        memory_type=MemoryType.CONVERSATION,
+                        timestamp=current_user_record.timestamp,
+                        metadata={
+                            "conversation_id": conv_id,
+                            "conversation_title": conv.title,
+                            "document_kind": "turn_window",
+                            "anchor_turn_id": current_user_record.id,
+                            "turn_index": turn_index,
+                            "anchor_message_index": anchor_message_index,
+                            "source": "chat",
+                            "source_author": current_user_record.metadata.get("author_id", "operator"),
+                            "search_text": (triple if household else (
+                                f"Earlier user request: {prev_user}\n"
+                                f"User follow-up: {user_message}\n"
+                                f"TamAGI response: {prev_assistant[:1200]}"
+                            )),
+                        },
+                    )
+                )
+            self._conv_prev_turn[conv_id] = ((f"{household.speaker(current_user_record)}: {user_message}" if household else user_message), final_text)
             self.personality.state.store_memory()
         except Exception as exc:
             logger.warning("Memory store failed (chat triple): %s", exc)
 
         # 9. Check for stage advancement and generate name if needed
-        await self._maybe_advance_stage(prev_stage_index)
+        if not runtime:
+            await self._maybe_advance_stage(prev_stage_index)
 
-        # 10. Save state
-        self.personality.save_state()
+        # 10. Persist the completed exchange before projecting its growth into the avatar state.
         self._save_conversation(conv)
+        self.personality.save_state()
 
         return {
             "response": final_text,
@@ -1116,6 +1431,18 @@ class TamAGIAgent:
             "state": self.personality.state.to_dict(),
             "skills_used": skills_used,
             "memories_recalled": len(memories),
+            "turn_status": outcome.status if runtime else "completed",
+            "status_detail": (current_terminal.get() or {}).get("detail")
+            if runtime
+            else None,
+            "quiet_turns": (
+                json.loads(
+                    runtime.store.run(current_execution.get().execution_id)["payload"]
+                ).get("chat_turns")
+                or {}
+            ).get("quiet_used", 0)
+            if runtime
+            else 0,
             "context_compressed": archived_count,
             "sm_mutations": sm_mutations,
         }
@@ -1132,12 +1459,14 @@ class TamAGIAgent:
         # Call LLM for new stage name
         name = await self._generate_stage_name(new_index)
         state.current_stage_name = name
-        state.stage_history.append({
-            "name": name,
-            "stage_index": new_index,
-            "experience_at": state.experience,
-            "timestamp": time.time(),
-        })
+        state.stage_history.append(
+            {
+                "name": name,
+                "stage_index": new_index,
+                "experience_at": state.experience,
+                "timestamp": time.time(),
+            }
+        )
         logger.info(f"Stage advanced to index {new_index}: '{name}'")
 
     async def _generate_stage_name(self, stage_index: int) -> str:
@@ -1155,26 +1484,35 @@ class TamAGIAgent:
             # Include stage history for context
             history_context = ""
             if state.stage_history:
-                history_lines = [f"- Stage {i+1}: {entry['name']}" for i, entry in enumerate(state.stage_history)]
-                history_context = "\n\nYour evolution so far:\n" + "\n".join(history_lines)
+                history_lines = [
+                    f"- Stage {i + 1}: {entry['name']}"
+                    for i, entry in enumerate(state.stage_history)
+                ]
+                history_context = "\n\nYour evolution so far:\n" + "\n".join(
+                    history_lines
+                )
 
-            response = await self.llm.chat([
-                LLMMessage("system", system_prompt + history_context),
-                LLMMessage("user",
-                    "You've just grown and evolved into a new phase of your existence. "
-                    "Reflect on your current state, your experiences, and your journey so far. "
-                    "Give this new stage of your being a title: ONLY 1 to 3 words, evocative and personal to you. "
-                    "Respond with ONLY the title — no punctuation, no explanation, no tool calls."
-                ),
-            ], max_tokens=50)
+            response = await self.llm.chat(
+                [
+                    LLMMessage("system", system_prompt + history_context),
+                    LLMMessage(
+                        "user",
+                        "You've just grown and evolved into a new phase of your existence. "
+                        "Reflect on your current state, your experiences, and your journey so far. "
+                        "Give this new stage of your being a title: ONLY 1 to 3 words, evocative and personal to you. "
+                        "Respond with ONLY the title — no punctuation, no explanation, no tool calls.",
+                    ),
+                ],
+                max_tokens=50,
+            )
 
             raw = (response.content or "").strip()
             # Strip any leaked tool call syntax (e.g. express[ARGS]{...})
-            raw = re.sub(r'\w+\[ARGS\]\{[^}]*\}', '', raw)
+            raw = re.sub(r"\w+\[ARGS\]\{[^}]*\}", "", raw)
             # Strip markdown bold/italic
-            raw = re.sub(r'\*+', '', raw)
+            raw = re.sub(r"\*+", "", raw)
             # Strip surrounding punctuation and whitespace
-            raw = raw.strip().strip('"\'.,!?').strip()
+            raw = raw.strip().strip("\"'.,!?").strip()
 
             words = raw.split()
             if 1 <= len(words) <= 3:
@@ -1219,7 +1557,18 @@ class TamAGIAgent:
             return None
 
         conversation_id = str(entry.metadata.get("conversation_id") or "")
-        conversation = self.get_conversation(conversation_id) if conversation_id else None
+        conversation = None
+        if conversation_id:
+            from backend.core.runtime import get_runtime
+
+            runtime = getattr(self, "runtime", None) or get_runtime()
+            household = getattr(runtime, "household", None)
+            if household is not None:
+                # Legacy transcripts are private quoted evidence, not active
+                # conversations or input to recent-dialogue consolidation.
+                conversation = household.fetch_memory_conversation(conversation_id)
+            else:
+                conversation = self.get_conversation(conversation_id)
         messages: list[dict[str, Any]] = []
         if conversation is not None:
             anchor_index = entry.metadata.get("anchor_message_index")
@@ -1227,10 +1576,14 @@ class TamAGIAgent:
                 anchor_index = int(anchor_index)
             except (TypeError, ValueError):
                 anchor_index = None
-            if anchor_index is not None and 0 <= anchor_index < len(conversation.messages):
+            if anchor_index is not None and 0 <= anchor_index < len(
+                conversation.messages
+            ):
                 start = max(0, anchor_index - messages_before)
                 end = min(len(conversation.messages), anchor_index + messages_after + 1)
-                messages = [message.to_dict() for message in conversation.messages[start:end]]
+                messages = [
+                    message.to_dict() for message in conversation.messages[start:end]
+                ]
 
         return {
             "memory_id": entry.id,
@@ -1273,10 +1626,13 @@ class TamAGIAgent:
 
         try:
             evt_id = f"evt-conv-{uuid.uuid4().hex[:8]}"
-            self.self_model._apply_add_node("event", {
-                "id": evt_id,
-                "description": f"Visitor said: {user_message[:180]}",
-            })
+            self.self_model._apply_add_node(
+                "event",
+                {
+                    "id": evt_id,
+                    "description": f"Visitor said: {user_message[:180]}",
+                },
+            )
             self.self_model.auto_wire_node(evt_id)
             logger.debug("Recorded conversation event: %s", evt_id)
         except Exception as exc:
@@ -1287,24 +1643,34 @@ class TamAGIAgent:
         if not self.self_model:
             return ""
         try:
-            quests    = [q for q in self.self_model.get_quests(status="active") if not q.id.startswith("tq-")][:3]
-            skills    = self.self_model.get_skills()[:4]
+            quests = [
+                q
+                for q in self.self_model.get_quests(status="active")
+                if not q.id.startswith("tq-")
+            ][:3]
+            skills = self.self_model.get_skills()[:4]
             mysteries = self.self_model.get_mysteries()[:3]
-            lore      = self.self_model.get_lore()[:4]
+            lore = self.self_model.get_lore()[:4]
 
             lines = ["\n\n## World Graph"]
             if quests:
-                lines.append("**Active Quests:** " + " | ".join(
-                    q.title or q.description[:60] for q in quests
-                ))
+                lines.append(
+                    "**Active Quests:** "
+                    + " | ".join(q.title or q.description[:60] for q in quests)
+                )
             if skills:
-                lines.append("**Skills:** " + " | ".join(
-                    f"{s.name or s.description[:40]} ({s.proficiency})" for s in skills
-                ))
+                lines.append(
+                    "**Skills:** "
+                    + " | ".join(
+                        f"{s.name or s.description[:40]} ({s.proficiency})"
+                        for s in skills
+                    )
+                )
             if mysteries:
-                lines.append("**Open Mysteries:** " + " | ".join(
-                    m.domain or m.description[:50] for m in mysteries
-                ))
+                lines.append(
+                    "**Open Mysteries:** "
+                    + " | ".join(m.domain or m.description[:50] for m in mysteries)
+                )
             if lore:
                 lore_strs = [l.description[:60] for l in lore if l.description]
                 if lore_strs:
@@ -1333,10 +1699,26 @@ class TamAGIAgent:
 
         # Action verbs that imply multi-step work
         action_verbs = (
-            "implement", "build", "create", "develop", "set up", "configure",
-            "deploy", "design", "refactor", "migrate", "orchestrate", "automate",
-            "install", "integrate", "optimize", "debug", "analyze", "generate",
-            "write a script", "write a program",
+            "implement",
+            "build",
+            "create",
+            "develop",
+            "set up",
+            "configure",
+            "deploy",
+            "design",
+            "refactor",
+            "migrate",
+            "orchestrate",
+            "automate",
+            "install",
+            "integrate",
+            "optimize",
+            "debug",
+            "analyze",
+            "generate",
+            "write a script",
+            "write a program",
         )
         for phrase in action_verbs:
             if phrase in lower:
@@ -1345,8 +1727,14 @@ class TamAGIAgent:
 
         # Multi-step or planning language
         planning_phrases = (
-            "step by step", "plan", "how do i", "help me", "can you",
-            "walk me through", "guide me", "explain how",
+            "step by step",
+            "plan",
+            "how do i",
+            "help me",
+            "can you",
+            "walk me through",
+            "guide me",
+            "explain how",
         )
         for phrase in planning_phrases:
             if phrase in lower:
@@ -1355,8 +1743,21 @@ class TamAGIAgent:
 
         # Technical domain keywords (each adds a point, up to 2)
         tech_keywords = (
-            "docker", "kubernetes", "npm", "pip", "git", "python", "bash",
-            "api", "database", "server", "arm", "gpu", "cuda", "ssl", "nginx",
+            "docker",
+            "kubernetes",
+            "npm",
+            "pip",
+            "git",
+            "python",
+            "bash",
+            "api",
+            "database",
+            "server",
+            "arm",
+            "gpu",
+            "cuda",
+            "ssl",
+            "nginx",
         )
         tech_hits = sum(1 for kw in tech_keywords if kw in lower)
         score += min(tech_hits, 2)
@@ -1375,13 +1776,17 @@ class TamAGIAgent:
             return None
         try:
             import uuid as _uuid
+
             quest_id = f"tq-{_uuid.uuid4().hex[:8]}"
-            self.self_model._apply_add_node("quest", {
-                "id": quest_id,
-                "title": user_message[:60],
-                "description": user_message[:200],
-                "status": "active",
-            })
+            self.self_model._apply_add_node(
+                "quest",
+                {
+                    "id": quest_id,
+                    "title": user_message[:60],
+                    "description": user_message[:200],
+                    "status": "active",
+                },
+            )
             self.self_model.auto_wire_node(quest_id)
             return quest_id
         except Exception as exc:
@@ -1414,28 +1819,38 @@ class TamAGIAgent:
             try:
                 self.self_model._apply_update_node(proposal.target, updates)
                 node = self.self_model.get_node(proposal.target)
-                mutations.append({
-                    "op": "update",
-                    "node_type": node.get("node_type", "?") if node else "?",
-                    "id": proposal.target,
-                    "description": (node.get("description", "") if node else "")[:80],
-                    "fields": list(updates.keys()),
-                })
+                mutations.append(
+                    {
+                        "op": "update",
+                        "node_type": node.get("node_type", "?") if node else "?",
+                        "id": proposal.target,
+                        "description": (node.get("description", "") if node else "")[
+                            :80
+                        ],
+                        "fields": list(updates.keys()),
+                    }
+                )
                 logger.debug(
                     "Applied reflection proposal: %s → %s",
-                    proposal.target, list(updates.keys()),
+                    proposal.target,
+                    list(updates.keys()),
                 )
             except KeyError:
                 logger.debug(
-                    "Reflection target %s not in self-model (skipped).", proposal.target,
+                    "Reflection target %s not in self-model (skipped).",
+                    proposal.target,
                 )
             except Exception as exc:
                 logger.warning(
-                    "Could not apply reflection proposal for %s: %s", proposal.target, exc,
+                    "Could not apply reflection proposal for %s: %s",
+                    proposal.target,
+                    exc,
                 )
         return mutations
 
-    def _crystallize_strategy(self, plan: "ActionPlan", outcome: "ActualOutcome") -> dict | None:
+    def _crystallize_strategy(
+        self, plan: "ActionPlan", outcome: "ActualOutcome"
+    ) -> dict | None:
         """No-op: strategy crystallization removed in the world-native self-model."""
         return None
 
@@ -1456,9 +1871,10 @@ class TamAGIAgent:
             if quest.status not in ("complete", "abandoned"):
                 continue
             try:
-                age_days = (now - datetime.fromisoformat(
-                    quest.created_at.replace("Z", "+00:00")
-                )).days
+                age_days = (
+                    now
+                    - datetime.fromisoformat(quest.created_at.replace("Z", "+00:00"))
+                ).days
             except Exception:
                 age_days = 0
             if age_days < 7:
@@ -1491,23 +1907,30 @@ class TamAGIAgent:
                 continue
             try:
                 label = skill.name or skill.description[:40]
-                self.self_model._apply_add_node("perk", {
-                    "id": perk_id,
-                    "name": f"{label} mastery",
-                    "description": (
-                        f"Reached fluent proficiency in {label.lower()} "
-                        f"({skill.usage_count} uses, {skill.success_count} successes)"
-                    ),
-                    "source_event_id": skill.id,
-                })
+                self.self_model._apply_add_node(
+                    "perk",
+                    {
+                        "id": perk_id,
+                        "name": f"{label} mastery",
+                        "description": (
+                            f"Reached fluent proficiency in {label.lower()} "
+                            f"({skill.usage_count} uses, {skill.success_count} successes)"
+                        ),
+                        "source_event_id": skill.id,
+                    },
+                )
                 self.self_model.auto_wire_node(perk_id)
-                mutations.append({
-                    "op": "milestone",
-                    "node_type": "perk",
-                    "id": perk_id,
-                    "description": f"Skill mastery: {label}",
-                })
-                logger.info("Skill mastery perk crystallized: %s → %s", skill.id, perk_id)
+                mutations.append(
+                    {
+                        "op": "milestone",
+                        "node_type": "perk",
+                        "id": perk_id,
+                        "description": f"Skill mastery: {label}",
+                    }
+                )
+                logger.info(
+                    "Skill mastery perk crystallized: %s → %s", skill.id, perk_id
+                )
             except Exception as exc:
                 logger.debug("Perk crystallization failed for %s: %s", skill.id, exc)
 
@@ -1543,23 +1966,31 @@ class TamAGIAgent:
             skill_id = f"skill-{skill_name.replace('_', '-')}"
             label = " ".join(terms).title()
             try:
-                self.self_model._apply_add_node("skill", {
-                    "id": skill_id,
-                    "name": label,
-                    "description": f"Used the {label} skill",
-                    "proficiency": "novice",
-                    "usage_count": 1,
-                    "success_count": 1,
-                })
+                self.self_model._apply_add_node(
+                    "skill",
+                    {
+                        "id": skill_id,
+                        "name": label,
+                        "description": f"Used the {label} skill",
+                        "proficiency": "novice",
+                        "usage_count": 1,
+                        "success_count": 1,
+                    },
+                )
                 self.self_model.auto_wire_node(skill_id)
                 logger.info("Discovered skill: %s", skill_id)
-                return {"op": "discover", "node_type": "skill", "id": skill_id, "description": label}
+                return {
+                    "op": "discover",
+                    "node_type": "skill",
+                    "id": skill_id,
+                    "description": label,
+                }
             except Exception as exc:
                 logger.debug("Could not discover skill for %s: %s", skill_name, exc)
                 return None
 
         try:
-            new_usage   = skill_node.usage_count + 1
+            new_usage = skill_node.usage_count + 1
             new_success = skill_node.success_count + (1 if success else 0)
             # Advance proficiency: practiced at 5 uses with >60% success; fluent at 15 with >70%
             old_prof = skill_node.proficiency
@@ -1571,11 +2002,14 @@ class TamAGIAgent:
             else:
                 new_prof = old_prof
 
-            self.self_model._apply_update_node(skill_node.id, {
-                "usage_count":   new_usage,
-                "success_count": new_success,
-                "proficiency":   new_prof,
-            })
+            self.self_model._apply_update_node(
+                skill_node.id,
+                {
+                    "usage_count": new_usage,
+                    "success_count": new_success,
+                    "proficiency": new_prof,
+                },
+            )
             return {
                 "op": "nudge",
                 "node_type": "skill",
@@ -1590,6 +2024,22 @@ class TamAGIAgent:
     # ── Persistence ───────────────────────────────────────────
 
     def _save_conversation(self, conv: Conversation) -> None:
+        from backend.core.runtime import get_runtime
+
+        runtime = get_runtime()
+        household = getattr(runtime, "household", None)
+        if household is not None:
+            household.save_conversation(conv)
+            return
+        if runtime:
+            runtime.store.put(
+                "conversation",
+                conv.id,
+                runtime.actor_id,
+                conv.to_dict(),
+                category="platform",
+            )
+            runtime.growth.observe_conversation(conv.to_dict())
         if not self.config.history.persist:
             return
         self._history_dir.mkdir(parents=True, exist_ok=True)
@@ -1598,6 +2048,23 @@ class TamAGIAgent:
             json.dump(conv.to_dict(), f, indent=2)
 
     def _load_conversations(self) -> None:
+        from backend.core.runtime import get_runtime
+
+        runtime = get_runtime()
+        household = getattr(runtime, "household", None)
+        if household is not None:
+            household.load_conversations(self)
+            return
+        if runtime:
+            self._history_dir.mkdir(parents=True, exist_ok=True)
+            for record in runtime.store.list(
+                "conversation",
+                runtime.actor_id,
+                limit=self.config.history.max_conversations,
+            ):
+                (self._history_dir / (record["id"] + ".json")).write_text(
+                    json.dumps(record["data"])
+                )
         if not self.config.history.persist:
             return
         if not self._history_dir.exists():
@@ -1619,10 +2086,14 @@ class TamAGIAgent:
                     updated_at=data.get("updated_at", 0),
                     world_summarized=data.get("world_summarized", False),
                     memory_archived_through=data.get("memory_archived_through", -1),
-                    world_context_initialized=data.get("world_context_initialized", False),
+                    world_context_initialized=data.get(
+                        "world_context_initialized", False
+                    ),
                     world_context_summary=data.get("world_context_summary", ""),
                     world_context_turn_count=data.get("world_context_turn_count", 0),
-                    world_context_latest_turn_id=data.get("world_context_latest_turn_id", ""),
+                    world_context_latest_turn_id=data.get(
+                        "world_context_latest_turn_id", ""
+                    ),
                     messages=[
                         Message(
                             id=m.get("id", str(uuid.uuid4())),
@@ -1640,7 +2111,10 @@ class TamAGIAgent:
                 for index in range(len(conv.messages) - 1, 0, -1):
                     assistant_message = conv.messages[index]
                     user_message = conv.messages[index - 1]
-                    if assistant_message.role == "assistant" and user_message.role == "user":
+                    if (
+                        assistant_message.role == "assistant"
+                        and user_message.role == "user"
+                    ):
                         self._conv_prev_turn[conv.id] = (
                             user_message.content,
                             assistant_message.content,
