@@ -1,9 +1,9 @@
 # Individual resident recovery
 
-The operator's 2026-11-09 priority is individual continuity first, followed by
-household recovery for canonical shared records and publications. The first
-implementation provides operator commands and **Settings → Home & recovery**
-controls in the native household. Production adoption remains a separate gate.
+Individual recovery preserves private resident continuity. Canonical shared
+records and publications need coordinated household recovery as a separate layer.
+The native application provides offline operator commands and
+**Settings → Home & recovery** controls for resident archives.
 
 Native compatibility checks compare recorded enrollment release labels. The
 development launcher can run changed checkout code against a retained label;
@@ -170,13 +170,12 @@ or uncertain effect replay is requested by resident restoration.
 
 ## Qualification boundaries
 
-The [initial 2026-11-09 qualification](qualification/0019-resident-recovery-2026-11-09.md)
-retains the 319-test offline pass and the actual Cedar/Willow/River checkpoint
-rehearsal. Destructive scenarios ran only in inactive disposable copies with an
-offline network guard. The retained household paused for the checkpoint and
-resumed without replacing its resident roots. Production Ember was excluded.
-The [browser qualification](qualification/0019-browser-recovery-2026-11-09.md)
-records the separate UI, maintenance, failure and final cleanup checks.
-Passing scripted checks does not qualify hot resident-only maintenance,
-arbitrary cross-release restoration, actual Echo rehydration,
-individual moves into established households, or whole-household recovery.
+[Resident recovery tests](../tests/test_resident_recovery.py) cover encrypted
+archives, compatibility, failure handling and real disposable workers.
+[Browser recovery tests](../tests/test_household_browser_recovery.py) cover
+maintenance, preview/commit, resume and retries. See [household testing](household-native-testing.md)
+for repeatable browser and worker scenarios.
+
+These checks do not establish hot resident-only maintenance, arbitrary
+cross-release restoration, manually reconstructed historical identity, individual
+moves into established households or coordinated whole-household recovery.

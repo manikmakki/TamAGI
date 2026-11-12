@@ -1,6 +1,0 @@
-{
-  "passed": true,
-  "returncode": 0,
-  "guarded_python_processes": 2,
-  "denied_network_operations": 0
-}

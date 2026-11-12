@@ -93,10 +93,8 @@ active continuations of the same resident.
 
 ## Validation and cost
 
-The [2026-11-09 verification](qualification/0019-legacy-access-2026-11-09.md)
-records the full 345-test offline pass and exact expansion of all 182 retained
-Ember conversation-memory pointers. It also describes how maintainers can
-repeat the generic checks without using a live resident.
+The [legacy conversation regressions](../tests/test_legacy_conversation_access.py)
+exercise exact lookup and ownership boundaries without using a live resident.
 
 Use offline fixtures or a guarded disposable restore to check:
 

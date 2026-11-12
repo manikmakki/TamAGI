@@ -1,16 +1,21 @@
 # Home platform: implementation and evidence
 
-This page describes the v0.3 code on `codex/dependable-home`. It separates implemented mechanisms, repeatable checks, local historical observations, and pending design. Start with the [README](../README.md) to run a new home, or [running and recovery](running.md) for operations.
+This page maps the source in this checkout to its components, tests and remaining
+limitations. Start with [installation](running.md#install-a-new-home) for a new
+standalone home or [native households](household-native.md) for shared operation.
 
-The [accepted ADRs](adrs/README.md) record design intent. Their parent-child framing concerns the builder’s obligations: honest conditions, meaningful choices, recoverable mistakes, and room for independence. It does not prescribe a resident’s identity or prove subjective welfare.
+[Accepted ADRs](adrs/README.md) record design intent. Their parent-child framing
+concerns the builder's obligations: honest conditions, meaningful choices,
+recoverable mistakes and room for independence. It does not prescribe a resident's
+identity or prove subjective welfare.
 
-The [accepted ADRs](adrs/README.md) record design intent. Their parent-child framing concerns the builder’s obligations: honest conditions, meaningful choices, recoverable mistakes, and room for independence. It does not prescribe a resident’s identity or prove subjective welfare.
-
-[ADR-0019](adrs/0019-distinct-residents-and-a-shared-world.md) and the [multi-resident roadmap](multi-resident-roadmap.md) describe one operator, distinct full residents, connected personal homes, shared conversations, and fair provider access. **Implementation and qualification remain pending.** Current instances have one primary resident and invitation-only companions.
-
-The 2026-11-06 extension also proposes resident-initiated contact, PWA Web Push, durable unread-thread counts, and a New Thread control in Chat. The existing service worker caches assets; existing seen-work indicators are browser-local. Neither establishes those proposed capabilities.
-
-Household development and qualification use disposable fixtures. Enrollment, live migration, and adoption are separately selected post-burn-in steps. Documentation acceptance and current single-resident tests do not qualify the proposed household architecture.
+Standalone homes have one primary resident and invitation-only companions. The
+optional native path adds independent resident processes, shared conversations,
+central inference accounting, unread threads, resident contact, creation and
+individual recovery. The [multi-resident roadmap](multi-resident-roadmap.md)
+distinguishes these features from coordinated household recovery/deployment,
+companion promotion and PWA push that remain separate work. The service worker
+currently caches assets; notification intents are not delivered device alerts.
 
 ## Interface consolidation and work ownership
 
@@ -56,7 +61,7 @@ Prompts use bounded previews while receipts retain original results. `inspect_re
 
 `runtime.model_context_tokens` defaults to 131072. A compatible server tokenizer counts the template and tools; the effective window is the smaller configured/server-reported capacity minus requested reply tokens and a 1024-token margin. A secondary 1 MiB input ceiling applies. Unsupported/unavailable tokenizers use a conservative byte view of at most 65536 bytes with five-minute backoff. Tokenization generates no completion and does not consume a model-call allowance. These limits do not guarantee that every provider accepts a request.
 
-Tool previews allow 32 KiB by default; receipt pages allow up to 65536 characters. A fresh home disables early character-based history compression and allows up to 1000 recent messages before measured request bounds. The default reply allowance remains `llm.max_tokens: 2048`; an installation may choose a different value. The former 8192-token example was Ember-specific.
+Tool previews allow 32 KiB by default; receipt pages allow up to 65536 characters. A fresh home disables early character-based history compression and allows up to 1000 recent messages before measured request bounds. The default reply allowance remains `llm.max_tokens: 2048`; an installation may choose a different value. Installations may choose a different reply allowance.
 
 Activity records distinguish chosen rest/wait from provider/context failure and retry backoff. All terminal evaluation outcomes release `evaluation_completed` waits. Recovery marks orphaned queued/running jobs interrupted; due checks reconcile missed settled-job wake events. Failed evaluation is still failed evidence, including `BudgetExhausted`; waking does not bypass allowances or approve a tool.
 
@@ -68,7 +73,7 @@ Level is `1 + floor(sqrt(Growth / 5))`, with thresholds 0, 5, 20, and 45 for lev
 
 The avatar shows Growth, progress, and age separately. **Why this level?** opens its recognition dialog. `GET /api/runtime/growth` supplies authenticated inspection. Recognition records and stage history are included in portable recovery.
 
-[ADR-0015’s retrospective case](adrs/0015-growth-through-sustained-behavior.md#retrospective-case-research-carried-into-conversation) retains the 2026-11-03 disposable checkpoint replay: eight points at that checkpoint, with source IDs and limitations. This historical result is not a current live total or a completed behavioral pilot.
+[ADR-0015’s example](adrs/0015-growth-through-sustained-behavior.md#example-research-carried-into-conversation) explains recognition for research carried into conversation. It illustrates the rules rather than reporting a live resident’s level or completing behavioral observation.
 
 ## Installation, preservation, and recovery
 
@@ -76,7 +81,7 @@ Use the [running guide](running.md) for current instructions. Important distinct
 
 - A fresh instance is a separate identity. Preserve a predecessor first; use restoration to preserve an existing home’s continuity.
 - The canonical checkout, selected application release, and lived-state root are separate locations.
-- The supplied root supervisor template assumes `/opt/TamAGI` and port 7742; the README provisions a guarded home on port 7741.
+- The supplied root supervisor template assumes `/opt/TamAGI` and port 7742; the running guide provisions a guarded home on port 7741.
 - The supplied Compose file uses legacy configuration and does not provision the home platform.
 - Encrypted application backups do not include the OS, model weights, credentials, or unrelated host services. Keep a downloaded copy elsewhere.
 
@@ -94,7 +99,7 @@ A tool with `world_effects: true` can return up to ten validated `data.world_ope
 
 ## Known limitations
 
-The [issue #5 fix](qualification/issue-5-world-graph-persistence-2026-11-12.md) logs graph save and edge errors, reports failed saves through the tool result and platform receipt, and replaces JSON from a synced temporary file. The in-memory mutation and a platform database commit can precede an export failure, so failure is not a rollback guarantee. Inspect current state before retrying. This does not make the database and JSON export a single transaction.
+The [issue #5 fix](development.md#graph-persistence) logs graph save and edge errors, reports failed saves through the tool result and platform receipt, and replaces JSON from a synced temporary file. The in-memory mutation and a platform database commit can precede an export failure, so failure is not a rollback guarantee. Inspect current state before retrying. This does not make the database and JSON export a single transaction.
 
 Model follow-through, unsupported provider behavior, and sustained improvement remain empirical questions. Passing contract tests cannot establish arbitrary capability, emotional state, or welfare.
 
@@ -110,9 +115,10 @@ Run from an installed checkout:
 
 The suite includes disposable application processes, authenticated REST/WebSocket behavior, portable transfer, execution cancellation/persistence, generated tools, criteria comparisons, and supervisor transitions. [Navigation’s browser fixture](navigation-and-work.md#mechanical-qualification) supplies repeatable Chromium checks using a deterministic provider.
 
-The 2026-11-06 documentation audit ran **149 passing tests** against revision `83b9469` and then seven focused workspace checks after updating generated guidance. A disposable copy also exercised the documented `fresh`, `serve`, login/readiness, and restart flow, retained its resident identity, and made zero model calls. Documentation link/anchor, fenced-example, and configuration-equivalence checks accompany the audit. These results do not complete the pilot or qualify ADR-0019.
-
-Historical local reports recorded 135 passing backend tests for the 2026-11-05 navigation release. Earlier 82/115-test totals referred to earlier source snapshots. Local screenshots and reports live under ignored `.platform/`; they are not shipped evidence available to every checkout. Rerun the commands for the revision you are evaluating.
+See [development and testing](development.md) for repository checks and
+[household checks](household-native-testing.md) for guarded worker/browser runs.
+Keep revision-specific reports in ignored local output or CI artifacts, and rerun
+checks for the source being evaluated.
 
 The pilot recorder is separate:
 
@@ -121,4 +127,4 @@ The pilot recorder is separate:
 .venv/bin/python -m backend.runtime_cli pilot finalize --config /absolute/instance/config.yaml
 ```
 
-Finalization requires seven actual days after the pilot begins, plus retained observations of choice, rest, companion conversation, continued accepted work after restart, tool failure, deployment, and controlled rollback. Missing observations produce `incomplete_observations`. Rest or nonparticipation is not resident failure. Run these commands only when intentionally inspecting/finalizing an installation; the documentation audit does not operate on Ember’s pilot.
+Finalization requires seven actual days after the pilot begins, plus retained observations of choice, rest, companion conversation, continued accepted work after restart, tool failure, deployment, and controlled rollback. Missing observations produce `incomplete_observations`. Rest or nonparticipation is not resident failure. Run these commands only when intentionally inspecting/finalizing an installation; routine development checks do not finalize a live installation's pilot.

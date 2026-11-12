@@ -26,7 +26,7 @@ The active 131072-token installation uses an 8192-token reply limit, leaving 121
 
 ## Consequences
 
-Ember may use substantially more local inference. A bounded activation still ends at its ceiling; pursuits and receipts support later continuation. The agent sees remaining ancestral call allowance and can save a next step. Token counting adds a non-generating request to compatible servers. If that service is unavailable, usable context is smaller until it recovers. Raising capacity alone does not establish better behavior or require more activity.
+A resident may use substantially more local inference. A bounded activation still ends at its ceiling; pursuits and receipts support later continuation. The agent sees remaining ancestral call allowance and can save a next step. Token counting adds a non-generating request to compatible servers. If that service is unavailable, usable context is smaller until it recovers. Raising capacity alone does not establish better behavior or require more activity.
 
 The active instance disables early character-based chat compression and permits up to 1000 recent conversation messages; the measured boundary controls the actual request. Complete history remains canonical when older turns are omitted from a model view.
 

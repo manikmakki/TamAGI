@@ -1,5 +1,9 @@
 # Customizing Your TamAGI's Appearance
 
+Built-in names on this page label artwork presets only. They do not identify
+canonical residents or operators, and selecting a preset does not name, copy or
+recover a resident.
+
 TamAGI's avatar uses a **skeleton rig** — a hierarchy of named bones that drive the position, rotation, and scale of each body-part sprite. Choose **Vex**, the blue-and-gold cyber fennec; **Echo**, the original glowing pixel character; or **Ember**, the hooded humanoid with flowing amber energy, in the rig editor. Vex is the default for a new configuration. All three characters are drawn procedurally and support the existing animations and custom PNG uploads. Ember adds a gentle hover, curious gestures, and traveling energy pulses.
 
 You don't need to replace every part at once. Missing PNGs use the selected character's artwork, so you can swap in artwork one piece at a time. Changing character keeps your uploaded overrides; removing an override restores that character's built-in part. Existing saved rigs continue to use their original appearance under **Custom rig** until you choose another character.

@@ -1,9 +1,0 @@
-{
-  "passed": true,
-  "returncode": 0,
-  "seconds": 2.6760733127593994,
-  "guarded_python_processes": 1,
-  "denied_network_operations": 0,
-  "real_model_used": false,
-  "output": "/tmp/tamagi-shutdown-review-focused-5e7hp5mx"
-}

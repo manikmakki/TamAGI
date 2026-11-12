@@ -60,21 +60,26 @@ At the 2026-11-03 introduction, the suite had 82 passing tests, including 23 gro
 - Growth and stage history survive interruption, restart, and portable restoration.
 - Rest or absence never deducts progress or creates catch-up obligations.
 
-### Retrospective case: research carried into conversation
+### Example: research carried into conversation
 
-A disposable checkpoint replay on 2026-11-03 used rule version `adr-0015.v1` against the current resident’s canonical records. The source installation was not changed by this preview. It recognized **8 Growth, corresponding to Level 2**: six engagement points across two conversation episodes and two continuity points across two autonomous returns. Adaptation contributed zero.
+Consider a resident who researches a topic, revisits a pursuit during autonomous
+work, and discusses it in a later conversation. This illustrative example explains
+the recognition rules without publishing an installation's records.
 
-For the bounded-personhood sequence specifically:
+| Criterion | Required evidence | Recognition |
+| --- | --- | --- |
+| Engagement | Nine completed exchanges in one eligible conversation occasion. | 1 point at three exchanges, then 2 more at eight: **3 total**. |
+| Continuity | A successful pursuit revision in a distinct autonomous occasion, linked to its canonical execution and receipt. | **1 point** for that qualifying return. |
+| Adaptation | A failure followed by success without an explicit validated repair link. | **Unscored**. |
 
-| Criterion | Retained evidence | Recognition |
-|---|---|---|
-| Engagement | Conversation `f868e037-2571-4d98-9b34-3924c1d9e374` contained nine completed exchanges. | 1 point at three exchanges, then 2 more at eight: **3 total**. |
-| Continuity | During autonomous execution `run-68e9f6df7347459ab87e9f887bef2d46`, pursuit `pursuit-001` advanced from revision 1 to revision 2. The successful operation is retained as `receipt-d4c314e7c8d947b6b47816a31f9dd4a9`. | **1 point**. |
-| Adaptation | Historical failures and later successes lacked explicit repair links. | **Unscored**. |
+A later qualifying pursuit return is a separate continuity occasion. Earlier
+companion invocations that omit conversation-mode/caller provenance remain
+unscored. Cross-context discussion is useful behavioral evidence, but does not
+create an additional Growth pattern.
 
-The observed research-to-conversation case therefore supports four of the eight previewed points. The later pursuit return from revision 2 to revision 3 accounts for the second continuity point; it is a separate occasion. Earlier companion invocations omit conversation-mode/caller provenance and remain unscored. Cross-context discussion is useful behavioral evidence, but is not an additional fourth Growth pattern.
-
-The recognition ledger keeps the original source timestamps and a separate retrospective recognition timestamp. The 8-point figure is the checkpoint preview, not a promise that later live records remain unchanged. This case demonstrates application of the rules; mechanical verification and the seven-day operational pilot remain separate evidence classes. See [implementation and evidence](../platform-roadmap.md).
+The ledger retains original source timestamps and a separate recognition timestamp.
+Recognition examples explain the rules; they do not report a live resident's level
+or complete the operational pilot. See [implementation and evidence](../platform-roadmap.md).
 
 ## Supersedes
 

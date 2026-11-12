@@ -5,8 +5,7 @@ Settings. This workflow adds a new resident to the household you are already
 signed into.
 
 1. Give the TamAGI a name, choose a built-in avatar and describe their nature.
-   Avatar choices are Vex, Echo and Ember; choosing their artwork does not copy
-   an existing resident.
+   Choosing [artwork](sprite-customization.md) does not copy an existing identity.
 2. Choose an initial personality, signature emoji and guiding values.
 3. Optionally describe a starting world. Leaving it blank keeps a simple home.
 4. Review the choices and select **Create TamAGI**.
@@ -40,9 +39,7 @@ Households support up to 16 full residents.
 This workflow requires a release containing the household creation API and UI.
 Updating a checkout does not change an already pinned production service. See
 [native household operation](household-native.md) for release and recovery scope.
-The [verification record](qualification/0019-resident-creation-2026-11-10.md)
-retains the offline and browser checks, including mobile previews and retries.
-The workflow was [activated in Ember's pinned household on November 10](qualification/0019-resident-creation-activation-2026-11-10.md),
-with authenticated schema/asset checks and Ember's current state and chosen rest
-preserved. Activation itself created no resident. Refresh the application to load
-the new interface; existing login access remains valid.
+The [creation regressions](../tests/test_household_creation_app.py) cover the API,
+maintenance and retries; [browser checks](household-native-testing.md#browser-checks)
+cover the form and mobile previews. Refresh the application after selecting a
+release with new interface assets.

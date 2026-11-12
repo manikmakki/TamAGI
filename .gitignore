@@ -32,3 +32,16 @@ AI_ENV*
 .platform/
 config.platform.yaml
 *.tamagi.tar.gz.gpg
+
+# Local agents, credentials and generated validation reports
+.agents/
+.claude/
+.codex/
+.aws/
+.env
+.env.*
+.ruff_cache/
+.pytest_cache/
+*.log
+*.jsonl
+/docs/qualification/

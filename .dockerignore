@@ -27,4 +27,13 @@ config.platform.yaml
 *.sqlite*
 *.gguf
 *.safetensors
-docs/home-companion-runtime-enhancement.md
+
+# Local development state and generated validation output
+.agents
+.claude
+.codex
+.ruff_cache
+.pytest_cache
+**/*.log
+**/*.jsonl
+docs/qualification

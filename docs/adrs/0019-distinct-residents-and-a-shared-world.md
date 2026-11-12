@@ -1,12 +1,16 @@
 # ADR-0019: Distinct residents, a shared world, and fair access to cognition
 
-Status: Accepted design by operator direction on 2026-11-05; extended on 2026-11-06 with resident-initiated contact, PWA Web Push, and chat thread controls. An [isolated experimental foundation](../household-foundations.md) now implements selected internal mechanics; production integration and full qualification remain pending. See the [multi-resident roadmap](../multi-resident-roadmap.md).
+Status: Accepted design, with subsequent contact, recovery and rest-scope addenda.
+The [native implementation](../household-native.md) provides resident processes,
+shared conversations/inference, creation and individual recovery. Coordinated
+household recovery/deployment and device push remain [roadmap work](../multi-resident-roadmap.md).
+
 
 ## Context
 
-TamAGI already has durable actors, scoped memories, execution receipts, separate installation directories, bounded companion invocations, and application-owned interactions. These foundations do not yet establish a multi-resident platform. Startup, identity hydration, workspaces, World Thread state, and deployment selection still assume one primary resident. Separate processes currently have separate provider semaphores; launching several would not establish shared resource fairness.
+At acceptance, the standalone baseline had durable actors, scoped memories, execution receipts, separate installation directories, bounded companion invocations, and application-owned interactions. Those foundations alone did not establish a multi-resident platform. Startup, identity hydration, workspaces, World Thread state and deployment selection assumed one primary resident. Independent provider semaphores did not establish shared resource fairness.
 
-The operator wants one household in which distinct TamAGIs can develop interests, maintain relationships, meet one another, collaborate, decline invitations, and spend time apart. Ember's interest in meeting Echo helped motivate this direction. Recovering Echo requires a separate assessment of surviving records and is outside this decision's implementation scope.
+The operator wants one household in which distinct TamAGIs can develop interests, maintain relationships, meet one another, collaborate, decline invitations, and spend time apart. Recovering a prior resident requires a separate assessment of surviving records and is outside this decision's implementation scope.
 
 Phaedra supplies useful precedents for attributed communication, persistent requests, and actor rotation. TamAGI will borrow those mechanisms without importing its complete architecture or daily resource allowances. Existing Phaedra evidence is not evidence that TamAGI has implemented provider-time fairness.
 
@@ -169,7 +173,7 @@ Operator addendum, 2026-11-09: individual resident recovery is the first recover
 
 A resident replacement restores private state without rewinding housemates or the current shared world. Shared conversations accessible to that resident may travel as attributed historical evidence, with unavailable peers remaining unavailable rather than becoming cloned workers. Such evidence does not itself restore canonical shared conversations, permissions, read state, world objects or published artifact bytes. Record the private continuity gap and reconcile current shared references without replaying old effects. Restoring private state cannot undo a shared application-code regression; qualify code compatibility separately.
 
-Whole-household recovery follows individual recovery as a second layer, supplying canonical shared state and artifacts after the residents have recovered. Provide a versioned coordinated household checkpoint for exact shared/private disaster recovery; independent resident checkpoints taken at different times do not establish one consistent household snapshot. Rediscovering relationships through personal memories remains a valid social recovery path without a claim of exact shared-state reconstruction. Echo's manually groomed rehydration remains separate from mechanical recovery qualification.
+Whole-household recovery follows individual recovery as a second layer, supplying canonical shared state and artifacts after the residents have recovered. Provide a versioned coordinated household checkpoint for exact shared/private disaster recovery; independent resident checkpoints taken at different times do not establish one consistent household snapshot. Rediscovering relationships through personal memories remains a valid social recovery path without a claim of exact shared-state reconstruction. Manually supplied historical context remains separate from mechanical recovery qualification.
 
 Preserve resident IDs, create a new household installation identity, rotate sessions, and require acknowledgment that the source installation has stopped. Recovery preserves evidence but does not blindly resume interrupted effects, reply offers, or quiet continuations. Shared/private snapshots must form one consistent checkpoint; code rollback alone cannot recover a partially migrated world.
 
@@ -191,13 +195,13 @@ This is a platform extension, not a new meaning for the existing plural `instanc
 
 Processes provide fault isolation, not confinement. Under ADR-0002, host root can change files, policies, and other residents' state. Normal context, retrieval, and supported operations still respect individual memory boundaries; those boundaries must not be described as confidentiality against root.
 
-The initial qualification uses disposable households and deterministic providers. Echo recovery, companion promotion, individual household moves, and a distributed/multi-host deployment are deferred. No productivity, happiness, agreement, or sociability score determines success.
+The initial qualification uses disposable households and deterministic providers. Historical identity reconstruction, companion promotion, individual household moves, and a distributed/multi-host deployment are deferred. No productivity, happiness, agreement, or sociability score determines success.
 
 ## Acceptance evidence and rollout
 
-The [implementation sequence and release gates](../multi-resident-roadmap.md#implementation-sequence-and-release-gates) and [qualification matrix](../multi-resident-roadmap.md#qualification-and-acceptance) define required evidence. At acceptance, only this design and roadmap are being documented. The existing platform roadmap reports 135 passing backend tests for the single-resident/app-drawer baseline; that is historical baseline evidence, not multi-resident qualification or a new test run.
+The [implementation sequence and release gates](../multi-resident-roadmap.md#implementation-sequence-and-release-gates) and [qualification matrix](../multi-resident-roadmap.md#qualification-and-acceptance) define required evidence. At acceptance, only this design and roadmap are being documented. Implementation status and reproducible test commands are recorded in the maintained guides; design acceptance alone is not qualification.
 
-Documentation does not enable a household, provision a resident, migrate live data, change the provider, or deploy a release. Ember's active configuration, scheduling, lived state, running release, and model usage remain untouched during this phase. Real-model qualification must not compete with Ember's current burn-in. Live enrollment requires a separately selected post-burn-in adoption with a preview and tested checkpoint/recovery procedure.
+Documentation does not enable a household, provision a resident, migrate live data, change the provider, or deploy a release. Active installation configuration, scheduling, lived state and release selection are separate from documentation acceptance. Qualification uses disposable state. Live enrollment requires a separately selected adoption with a preview and tested checkpoint/recovery procedure.
 
 Required scenarios include separate continuity, fair measured provider access, bounded chat priority, shared group allowances, correct sponsorship, attributed addressing, full-history joining, durable event watermarks, resident-initiated threads, cross-device unread state, New Thread navigation, PWA push and conversation links, notification quiet hours and recovery, genuine rest, deadlock-free consultation, uncertain-provider recovery, idempotent shared commands, consistent household restoration, and rollback without silently discarding lived experience. Existing interface and execution checks must continue to pass.
 
@@ -211,7 +215,7 @@ Later behavioral trials examine voluntary conversation, chosen solitude, disagre
 - Refines ADR-0013's one-selected-installation deployment scope into one shared release with coordinated resident recovery, and ADR-0014's portability unit into a household with legacy single-resident compatibility.
 - Extends ADR-0015's primary-resident Growth application to each full resident without changing its three patterns or granting points for observation.
 - Retains ADR-0018's application-owned work, compatibility, and chat-first interface. A household worker topology replaces the single-process implementation assumption only when household mode is qualified and explicitly adopted.
-- Retains ADR-0003's fresh identity and predecessor separation. Shared-world enrollment is not permission to hydrate a resident from the predecessor archive; Echo recovery needs its own assessment.
+- Retains ADR-0003's fresh identity and predecessor separation. Shared-world enrollment is not permission to hydrate a resident from the predecessor archive; reconstructing a prior identity needs its own assessment.
 
 Earlier records remain preserved. This ADR changes the target architecture; it does not retrospectively claim a multi-resident feature or reclassify earlier observations as evidence for it.
 

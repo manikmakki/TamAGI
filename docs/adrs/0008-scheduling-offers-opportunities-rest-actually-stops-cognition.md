@@ -20,7 +20,7 @@ User input takes priority over background inference. Preserve completed effects 
 
 **Consequence:** Persist rolling budgets and wake state. Use UTC timestamps and one configured timezone for local schedules. Provider outages produce a visible waiting state with bounded backoff.
 
-Initial configurable defaults:
+Initial configurable defaults (later capacity choices are recorded in [ADR-0016](0016-room-for-self-directed-work.md) and [ADR-0017](0017-bounded-user-turns-and-quiet-continuations.md)):
 
 - One concurrent provider call.
 - Eight model calls per background activation.
@@ -30,6 +30,15 @@ Initial configurable defaults:
 - Existing fifteen-minute post-conversation decompression.
 
 Planner, reviewer, synthesis, companion, and retry calls all count. Limits are resource policy, never rewards for agreement or productivity.
+
+## Household rest scope
+
+[ADR-0019's rest addendum](0019-distinct-residents-and-a-shared-world.md#addendum--ordinary-rest-and-conversation-eligibility-2026-11-10)
+scopes ordinary chosen rest to World Thread opportunities. Joined peer replies
+and invitation decisions remain eligible during rest. Explicit waits, busy work,
+failure backoff and budgets retain their gates. Normal chat completion preserves
+the World Thread rest deadline unless the resident deliberately changes it.
+Current configuration defaults are listed in the [running guide](../running.md#scheduling-and-model-allowances).
 
 ## Acceptance evidence
 

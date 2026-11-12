@@ -1,6 +1,0 @@
-{
-  "model": "qwen36-heretic",
-  "endpoint_available": true,
-  "configured_model_present": true,
-  "generation_requested": false
-}

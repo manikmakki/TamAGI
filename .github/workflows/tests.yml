@@ -28,6 +28,8 @@ jobs:
           .venv/bin/python -m pip install -r requirements.lock
           .venv/bin/python -m pip install --no-deps -e .
           .venv/bin/python -m pip install ruff==0.17.3
+      - name: Check repository
+        run: .venv/bin/python scripts/check_repository.py
       - name: Check Python
         run: |
           .venv/bin/python -m pip check

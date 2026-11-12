@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path
 import subprocess
@@ -28,6 +29,8 @@ def main():
         cwd.mkdir()
         prepare_guard(guard)
         environment = _guard_environment(guard, source, cwd)
+        if os.environ.get("TAMAGI_CHROME"):
+            environment["TAMAGI_CHROME"] = os.environ["TAMAGI_CHROME"]
         credential = root / "credential"
         environment["TAMAGI_BROWSER_CREDENTIAL"] = str(credential)
         with (output / "fixture.log").open("w") as log:

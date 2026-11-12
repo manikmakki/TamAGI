@@ -1,6 +1,50 @@
 # Running and recovering TamAGI
 
-The [README](../README.md#run-a-new-home) is the short path for a new home-platform instance. This guide covers the `codex/dependable-home` branch, which contains the v0.3 runtime during burn-in. The default `main` branch still has the older runtime as of 2026-11-06.
+Use this guide for a standalone home-platform instance. For several independent
+residents sharing conversations and a model, see [native households](household-native.md).
+These instructions describe the source in this checkout, not the release selected
+by an existing service.
+
+## Install a new home
+
+Install Git, Python 3.13 with venv/pip support, and GnuPG for encrypted recovery.
+Run as an ordinary user for the guarded profile. If preserving an existing
+resident, read [the continuity steps](#preserve-an-existing-resident) first.
+
+```bash
+git clone https://github.com/manikmakki/TamAGI.git
+cd TamAGI
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.lock
+python -m pip install --no-deps -e .
+python -m backend.runtime_cli fresh --authority guarded \
+  --instance "$PWD/data/instances/home" --port 7741
+```
+
+Edit `data/instances/home/config.yaml` with a compatible endpoint and the exact
+name of an installed model. For example:
+
+```yaml
+llm:
+  base_url: "http://localhost:11434/v1"
+  api_key: "ollama"
+  model: "YOUR_INSTALLED_MODEL"
+  max_tokens: 2048
+  timeout: 180
+```
+
+Start the resident:
+
+```bash
+python -m backend.runtime_cli serve --config "$PWD/data/instances/home/config.yaml"
+```
+
+Open **http://localhost:7741/login**, set the operator password and complete the
+introduction. Ctrl+C stops the application; use the same configuration to return
+to that resident. Keep the instance directory when updating code. SQLite memory
+works without a vector database or embedding model. Download an encrypted backup
+from Settings and keep a copy away from the machine.
 
 ## Environment and configuration
 
@@ -121,7 +165,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now tamagi-platform.service
 ```
 
-Stop any manually served copy before starting the service. Review [tamagi-platform.service](../tamagi-platform.service) first: it runs as root and checks port **7742**, whereas the README explicitly provisions **7741**. Adjust the unit’s repository paths and `--port` to match your instance. The unit is a dedicated-host template, not the default guarded quick start.
+Stop any manually served copy before starting the service. Review [tamagi-platform.service](../tamagi-platform.service) first: it runs as root and checks port **7742**, whereas this guide provisions **7741**. Adjust the unit’s repository paths and `--port` to match your instance. The unit is a dedicated-host template, not the default guarded quick start.
 
 The supervisor runs the exact selected release in `.platform/current` using `.platform/active.json`. Editing the checkout alone does not change the running release. Recovery qualification runs the mechanical suite; it does not complete the behavioral pilot. Qualified automatic deployment can be enabled in Settings. Source compatibility, exact builds, copied-state boot checks, and supervisor recovery remain required.
 
@@ -153,7 +197,7 @@ docker build --build-arg TAMAGI_MEMORY_EXTRA=none -t tamagi:core .
 
 That build does not itself enable SQLite platform mode. A containerized home needs a separately provisioned guarded instance, matching persistent paths and configuration, and a container-reachable listen address. The manual Linux quick start avoids the legacy Compose assumptions.
 
-Non-platform operation also retains Python `Skill` directory discovery and legacy memory adapters. Those behaviors should not be used to infer the home platform’s tool, memory, or recovery contracts. Legacy and compatibility graph writes now [report save failures and replace JSON atomically](qualification/issue-5-world-graph-persistence-2026-11-12.md). If saving fails, inspect the graph before retrying: the in-memory change, or a platform database commit, may already be present.
+Non-platform operation also retains Python `Skill` directory discovery and legacy memory adapters. Those behaviors should not be used to infer the home platform’s tool, memory, or recovery contracts. Legacy and compatibility graph writes now [report save failures and replace JSON atomically](development.md#graph-persistence). If saving fails, inspect the graph before retrying: the in-memory change, or a platform database commit, may already be present.
 
 ## Backups and restoration
 
@@ -183,6 +227,6 @@ The CLI prompts for the archive password. Inspect the returned configuration and
 | Created file is absent from Inventory | Confirm the active instance workspace and place it under `workshop/`; see [workspace conventions](workspace-layout.md). |
 | New tool is not callable | Files alone do not activate it. Inspect its proposal, worker trial, evaluation job, and activation. |
 | Changed source is not live | A supervised service uses the selected release. Inspect its release identity before assuming the checkout is running. |
-| Graph saving failed or a graph change is missing | Inspect the logged exception and check storage space and permissions. A failed save retains the previous JSON file; the in-memory graph or platform database may already contain the change. Check the active release for the [issue #5 fix](qualification/issue-5-world-graph-persistence-2026-11-12.md) before retrying. |
+| Graph saving failed or a graph change is missing | Inspect the logged exception and check storage space and permissions. A failed save retains the previous JSON file; the in-memory graph or platform database may already contain the change. Check the active release for the [issue #5 fix](development.md#graph-persistence) before retrying. |
 
 The unauthenticated local `GET /api/health/ready` endpoint reports application/data readiness, a source-path release label, and model-availability observations. For a supervised release, that label identifies the selected built release; it is not a Git revision for an ordinary checkout. Recovery and operational evidence are described in [implementation and evidence](platform-roadmap.md).

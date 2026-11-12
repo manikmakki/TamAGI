@@ -6,11 +6,10 @@ foundation-debugging tool.
 
 This is a separate browser test panel for [ADR-0019's experimental foundations](household-foundations.md). It uses three newly seeded fixtures, real private runtime subprocesses, canonical household services, and a scripted provider. It does not start the production TamAGI app or connect a language model. The existing chat shell, onboarding and PWA push are not part of this panel.
 
-Run in the isolated worktree:
+Run from a development checkout:
 
 ```bash
-cd /tmp/tamagi-adr-0019
-/opt/TamAGI/.venv/bin/python scripts/household_preview.py --port 7743
+.venv/bin/python scripts/household_preview.py --port 7743
 ```
 
 The launcher prints `http://localhost:7743/`, a generated preview password, and the newly created fixture root. It binds only to `127.0.0.1`. Open the URL and use that password; it is separate from the normal TamAGI password. The preview's signed session cookie includes its household identity, so it does not replace the running app's login cookie on the same hostname.
@@ -33,12 +32,12 @@ The server runs in the foreground. Ctrl+C closes its workers and releases the fi
 6. Add a shared or private object for a chosen fixture. Shared objects appear in the common list; **Inspect home** explicitly shows that fixture's own identity, synthetic memory and visible world. Unrelated private conversation transcripts remain excluded from ordinary thread access.
 7. Inspect notification intents after resident messages. They are committed outbox records only. No push subscription, device enrollment or push dispatch is enabled.
 
-All manual resident actions are controlled fixture exercises. They do not establish voluntary behavior, welfare, real multi-resident inference, complete app parity, or completion of Ember's burn-in. Normal deployment, migration, recovery and live adoption remain the roadmap's separate gates.
+All manual resident actions are controlled fixture exercises. They do not establish voluntary behavior, welfare, real multi-resident inference, complete app parity, or sustained resident behavior. Normal deployment, migration, recovery and live adoption remain the roadmap's separate gates.
 
 ## Development checks
 
 [API tests](../tests/test_household_preview.py) cover authentication, mutation guards, replay, addressing/privacy, read snapshots, availability and synthetic scheduling against newly seeded workers. The standalone [browser smoke](../scripts/household-preview-browser-smoke.mjs) targets a disposable preview with a separate Chromium profile. Supply `TAMAGI_PREVIEW_URL` and `TAMAGI_PREVIEW_PASSWORD` in its environment; do not target the live app. Browser reports and screenshots are retained under `/tmp`.
 
-The [qualification record](qualification/0019-preview-2026-11-06.md) retains the passing 243-test run and desktop/mobile Chromium checks.
+Use [preview tests](../tests/test_household_preview.py) and [household checks](household-native-testing.md) to validate the revision under review. Keep generated reports and screenshots outside Git.
 
 The preview files are [backend](../backend/core/household/preview.py), [page](../frontend/household-preview.html), and [launcher](../scripts/household_preview.py). None is imported by the production entry point. There is no configurable provider endpoint in this launcher, and it never reads a live instance configuration or predecessor archive.

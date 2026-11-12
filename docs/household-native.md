@@ -1,21 +1,9 @@
-# Native household development candidate
+# Native households
 
-ADR-0019 now has an opt-in native application path, merged in PR #8.
-The ordinary TamAGI frontend talks to a household gateway and actual resident
-application processes. This replaces the earlier scripted preview for interactive
-development testing. It is not a qualified production migration or restore path.
-
-The operator's [2026-11-09 Ember activation](qualification/0019-ember-household-activation-2026-11-09.md)
-records a separately prepared manual one-resident adoption, pinned application and
-environment, offline worker checks and local cold restoration. That specific
-same-host procedure does not turn this development launcher into a production
-upgrade or household recovery controller.
-
-The [2026-11-10 rest-policy activation](qualification/0019-rest-chat-eligibility-2026-11-10.md)
-records source qualification, a complete stopped checkpoint, offline preservation
-and authenticated live checks for the current Ember and Echo household. Ordinary
-rest now governs World Thread opportunities while chat and invitation decisions
-remain eligible, subject to the limits below.
+The optional native application runs independent resident Agents behind a
+household gateway. Each installation chooses its residents and operator; the
+project does not define canonical identities. Standalone startup remains a
+separate mode.
 
 Each resident has a freshly provisioned private home, identity, runtime database,
 workspace, companions, memory and avatar configuration. The gateway owns shared
@@ -56,26 +44,25 @@ off. The flag persists for retained households. See the
 unread indicators and public artifact publication/import.
 
 ```bash
-cd /tmp/tamagi-adr-0019
-/opt/TamAGI/.venv/bin/python scripts/household_native.py \
+.venv/bin/python scripts/household_native.py \
   --port 7744 --model-config /path/to/authorized/config.yaml
 ```
 
 The foreground process serves `http://127.0.0.1:7744/`. Ctrl+C stops the household.
 Pass `--host 0.0.0.0` to make the password-protected listener accessible on the LAN.
 The default residents are Cedar, Willow and River, with distinct built-in avatar
-art. These are new residents, not restored versions of Ember or Echo. Choose
-different names with `--names`. Reopen a retained development household with:
+art. These are sample names for newly created homes, not recovered identities.
+Choose different names with `--names`. Reopen a retained development household with:
 
 ```bash
-/opt/TamAGI/.venv/bin/python scripts/household_native.py \
+.venv/bin/python scripts/household_native.py \
   --port 7744 --root /tmp/the-retained-household/home
 ```
 
 Reopening preserves histories and colors. Interrupted work, effects and old reply
 opportunities do not automatically resume. Unknown upstream occupancy holds new
 model dispatch for reconciliation. Existing residents are never discovered or
-enrolled automatically. Keep this candidate separate from the burn-in checkout.
+enrolled automatically. Use separate roots for development and an existing installation.
 
 The development launcher runs workers from its current checkout. Reopening a
 retained root preserves its enrollment release label; it does not pin executable
@@ -131,7 +118,7 @@ an invitation card without the transcript. An explicit
 `contact(action="respond", decision="accept")` joins and permits a subsequent
 ordinary reply with prior history; `decision="decline"` records refusal without
 sharing it. Prose alone is not acceptance. The
-[retained invitation trace](qualification/0019-native-invitations-2026-11-08/invitation-flow-proof.json)
+[invitation regressions](../tests/test_household_native_invitations.py)
 shows the card, dispatched response and unchanged thread identity in an automated
 actual-worker test with an injected provider. The next interactive request tests
 the real resident's choice.
@@ -146,63 +133,21 @@ the real resident's choice.
 
 ## Qualification and remaining work
 
-Native tests exercise actual resident subprocesses with an injected offline
-provider, and the real Agent executes generated tools with retained effects and
-receipts. The full qualification runner guards Python network traffic and uses
-disposable state. Browser checks use real Chromium and the ordinary interface.
-This is process/state separation, not an OS sandbox for arbitrary resident tools.
+[Repeatable household checks](household-native-testing.md) exercise actual worker
+processes, injected model transport, HTTP/browser behavior, rest, invitations,
+creation and individual recovery. Keep run reports and screenshots outside Git.
+These checks establish mechanics, not sustained model behavior or an OS sandbox.
 
-The [2026-11-07 qualification record](qualification/0019-native-2026-11-07.md)
-retains the 275-test final run, native Chromium evidence and authorized real-model
-connectivity check.
+Coordinated household recovery and release rollout, companion promotion, richer
+consultation and device push remain [roadmap work](multi-resident-roadmap.md#remaining-work).
+Notification intents and unread state persist, but push is not dispatched.
+[Individual recovery](resident-recovery.md) covers private resident archives; it
+does not reconstruct a consistent household shared-state checkpoint.
 
-Subsequent operator testing findings and selector design feedback are tracked in
-the [manual testing notes](household-native-testing.md). Focused routing,
-bottom-follow, attachment and graph-grounding fixes are now in the isolated
-branch; operator retesting remains pending. The selector redesign is deferred.
-The earlier checks do not cover every reported interaction.
-
-The [2026-11-08 regression record](qualification/0019-native-fixes-2026-11-08.md)
-retains the 279-test run, whole-process restart/read-back and targeted Chromium
-checks for these fixes.
-
-The [2026-11-09 World Thread record](qualification/0019-native-world-2026-11-09.md)
-retains the full 303-test run, final focused world checks, native Chromium world,
-operator-mention and public-library evidence, and retained-household activation.
-
-The [final branch review](qualification/0019-final-branch-review-2026-11-09.md)
-retains the 331-test pass on a clean committed revision and final Chromium checks.
-It fixes a reproduced queued-evaluation shutdown hang, interrupted restore
-settlement, delayed Settings responses and menu-to-Chat resident mismatches.
-
-Run the repeatable offline Chromium regressions from the isolated worktree with:
-
-```bash
-/opt/TamAGI/.venv/bin/python scripts/check_household_browser.py \
-  --output /tmp/tamagi-native-browser-check-new
-```
-
-This starts disposable native workers on port 18846 and Chromium debugging on
-18847, uses the existing cached Chromium executable, retains evidence under the
-output directory and removes its temporary password. It uses no real provider.
-
-The development candidate still needs reusable production resident adoption,
-coordinated household backup/restore and release activation,
-companion group-activation wiring, PWA push delivery and
-device qualification. Notification intent and unread state already persist;
-device push is not yet dispatched. Browser deployment and shared-state recovery
-remain disabled. [Individual resident recovery](resident-recovery.md) provides
-Settings backup/preview/restore controls and offline operator commands; it does
-not replace coordinated household recovery or qualify
-production adoption. Background autonomy
-is opt-in through the household clock; sustained household behavior and Ember's
-burn-in are separate qualifications. Explicit public artifact versions and exact
-private imports now retain real bytes; they do not replace coordinated recovery.
-
-Do not replace production or enroll Ember on the strength of these development
-checks alone. See ADR-0019 for the full acceptance requirements.
-The [production enablement plan](production-multi-resident-enablement.md) maps
-Ember preservation, remaining adoption work, manual recovery and staged cutover.
+For an existing installation, use the [preservation playbook](production-multi-resident-enablement.md)
+and qualify the exact source, environment, identity mapping and recovery procedure.
+The development launcher uses the current checkout and is not a production release
+controller. Editing or restarting a checkout does not qualify cross-release recovery.
 
 ## Menu scope in a native household
 

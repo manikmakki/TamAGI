@@ -24,10 +24,10 @@ These records preserve decisions and their context at acceptance. Present-tense 
 | 0016 | [Room for self-directed work](0016-room-for-self-directed-work.md) | Accepted design |
 | 0017 | [Bounded user turns and quiet continuations](0017-bounded-user-turns-and-quiet-continuations.md) | Accepted design |
 | 0018 | [An app drawer, chat-first navigation, and independent work lifetimes](0018-app-drawer-and-independent-work-lifecycle.md) | Accepted design; implemented; mechanical evidence in roadmap |
-| 0019 | [Distinct residents, a shared world, and fair access to cognition](0019-distinct-residents-and-a-shared-world.md) | Accepted design; isolated experimental foundation; production integration pending |
+| 0019 | [Distinct residents, a shared world, and fair access to cognition](0019-distinct-residents-and-a-shared-world.md) | Accepted design; optional native integration, creation and individual recovery implemented |
 
 [Implementation and evidence](../platform-roadmap.md).
 
-[Multi-resident implementation sequence and qualification gates](../multi-resident-roadmap.md). ADR-0019 does not enable household mode or change the running resident during burn-in.
+[Multi-resident implementation sequence and qualification gates](../multi-resident-roadmap.md). Selecting a household release and adopting existing residents are separate operational actions.
 
-ADR-0019's 2026-11-06 extension covers [resident-initiated contact and PWA notifications](0019-distinct-residents-and-a-shared-world.md#resident-initiated-contact-and-operator-notifications), plus durable unread-thread counts and New Thread access directly in Chat. The [experimental foundation](../household-foundations.md) implements canonical message/read state and notification intents; production UI and push dispatch remain pending.
+ADR-0019's 2026-11-06 extension covers [resident-initiated contact and PWA notifications](0019-distinct-residents-and-a-shared-world.md#resident-initiated-contact-and-operator-notifications), plus durable unread-thread counts and New Thread access directly in Chat. The [household implementation](../household-native.md) provides canonical message/read state, native UI and notification intents; device push dispatch remains pending.
