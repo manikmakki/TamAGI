@@ -1,0 +1,20 @@
+{
+  "base_revision": "8b4a26e8d673b4592da1ba53440b2bb890a35746",
+  "working_tree_implementation": true,
+  "qualification_source": {
+    "diff_sha256": "3792e597e23971ffeebf47c8d62ee9d432ed6f62e3c318b23385f39877cf7888",
+    "dirty": true,
+    "revision": "8b4a26e8d673b4592da1ba53440b2bb890a35746"
+  },
+  "implementation_test_sha256": {
+    "backend/core/self_model/store.py": "d27c2c1a9d6b51345e392854890ad153b780e407aa8623f0945d0b1e596dbae5",
+    "backend/skills/write_world_graph_skill.py": "5777196ba3a9869945d73a33dee326a3e8ec5acbfd03e2bdc13224a7a3ad9388",
+    "tests/test_world_graph_persistence.py": "1d352661e146e278d75ba599e1d437bdc1dc73d935c4925df8d28bd864e93d14"
+  },
+  "test_count": 373,
+  "test_seconds": 372.003,
+  "focused_test_count": 10,
+  "real_model_used": false,
+  "live_instance_used": false,
+  "production_deployed": false
+}

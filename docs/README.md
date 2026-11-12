@@ -29,6 +29,6 @@ Burn-in observations remain separate from fixture tests. Documentation changes d
 
 ## Documentation audit
 
-The 2026-11-06 audit checks setup commands against the CLI/configuration code, API and UI references against the routes/renderers, and operational claims against source and disposable checks. Known graph-persistence failures remain a separate bug fix; the guides do not claim that all legacy writes are transactional.
+The 2026-11-06 audit checks setup commands against the CLI/configuration code, API and UI references against the routes/renderers, and operational claims against source and disposable checks. The subsequent [graph persistence fix](qualification/issue-5-world-graph-persistence-2026-11-12.md) adds failure reporting and atomic JSON replacement; the guides do not claim that all legacy writes are transactional.
 
 For a reproducible claim, retain the source revision, exact command, result, and evidence class. Local `.platform/` reports are installation evidence rather than files shipped to every reader.

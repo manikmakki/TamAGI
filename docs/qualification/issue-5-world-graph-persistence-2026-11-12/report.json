@@ -1,0 +1,35 @@
+{
+  "command": [
+    "/opt/TamAGI/.venv/bin/python",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "/tmp/tamagi-issue-5-vmbpsah9/source/tests",
+    "-q"
+  ],
+  "denied_network_operations": 0,
+  "evidence_class": "scripted",
+  "finished_at": 1794489928.8992825,
+  "guarded_python_processes": 243,
+  "limits": "Python socket/DNS guard; this is not OS confinement of arbitrary native commands.",
+  "live_instance_used": false,
+  "passed": true,
+  "real_model_used": false,
+  "returncode": 0,
+  "schema": 1,
+  "source": "/tmp/tamagi-issue-5-vmbpsah9/source",
+  "source_after": {
+    "diff_sha256": "3792e597e23971ffeebf47c8d62ee9d432ed6f62e3c318b23385f39877cf7888",
+    "dirty": true,
+    "revision": "8b4a26e8d673b4592da1ba53440b2bb890a35746"
+  },
+  "source_before": {
+    "diff_sha256": "3792e597e23971ffeebf47c8d62ee9d432ed6f62e3c318b23385f39877cf7888",
+    "dirty": true,
+    "revision": "8b4a26e8d673b4592da1ba53440b2bb890a35746"
+  },
+  "source_unchanged": true,
+  "started_at": 1794489554.8764105,
+  "timed_out": false
+}

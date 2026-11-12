@@ -71,7 +71,7 @@ SQLite memory works without an embedding model or vector database. Your instance
 
 ## Contributing
 
-Bug reports are welcome. Include the branch/commit, platform or legacy mode, deployment method, steps to reproduce, and relevant logs with credentials removed. The [graph persistence issue](https://github.com/manikmakki/TamAGI/issues/5) remains open; a successful legacy graph-write response does not reliably prove persistence.
+Bug reports are welcome. Include the branch/commit, platform or legacy mode, deployment method, steps to reproduce, and relevant logs with credentials removed. The [graph persistence fix](docs/qualification/issue-5-world-graph-persistence-2026-11-12.md) reports save failures and protects the previous JSON file when a replacement cannot be completed.
 
 For development checks:
 

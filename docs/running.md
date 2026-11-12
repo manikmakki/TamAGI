@@ -153,7 +153,7 @@ docker build --build-arg TAMAGI_MEMORY_EXTRA=none -t tamagi:core .
 
 That build does not itself enable SQLite platform mode. A containerized home needs a separately provisioned guarded instance, matching persistent paths and configuration, and a container-reachable listen address. The manual Linux quick start avoids the legacy Compose assumptions.
 
-Non-platform operation also retains Python `Skill` directory discovery and legacy memory adapters. Those behaviors should not be used to infer the home platform’s tool, memory, or recovery contracts. The unresolved [graph-save issue](https://github.com/manikmakki/TamAGI/issues/5) still affects legacy graph writes and some platform compatibility paths.
+Non-platform operation also retains Python `Skill` directory discovery and legacy memory adapters. Those behaviors should not be used to infer the home platform’s tool, memory, or recovery contracts. Legacy and compatibility graph writes now [report save failures and replace JSON atomically](qualification/issue-5-world-graph-persistence-2026-11-12.md). If saving fails, inspect the graph before retrying: the in-memory change, or a platform database commit, may already be present.
 
 ## Backups and restoration
 
@@ -183,6 +183,6 @@ The CLI prompts for the archive password. Inspect the returned configuration and
 | Created file is absent from Inventory | Confirm the active instance workspace and place it under `workshop/`; see [workspace conventions](workspace-layout.md). |
 | New tool is not callable | Files alone do not activate it. Inspect its proposal, worker trial, evaluation job, and activation. |
 | Changed source is not live | A supervised service uses the selected release. Inspect its release identity before assuming the checkout is running. |
-| Graph write “succeeded” but is missing | The known graph persistence bug remains open. Inspect actual saved state and retain backups; do not infer durability from that response. |
+| Graph saving failed or a graph change is missing | Inspect the logged exception and check storage space and permissions. A failed save retains the previous JSON file; the in-memory graph or platform database may already contain the change. Check the active release for the [issue #5 fix](qualification/issue-5-world-graph-persistence-2026-11-12.md) before retrying. |
 
 The unauthenticated local `GET /api/health/ready` endpoint reports application/data readiness, a source-path release label, and model-availability observations. For a supervised release, that label identifies the selected built release; it is not a Git revision for an ordinary checkout. Recovery and operational evidence are described in [implementation and evidence](platform-roadmap.md).

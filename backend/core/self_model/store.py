@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import stat
+import tempfile
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -218,7 +221,7 @@ class SelfModel:
                     self._apply_add_edge(node_id, rid, edge_type)
                     edges_created += 1
                 except (KeyError, ValueError):
-                    pass
+                    logger.exception("Could not auto-wire world graph edge %s -[%s]-> %s", node_id, edge_type, rid)
             else:
                 edge_type = _REV.get((rtype, node_type))
                 if edge_type and not self._graph.has_edge(rid, node_id):
@@ -226,7 +229,7 @@ class SelfModel:
                         self._apply_add_edge(rid, node_id, edge_type)
                         edges_created += 1
                     except (KeyError, ValueError):
-                        pass
+                        logger.exception("Could not auto-wire world graph edge %s -[%s]-> %s", rid, edge_type, node_id)
 
             if edges_created >= 3:
                 break
@@ -423,8 +426,24 @@ class SelfModel:
         runtime = get_runtime()
         if runtime:
             runtime.store.put('graph','world',runtime.actor_id,data)
-        with open(out_path, "w") as f:
-            json.dump(data, f, indent=2, default=str)
+        temporary = None
+        try:
+            # Keep the last complete projection intact until its replacement is
+            # serialized, flushed and synced on the same filesystem.
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=out_path.parent,
+                prefix=f".{out_path.name}.", suffix=".tmp", delete=False,
+            ) as output:
+                temporary = Path(output.name)
+                json.dump(data, output, indent=2, default=str)
+                if out_path.exists():
+                    os.chmod(temporary, stat.S_IMODE(out_path.stat().st_mode))
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, out_path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         logger.info("Self-model saved (%d nodes, %d edges)", data["node_count"], data["edge_count"])
         return out_path
 

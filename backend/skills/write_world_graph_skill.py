@@ -8,6 +8,7 @@ auto-wiring fills in obvious connections automatically.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any, TYPE_CHECKING
 
@@ -15,6 +16,9 @@ from backend.skills.base import Skill, SkillResult
 
 if TYPE_CHECKING:
     from backend.core.agent import TamAGIAgent
+
+
+logger = logging.getLogger("tamagi.skills.world_graph")
 
 
 _WORLD_TYPES = {"location", "quest", "event", "skill", "perk", "known", "mystery", "lore"}
@@ -115,6 +119,21 @@ class WriteWorldGraphSkill(Skill):
 
     def __init__(self, agent: "TamAGIAgent") -> None:
         self._agent = agent
+
+    def _save_result(self, sm, result: SkillResult) -> SkillResult:
+        try:
+            sm.save()
+        except Exception as exc:
+            logger.exception("Could not save world graph")
+            return SkillResult(
+                success=False,
+                error=f"World graph save failed: {exc}",
+                output=(
+                    "Could not complete saving the world graph. The change may already "
+                    "be present; inspect the graph before retrying."
+                ),
+            )
+        return result
 
     async def execute(self, **kwargs: Any) -> SkillResult:
         sm = getattr(self._agent, "self_model", None)
@@ -220,16 +239,12 @@ class WriteWorldGraphSkill(Skill):
                         sm._apply_add_edge(existing_id, tid, etype)
                         explicit_edges += 1
                     except Exception:
-                        pass
+                        logger.exception("Could not add world graph edge %s -[%s]-> %s", existing_id, etype, tid)
 
             node = sm.get_node(existing_id) or {}
             label = node.get("name") or node.get("title") or node.get("description", existing_id)[:60]
-            try:
-                sm.save()
-            except Exception:
-                pass
             edge_note = f" (+{explicit_edges} edge(s))" if explicit_edges else ""
-            return SkillResult(
+            return self._save_result(sm, SkillResult(
                 success=True,
                 output=(
                     f"Merged with existing {node_type} node: {label!r} (id={existing_id}){edge_note}\n"
@@ -240,7 +255,7 @@ class WriteWorldGraphSkill(Skill):
                     "node_type": node_type,
                     "sm_mutation": {"op": "update", "node_type": node_type, "id": existing_id, "description": label[:60]},
                 },
-            )
+            ))
 
         if not attrs.get("id"):
             prefix = {"location": "loc", "quest": "quest", "event": "evt",
@@ -271,7 +286,7 @@ class WriteWorldGraphSkill(Skill):
                         try:
                             sm._apply_add_edge(node_id, loc.id, "located_at")
                         except Exception:
-                            pass
+                            logger.exception("Could not add world graph edge %s -[located_at]-> %s", node_id, loc.id)
                         break
 
         # Auto-wire + explicit relationships
@@ -289,15 +304,11 @@ class WriteWorldGraphSkill(Skill):
                 sm._apply_add_edge(node_id, tid, etype)
                 explicit_edges += 1
             except Exception:
-                pass
+                logger.exception("Could not add world graph edge %s -[%s]-> %s", node_id, etype, tid)
 
         node = sm.get_node(node_id) or {}
         label = node.get("name") or node.get("title") or node.get("description", node_id)[:60]
-        try:
-            sm.save()
-        except Exception:
-            pass
-        return SkillResult(
+        return self._save_result(sm, SkillResult(
             success=True,
             output=(
                 f"Added {node_type} node: {label!r} (id={node_id})\n"
@@ -308,7 +319,7 @@ class WriteWorldGraphSkill(Skill):
                 "node_type": node_type,
                 "sm_mutation": {"op": "add", "node_type": node_type, "id": node_id, "description": label[:60]},
             },
-        )
+        ))
 
     async def _update_node(self, sm, kwargs: dict) -> SkillResult:
         node_id = str(kwargs.get("node_id", "")).strip()
@@ -342,25 +353,21 @@ class WriteWorldGraphSkill(Skill):
                     sm._apply_add_edge(node_id, tid, etype)
                     explicit_edges += 1
                 except Exception:
-                    pass
+                    logger.exception("Could not add world graph edge %s -[%s]-> %s", node_id, etype, tid)
 
         result_msg = f"Updated node {node_id}: {list(attrs.keys())}"
         if explicit_edges:
             result_msg += f" (+{explicit_edges} new edge(s))"
         node = sm.get_node(node_id) or {}
         ntype = node.get("node_type", "")
-        try:
-            sm.save()
-        except Exception:
-            pass
-        return SkillResult(
+        return self._save_result(sm, SkillResult(
             success=True,
             output=result_msg,
             data={
                 "node_id": node_id,
                 "sm_mutation": {"op": "update", "node_type": ntype, "id": node_id, "fields": list(attrs.keys())},
             },
-        )
+        ))
 
     async def _add_edge(self, sm, kwargs: dict) -> SkillResult:
         source_id = str(kwargs.get("source_id", "")).strip()
@@ -378,17 +385,14 @@ class WriteWorldGraphSkill(Skill):
 
         try:
             sm._apply_add_edge(source_id, target_id, edge_type)
-            try:
-                sm.save()
-            except Exception:
-                pass
-            return SkillResult(
-                success=True,
-                output=f"Edge added: {source_id} -[{edge_type}]-> {target_id}",
-                data={"source": source_id, "target": target_id, "edge_type": edge_type},
-            )
         except Exception as exc:
+            logger.exception("Could not add world graph edge %s -[%s]-> %s", source_id, edge_type, target_id)
             return SkillResult(success=False, error=str(exc), output=str(exc))
+        return self._save_result(sm, SkillResult(
+            success=True,
+            output=f"Edge added: {source_id} -[{edge_type}]-> {target_id}",
+            data={"source": source_id, "target": target_id, "edge_type": edge_type},
+        ))
 
     async def _delete_node(self, sm, kwargs: dict) -> SkillResult:
         node_id = str(kwargs.get("node_id", "")).strip()
@@ -408,16 +412,11 @@ class WriteWorldGraphSkill(Skill):
 
         # NetworkX removes all incident edges automatically
         sm._graph.remove_node(node_id)
-        try:
-            sm.save()
-        except Exception:
-            pass
-
-        return SkillResult(
+        return self._save_result(sm, SkillResult(
             success=True,
             output=f"Deleted {ntype} node: {label!r} (id={node_id}, {edge_count} edge(s) removed)",
             data={
                 "node_id": node_id,
                 "sm_mutation": {"op": "delete", "node_type": ntype, "id": node_id, "description": label},
             },
-        )
+        ))

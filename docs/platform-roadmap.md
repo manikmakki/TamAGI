@@ -26,7 +26,7 @@ See [navigation and accepted work](navigation-and-work.md) for API contracts, br
 
 | Area | Current source | Evidence and limits |
 | --- | --- | --- |
-| Canonical records and execution | [store](../backend/core/runtime/store.py), [service](../backend/core/runtime/service.py) | [Runtime tests](../tests/test_platform_runtime.py) cover receipts, actor scope, interruption, rest, and persistence. Compatibility graph writes retain a known failure-reporting gap. |
+| Canonical records and execution | [store](../backend/core/runtime/store.py), [service](../backend/core/runtime/service.py) | [Runtime tests](../tests/test_platform_runtime.py) cover receipts, actor scope, interruption, rest, and persistence. [Graph persistence tests](../tests/test_world_graph_persistence.py) cover compatibility save failures, failed receipts and atomic JSON replacement. |
 | Conversation ownership | [interactions](../backend/core/runtime/interactions.py), [chat turns](../backend/core/runtime/chat_turns.py) | [Interaction tests](../tests/test_interactions.py), [chat-turn tests](../tests/test_chat_turns.py), and application smoke cover admission, observer loss, quiet work, Stop, and restart boundaries. |
 | Workshop and Inventory | [inventory](../backend/core/runtime/inventory.py) | [Inventory tests](../tests/test_inventory.py) cover discovery, saved versions, path/symlink rejection, and retained file descriptors. |
 | Durable companions | [companions](../backend/core/runtime/companions.py) | Runtime/release tests cover attribution, bounded invitations, workflow dependencies, and dispatch restrictions. Companions have no independent population scheduler. |
@@ -94,7 +94,7 @@ A tool with `world_effects: true` can return up to ten validated `data.world_ope
 
 ## Known limitations
 
-[Issue #5](https://github.com/manikmakki/TamAGI/issues/5) remains reproducible: the compatibility graph writer swallows save errors, some edge failures are silent, and JSON export uses a direct truncating write. A reported graph-write success is not reliable proof of persistence. SQLite-backed place/pursuit services improve some paths but do not resolve all generic graph writes. That bug is reserved for a dedicated fix; this audit changes documentation only.
+The [issue #5 fix](qualification/issue-5-world-graph-persistence-2026-11-12.md) logs graph save and edge errors, reports failed saves through the tool result and platform receipt, and replaces JSON from a synced temporary file. The in-memory mutation and a platform database commit can precede an export failure, so failure is not a rollback guarantee. Inspect current state before retrying. This does not make the database and JSON export a single transaction.
 
 Model follow-through, unsupported provider behavior, and sustained improvement remain empirical questions. Passing contract tests cannot establish arbitrary capability, emotional state, or welfare.
 
